@@ -8,6 +8,8 @@ Ordered by value/effort ratio. Each phase is independently shippable.
 
 Cover every behavior documented in `docs/reference/format.md` with an assertion in `packages/core/src/index.test.ts`:
 
+- [ ] Run all CLI commands against `fixtures/static/editor-packed.unitypackage` (real Unity export), compare behavior against `docs/reference/format.md` spec, and backfill format.md with any gaps found
+
 - [ ] `preview.png` entry — currently silently ignored; test that it doesn't corrupt output, then decide whether to expose it via `UnityPackageEntry.preview?`
 - [ ] Multi-line `pathname` — verify first-line-only parsing (some historical extractors produced multi-line content)
 - [ ] 100-byte tar entry name limit — parse currently has no guard; create throws; test both sides

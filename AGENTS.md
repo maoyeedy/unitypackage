@@ -5,10 +5,8 @@
 | `packages/core` | `unitypackage-core` | published, browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | published, ships JS, runtime Node ≥24 |
 | `apps/web` | `@unitypackage-tools/web` | private, Vite 6 + React 19 |
-| `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders for tests |
+| `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders + real editor-exported `.unitypackage` |
 | `scripts` | — | `copy-web-assets.ts`, `fixtures-build.ts` |
-| `tests/in` | — | real `.unitypackage` files (≤5 MB each) |
-| `tests/out` | — | extract/pack output, gitignored |
 
 ## Commands
 
@@ -26,9 +24,9 @@ bun run --filter @unitypackage-tools/web build
 
 Manual smoke (after `build`):
 ```
-node packages/cli/dist/bin.js inspect "tests/in/<pkg>.unitypackage" --json
-node packages/cli/dist/bin.js verify  "tests/in/<pkg>.unitypackage"
-node packages/cli/dist/bin.js extract "tests/in/<pkg>.unitypackage" tests/out/extracted
+node packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
+node packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
+node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test
 node scripts/fixtures-build.ts
 ```
 
