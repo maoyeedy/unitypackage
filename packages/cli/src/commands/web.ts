@@ -1,6 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { CliError, EXIT } from '../util/exit.js';
 
@@ -46,7 +45,7 @@ async function serveRequest(assetDir: string, url: string, res: ServerResponse):
 export async function web(opts: { port?: number } = {}): Promise<void> {
   const port = opts.port ?? 5173;
   // Resolves to packages/cli/assets/web/ at runtime (dist/commands/web.js → ../../assets/web)
-  const assetDir = fileURLToPath(new URL('../../assets/web/', import.meta.url));
+  const assetDir = path.resolve(import.meta.dirname!, '../../assets/web');
 
   try {
     await stat(path.join(assetDir, 'index.html'));

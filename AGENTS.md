@@ -3,7 +3,7 @@
 | Path | Package | Notes |
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | published, browser-safe, CJS+ESM |
-| `packages/cli` | `unitypackage-tools` | published, Node ≥22, single bin |
+| `packages/cli` | `unitypackage-tools` | published, ships JS, runtime Node ≥24 |
 | `apps/web` | `@unitypackage-tools/web` | private, Vite 6 + React 19 |
 | `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders for tests |
 | `scripts` | — | `copy-web-assets.ts`, `fixtures-build.ts` |
@@ -29,8 +29,15 @@ Manual smoke (after `build`):
 node packages/cli/dist/bin.js inspect "tests/in/<pkg>.unitypackage" --json
 node packages/cli/dist/bin.js verify  "tests/in/<pkg>.unitypackage"
 node packages/cli/dist/bin.js extract "tests/in/<pkg>.unitypackage" tests/out/extracted
-bun run scripts/fixtures-build.ts
+node scripts/fixtures-build.ts
 ```
+
+## Node versions
+
+| Context | Version | Why |
+|---------|---------|-----|
+| Dev / CI / workspace root | **≥24** | `node scripts/*.ts` uses built-in type stripping (stable since 23.6) |
+| Published runtime (`packages/core`, `packages/cli`) | **≥24** | uniform; Node 24 is current LTS |
 
 ## Reference
 
@@ -52,8 +59,9 @@ bun run scripts/fixtures-build.ts
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
 - **`apps/web` typecheck is `tsc -b`** (not `--noEmit`). `--noEmit` skips project reference resolution.
 - **ESLint type-aware rules exclude `*.test.ts`** in `packages/cli` — they lack `@types/node` in tsconfig scope.
-- **`build:cli` order**: `scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
+- **`build:cli` order**: `node scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
 - **100-byte tar entry name limit**: entry format `<guid>/pathname`, `<guid>/asset.meta`, `<guid>/asset`. GUID is 32 chars — remaining budget tight.
+- **`sanitize-filename` removed**: inlined as `sanitizeFilename()` in `packages/cli/src/util/path.ts` via simple regex (Node ≥22).
 
 ## Do Not Edit
 

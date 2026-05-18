@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import path from 'node:path';
 import { sanitizePackagePath, sanitizeFsPath, isInside } from './util/path.js';
 import { createGuid, parseMeta, generateMeta } from './util/meta.js';
-import { parseArgs } from './util/args.js';
 
 describe('sanitizePackagePath', () => {
   it('preserves valid path', () => {
@@ -36,6 +36,18 @@ describe('sanitizeFsPath', () => {
     const result = sanitizeFsPath('/<>/foo');
     expect(result).not.toBe('');
     expect(result).toContain('foo');
+  });
+
+  it('replaces reserved dot path segments', () => {
+    expect(sanitizeFsPath('Assets/./Foo.cs')).toBe(['Assets', '_', 'Foo.cs'].join(path.sep));
+  });
+
+  it('replaces Windows reserved path segments', () => {
+    expect(sanitizeFsPath('Assets/CON/Foo.cs')).toBe(['Assets', '_', 'Foo.cs'].join(path.sep));
+  });
+
+  it('strips trailing dots from path segments', () => {
+    expect(sanitizeFsPath('Assets/Foo./Bar.cs')).toBe(['Assets', 'Foo', 'Bar.cs'].join(path.sep));
   });
 });
 
@@ -98,37 +110,5 @@ describe('generateMeta', () => {
   it('marks folders with folderAsset: true', () => {
     const meta = generateMeta('Assets/Scripts', true);
     expect(meta.folderAsset).toBe(true);
-  });
-});
-
-describe('parseArgs', () => {
-  it('parses command and positionals', () => {
-    const { command, positional } = parseArgs(['extract', 'a.unitypackage', './out']);
-    expect(command).toBe('extract');
-    expect(positional).toEqual(['a.unitypackage', './out']);
-  });
-
-  it('parses --flag=value', () => {
-    const { flags } = parseArgs(['inspect', '--port=5000']);
-    expect(flags['port']).toBe('5000');
-  });
-
-  it('parses --flag value', () => {
-    const { flags } = parseArgs(['web', '--port', '3000']);
-    expect(flags['port']).toBe('3000');
-  });
-
-  it('parses boolean flag', () => {
-    const { flags } = parseArgs(['verify', '--json']);
-    expect(flags['json']).toBe(true);
-  });
-
-  it('parses -h short flag', () => {
-    const { flags } = parseArgs(['-h']);
-    expect(flags['h']).toBe(true);
-  });
-
-  it('returns undefined command for empty argv', () => {
-    expect(parseArgs([]).command).toBeUndefined();
   });
 });

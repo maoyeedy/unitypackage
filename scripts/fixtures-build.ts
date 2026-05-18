@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   buildMinimal,
   buildNested,
@@ -11,7 +10,7 @@ import {
   buildTruncated,
 } from '../fixtures/src/builders.js';
 
-const root = path.dirname(fileURLToPath(new URL('.', import.meta.url)));
+const root = path.resolve(import.meta.dirname!, '..');
 const outDir = path.join(root, 'fixtures/generated');
 
 fs.mkdirSync(outDir, { recursive: true });

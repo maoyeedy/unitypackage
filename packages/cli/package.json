@@ -7,7 +7,7 @@
     "unitypackage-tools": "dist/bin.js"
   },
   "files": ["dist", "assets/web", "README.md", "LICENSE"],
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24" },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -18,7 +18,6 @@
     "prepublishOnly": "npm run build && npm run lint && npm run test"
   },
   "dependencies": {
-    "sanitize-filename": "^1.6.3",
     "unitypackage-core": "workspace:*",
     "yaml": "^2.7.1"
   }

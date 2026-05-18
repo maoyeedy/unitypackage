@@ -4,8 +4,8 @@
 
 | Dep | ID |
 |---|---|
+| Node.js | `/nodejs/node` |
 | fflate | `/101arrowz/fflate` |
-| sanitize-filename | `/parshap/node-sanitize-filename` |
 | yaml | `/eemeli/yaml` |
 | react | `/facebook/react` |
 | react-dom | *(part of `/facebook/react`)* |
@@ -22,6 +22,4 @@ Workspace deps (`unitypackage-core`) are internal — no Ctx7 ID.
 | vitest | `/vitest-dev/vitest` |
 | eslint | `/eslint/eslint` |
 | typescript-eslint | `/typescript-eslint/typescript-eslint` |
-| @biomejs/biome | `/biomejs/biome` |
-| concurrently | `/open-cli-tools/concurrently` |
 | vite | `/vitejs/vite` |

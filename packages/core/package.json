@@ -13,7 +13,7 @@
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=24" },
   "scripts": {
     "build": "tsc && tsc -p tsconfig.esm.json && printf '{\"type\":\"module\"}' > dist/esm/package.json",
     "test": "vitest run",

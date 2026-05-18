@@ -1,3 +1,5 @@
+import { parseArgs as nodeParseArgs } from 'node:util';
+
 export interface ParsedArgs {
   command: string | undefined;
   positional: string[];
@@ -5,38 +7,25 @@ export interface ParsedArgs {
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
-  const positional: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const { values, positionals } = nodeParseArgs({
+    args: argv,
+    options: {
+      help: { type: 'boolean', short: 'h' },
+      json: { type: 'boolean' },
+      force: { type: 'boolean' },
+      'skip-existing': { type: 'boolean' },
+      port: { type: 'string' },
+    },
+    allowPositionals: true,
+    strict: false,
+  });
 
-  let i = 0;
-  while (i < argv.length) {
-    const arg = argv[i];
-
-    if (arg.startsWith('--')) {
-      const eqIdx = arg.indexOf('=');
-      if (eqIdx !== -1) {
-        flags[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
-      } else {
-        const key = arg.slice(2);
-        const next = argv[i + 1];
-        if (next !== undefined && !next.startsWith('-')) {
-          flags[key] = next;
-          i++;
-        } else {
-          flags[key] = true;
-        }
-      }
-    } else if (arg.startsWith('-') && arg.length === 2) {
-      flags[arg.slice(1)] = true;
-    } else {
-      positional.push(arg);
-    }
-
-    i++;
-  }
-
-  const [command, ...rest] = positional;
-  return { command, positional: rest, flags };
+  const [command, ...rest] = positionals as string[];
+  return {
+    command,
+    positional: rest,
+    flags: values as Record<string, string | boolean>,
+  };
 }
 
 export function flagBool(flags: Record<string, string | boolean>, name: string): boolean {
