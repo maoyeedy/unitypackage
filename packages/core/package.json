@@ -1,0 +1,29 @@
+{
+  "name": "unitypackage-core",
+  "version": "0.1.0",
+  "description": "Browser-safe .unitypackage parser and writer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc && tsc -p tsconfig.esm.json && printf '{\"type\":\"module\"}' > dist/esm/package.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepublishOnly": "npm run build && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  }
+}

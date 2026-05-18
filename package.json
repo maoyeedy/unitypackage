@@ -1,0 +1,29 @@
+{
+  "name": "unitypackage-tools-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*", "fixtures"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "build:core": "bun run --filter unitypackage-core build",
+    "build:web": "bun run --filter @unitypackage-tools/web build",
+    "build:cli": "bun run scripts/copy-web-assets.ts && bun run --filter unitypackage-tools build",
+    "test": "bun run --filter '*' test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "bun run --filter '*' typecheck",
+    "check": "bun run lint && bun run typecheck && bun run build && bun run test",
+    "dev:web": "bun run --filter @unitypackage-tools/web dev",
+    "pack:dry": "bun run build && npm pack --workspace unitypackage-core --dry-run && npm pack --workspace unitypackage-tools --dry-run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^22.15.17",
+    "eslint": "^9.26.0",
+    "globals": "^16.1.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^3.1.0"
+  }
+}

@@ -1,0 +1,91 @@
+# `.unitypackage` Format
+
+Unofficial spec derived from Unity exports, UnityCsReference, and tooling. Unity exports = source of truth.
+
+## Structure
+
+```
+package.unitypackage
+└── gzip (fflate)
+    └── tar (custom ustar, 512B blocks)
+        ├── <32-hex-guid>/
+        │   ├── pathname       # text, first line = asset path e.g. `Assets/Foo.cs`
+        │   ├── asset.meta     # raw .meta file bytes
+        │   ├── asset          # raw payload; absent for folders
+        │   └── preview.png    # optional thumbnail
+        └── ...
+```
+
+Not zip, AssetBundle, Addressables, or UPM.
+
+## Records
+
+Each tar dir = one Unity asset record. Dir name must match `^[0-9a-fA-F]{32}$`.
+
+| Entry | Required | Notes |
+|---|---|---|
+| `pathname` | Yes | Forward slashes, `Assets/...`. First line only. Reject absolute, `..`, empty, drive/UNC. UTF-8. |
+| `asset.meta` | Yes (files + folders) | Written to `<pathname>.meta`. Preserve byte-for-byte — GUID + import settings. Checks `metaData` as legacy fallback. |
+| `asset` | Files only | Written to `<pathname>`. Copy byte-for-byte. |
+| `preview.png` | No | Optional thumbnail. |
+
+Folder detection: `asset` present → file (create + write asset). No `asset` → folder (create dir + write `<pathname>.meta`).
+
+## GUID reference model
+
+```yaml
+m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
+```
+
+- References survive import because `.meta` GUIDs are preserved byte-for-byte.
+- Archive does **not** remap references by path.
+- Regenerating GUIDs requires rewriting YAML references.
+
+## Extraction security
+
+- Reject `..`, absolute paths, drive/UNC, symlinks, hardlinks, device files, FIFOs.
+- Decompression bomb guard.
+- Detect duplicate/case-colliding output paths.
+- Default: error on overwrite (flags: `--force`, `--skip-existing`).
+
+## Implementation
+
+- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6). Deps: `fflate` only.
+- **`packages/cli`**: extract, pack, inspect, verify, web.
+
+| Aspect | Detail |
+|---|---|
+| Gzip | `fflate`, sync in-memory |
+| Tar parser | Custom ~30-line ustar, no ext lib |
+| Entry name limit | 100 bytes (ustar) |
+| pathname read | First line, trimmed |
+| Legacy fallback | `asset.meta` → `metaData` |
+| GUID generation | MD5 of UTF-16LE path |
+| Archive model | Fully buffered (no streaming) |
+
+```ts
+interface UnityPackageEntry {
+  guid: string;
+  pathname: string;
+  asset?: Uint8Array;
+  meta?: Uint8Array;
+}
+```
+
+```sh
+unitypackage-tools extract <package> [out-dir] [--force] [--skip-existing]
+unitypackage-tools pack    <output> <src> <dest>...
+unitypackage-tools inspect <package> [--json]
+unitypackage-tools verify  <package> [--json]
+unitypackage-tools web     [--port <n>]
+```
+
+## Compatibility
+
+- Old exports: `metaData` instead of `asset.meta`, multi-line `pathname` (use first line only).
+- `preview.png` parsed but not surfaced (`--include-preview` TBD).
+- No streaming — full decompress in memory.
+
+## References
+
+`docs/` root — search "Unity Asset Packages" manual, UnityCsReference `AssetDatabase.bindings.cs`, [Autarkis unity-pack-rs](https://github.com/Autarkis/unity-pack-rs).

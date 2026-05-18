@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 0,
+  "package": {
+    "size": 200,
+    "sha256": "b051ead700a659226ee565586714d8b33c1eaa857c6cd2bebc550a4c16b5e17e"
+  },
+  "summary": {
+    "entries": 1,
+    "withAsset": 1,
+    "withMeta": 1,
+    "folders": 0
+  },
+  "entries": [
+    {
+      "guid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+      "pathname": "Assets/Minimal.cs",
+      "hasAsset": true,
+      "assetSize": 11,
+      "hasMeta": true
+    }
+  ]
+}
