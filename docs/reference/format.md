@@ -52,7 +52,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 ## Implementation
 
 - **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, includes structured diagnostics), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
-- **`packages/cli`**: extract, pack, inspect, verify, web.
+- **`packages/cli`**: extract, pack, inspect, verify, diff, doctor, web.
 
 | Aspect | Detail |
 |---|---|
@@ -83,12 +83,20 @@ interface UnityPackageParseDiagnostic {
 ```
 
 ```sh
-unitypackage-tools extract <package> [out-dir] [--force] [--skip-existing]
-unitypackage-tools pack    <output> <src> <dest>...
-unitypackage-tools inspect <package> [--json]
-unitypackage-tools verify  <package> [--json]
+unitypackage-tools extract <package> [out-dir] [--force] [--skip-existing] [--merge] [--filter <glob>]
+unitypackage-tools pack    <output> <src> <dest>... [--manifest <file.json>] [--gzip-level <0-9>]
+unitypackage-tools inspect <package> [--json] [--format tree] [--filter <ext>]
+unitypackage-tools verify  <package> [--json] [--strict]
+unitypackage-tools diff    <before> <after> [--json]
+unitypackage-tools doctor  <package>
 unitypackage-tools web     [--port <n>]
 ```
+
+CLI glob filters match full package pathnames. For nested shader assets, use
+`**/*.shader`; `*.shader` only matches root-level package paths.
+
+`doctor` reports structural health checks scoped to this format reference. It
+does not validate Unity YAML schemas.
 
 ## Compatibility
 

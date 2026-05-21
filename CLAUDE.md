@@ -26,8 +26,11 @@ Manual smoke (after `build`):
 ```
 node packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
 node packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
-node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test
+node packages/cli/dist/bin.js doctor  "fixtures/static/editor-packed.unitypackage"
 node scripts/fixtures-build.ts
+node packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
+node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"
+node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge
 ```
 
 ## Node versions
@@ -42,7 +45,7 @@ node scripts/fixtures-build.ts
 - `docs/reference/format.md` — `.unitypackage` format spec
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/publishing.md` — publishing checklist
-- `docs/todo.md` — roadmap, check before adding features
+- `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features
 
 ## Architecture Rules
 
@@ -53,6 +56,10 @@ node scripts/fixtures-build.ts
 ## Pitfalls
 
 - **NodeNext `.js` extensions** (`packages/cli`): all relative `.ts` imports must use `.js` extension in source.
+- **CLI glob filters match full package pathnames**: use `**/*.shader` for nested shader files; `*.shader` only matches root-level package paths.
+- **CLI JSON modes keep stdout parseable**: route progress, warnings, and summaries through stderr/logger helpers.
+- **`doctor` is format-scoped**: do not add Unity YAML schema validation unless a later plan explicitly asks for it.
+- **Generated fixtures currently include** `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, and `truncated`; use `minimal` vs `nested` for diff smoke, not `multi-entry`.
 - **`packages/core/tsconfig.json` omits `moduleResolution`** intentionally: TS 5.9 forbids `module:CommonJS` + `moduleResolution:Node16`. Don't add it.
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
 - **`apps/web` typecheck is `tsc -b`** (not `--noEmit`). `--noEmit` skips project reference resolution.

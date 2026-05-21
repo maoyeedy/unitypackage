@@ -27,3 +27,7 @@ export function error(msg: string): void {
     console.error(`ERROR: ${msg}`);
   }
 }
+
+export function progress(msg: string): void {
+  process.stderr.write(`${msg}\n`);
+}
