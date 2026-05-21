@@ -48,13 +48,14 @@ Exit criteria
 
 ### P3 - Parse warnings compatibility
 
-Expose warnings in a way that does not force existing callers to change. Update
-CLI and web call sites only where the new API shape requires it.
+Extend the Phase 1 parse diagnostics API for streaming and large-package
+workflows without forcing existing callers to change. Update CLI and web call
+sites only where the new API shape requires it.
 
 Exit criteria
 ```text
 - Existing calls to `parseUnityPackageEntries(data)` continue to compile.
-- Callers can opt into structured warnings through an overload or `{ collectWarnings: true }` options bag.
+- Callers can opt into structured warnings through the compatibility-preserving API shape established in Phase 1.
 - Core tests cover warning collection and default compatibility.
 - CLI and web typecheck against the final API.
 - Run: bun run --filter unitypackage-core test

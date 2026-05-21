@@ -40,7 +40,7 @@ Exit criteria
 ```text
 - `verify --strict` exits non-zero when warnings are present.
 - `verify` checks GUID values in `asset.meta` against directory names.
-- `verify` warns on unexpected files inside a GUID directory.
+- `verify` warns on unexpected files inside a GUID directory while allowing documented optional and legacy entries such as `preview.png` and `metaData`.
 - `pack --manifest <file.json>` reads `{ "src": "dst" }` pairs.
 - `pack --gzip-level <0-9>` controls compression level and validates the range.
 - Tests cover success and failure cases for all new flags.

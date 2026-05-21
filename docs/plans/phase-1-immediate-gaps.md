@@ -25,6 +25,7 @@ dependencies.
 Exit criteria
 ```text
 - `parseUnityPackageEntries` can expose structured warnings without breaking existing callers.
+- Diagnostics cover skipped or ignored records locked down in Phase 0, including empty pathnames, malformed tar entries, ignored `preview.png`, and permissive non-32-hex record prefixes if warnings are chosen for them.
 - `UnityPackageEntry` exposes `preview?` when a package contains `preview.png`.
 - `createUnityPackage` throws on duplicate GUID input.
 - Existing `parseUnityPackage` callers remain source-compatible.
