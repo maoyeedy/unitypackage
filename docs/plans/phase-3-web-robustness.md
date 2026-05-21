@@ -1,87 +1,39 @@
-# Phase 3 - Web Robustness
+# Phase 3 - Web Robustness - Ship Record
 
-## Context
+## What shipped
 
-This phase improves web performance, resilience, and state handling for larger
-packages. The app should stay interactive while parsing, render large file
-lists efficiently, support richer previews, and persist user-facing settings.
+Phase 3 improved the web app's performance, resilience, and state handling for
+larger packages. Parsing and download-all archive creation now run off the main
+thread, large file lists render through virtualization, richer previews and
+parser diagnostics are visible in the UI, and user-facing settings persist in
+the URL.
 
-## Phases
+- Package parsing now runs in a Vite-bundled module worker, keeps the UI responsive, shows the active package name while loading, and routes worker failures through the app error path.
+- Large package file lists now use virtualized rendering and memoized filtering/categorization while preserving existing filter behavior and stable desktop/mobile row layout.
+- Preview and settings UX now includes light/dark system color variables, raw text previews for common code/data files, URL-persisted `excludeMeta`, `categorize`, and `language` settings, visible parse diagnostics, and blob URLs that refresh when file content changes.
+- Download-all ZIP creation now runs in a Vite-bundled module worker so archive creation for large selections no longer blocks the main thread.
 
-| ID | Title | Goal | Parallel with | Depends on | Files | Subagent |
-|----|-------|------|---------------|------------|-------|----------|
-| P1 | Worker parsing and loading state | Move package parsing into a worker and show useful loading progress or file context. | P2 | - | `apps/web/src/App.tsx`, `apps/web/src/**/*.ts`, `apps/web/vite.config.ts`, `apps/web/package.json` | worker |
-| P2 | File list performance | Virtualize the file list and memoize filtering/categorization work. | P1 | - | `apps/web/src/components/FileList.tsx`, `apps/web/src/components/FileListItem.tsx`, `apps/web/src/App.css`, `apps/web/package.json` | worker |
-| P3 | Preview and settings UX | Add dark mode variables, text preview support, URL state for settings, parse diagnostics display, and robust blob URL refresh. | - | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/index.css`, `apps/web/src/components/*.tsx` | worker |
-| P4 | Download worker and integration | Move zip creation off the main thread or to streaming, then run full web/workspace verification. | - | P3 | `apps/web/src/App.tsx`, `apps/web/src/**/*.ts`, `apps/web/src/**/*.tsx`, `apps/web/package.json` | worker |
+## Files changed
 
-### P1 - Worker parsing and loading state
+| File | Change |
+|------|--------|
+| `apps/web/src/App.tsx` | Delegates parsing and download-all ZIP creation to workers, stores diagnostics, persists selected settings in URL state, and surfaces loading/error/diagnostic UI. |
+| `apps/web/src/parsePackage.worker.ts` | Added package parsing worker that returns extracted files and parser diagnostics. |
+| `apps/web/src/downloadZip.worker.ts` | Added download-all ZIP worker using `fflate` async ZIP creation. |
+| `apps/web/src/workerTypes.ts` | Added shared typed worker request/response contracts. |
+| `apps/web/src/components/FileList.tsx` | Virtualized file list rows with `@tanstack/react-virtual` and memoized filtering/categorization. |
+| `apps/web/src/components/FileListItem.tsx` | Supports virtual row measurement, text previews, and content-sensitive blob URL refresh. |
+| `apps/web/src/App.css` | Added virtual list layout, diagnostics styling, preview styling, and dark-mode CSS variables. |
+| `apps/web/src/index.css` | Reconciled root/global styling with the App-level theme variables. |
+| `apps/web/package.json` | Added `@tanstack/react-virtual`. |
+| `bun.lock` | Updated lockfile for the new virtualization dependency. |
+| `.apply-plan/checkpoints/P1.md` | Recorded the worker parsing phase checkpoint. |
+| `.apply-plan/checkpoints/P2.md` | Recorded the file list performance phase checkpoint. |
+| `.apply-plan/checkpoints/P3.md` | Recorded the preview/settings/diagnostics phase checkpoint. |
+| `.apply-plan/checkpoints/P4.md` | Recorded the download worker and integration phase checkpoint. |
 
-Move the parse work off the main thread using the existing Vite/React setup.
-Expose enough status for the app to show which file is being processed or a
-meaningful loading state.
+## Design notes
 
-Exit criteria
-```text
-- Package parsing runs in a Web Worker rather than the main React render path.
-- Large package parsing does not block basic UI updates.
-- Loading UI includes the current file name or comparable processing context.
-- Worker failures surface through the app error path.
-- Run: bun run --filter @unitypackage-tools/web build
-- Run: bun run typecheck
-```
-
-### P2 - File list performance
-
-Reduce DOM and computation cost for large packages without changing existing
-filtering semantics.
-
-Exit criteria
-```text
-- File list rendering is virtualized with `react-window`, `tanstack/virtual`, or an equivalent existing dependency choice.
-- `getFilteredAndCategorizedFiles` results are memoized so unrelated renders do not recompute the list.
-- File list item layout remains stable at desktop and mobile widths.
-- Run: bun run --filter @unitypackage-tools/web build
-```
-
-### P3 - Preview and settings UX
-
-Add the remaining UX correctness items while following the existing component
-style. Phase 1 already made the image preview setting visible and conditional,
-so this phase should focus on richer previews, persisted settings, and surfacing
-parser diagnostics. Do not introduce a landing page or broad redesign.
-
-Exit criteria
-```text
-- Dark mode uses `prefers-color-scheme` CSS variables at body/App scope.
-- Text preview supports code/data file extensions from the roadmap with raw or highlighted content.
-- URL state persists `excludeMeta`, `categorize`, and `language`.
-- Parse diagnostics from `parseUnityPackageEntries` are visible to users without blocking successful extraction.
-- `FileListItem` blob URLs update when `content` changes.
-- Run: bun run --filter @unitypackage-tools/web build
-```
-
-### P4 - Download worker and integration
-
-Move all expensive download-all archive creation work away from the main thread
-or use a streaming approach. Then reconcile worker types and build behavior.
-
-Exit criteria
-```text
-- `downloadAll` zip creation no longer blocks the main thread for large selections.
-- Worker code is typed and bundled by the existing Vite setup.
-- No hand edits are made to `packages/cli/assets/web/`.
-- Run: bun run --filter @unitypackage-tools/web build
-- Run: bun run check
-```
-
-## Verification
-
-```sh
-bun run --filter @unitypackage-tools/web build
-bun run check
-```
-
-Manual smoke:
-- Start `bun run dev:web`, load a large package if available, and confirm parsing, filtering, previews, settings URL state, and download-all behavior.
-- Check both light and dark system color schemes.
+- **Worker-first expensive operations:** Parsing and download-all ZIP creation use Vite module workers so CPU-heavy package work does not run in React render/event paths, while Blob creation and click-triggered downloads stay in the main thread where DOM APIs are available.
+- **Headless virtualization:** The file list uses `@tanstack/react-virtual` instead of a prebuilt list component because it fits the existing list/category markup while limiting DOM nodes for large packages.
+- **Diagnostics stay non-blocking:** Parser diagnostics are displayed after successful extraction because `parseUnityPackageEntries` can return useful files alongside warnings about package shape.

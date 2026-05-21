@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface FileListItemProps {
   path: string;
@@ -6,6 +6,8 @@ interface FileListItemProps {
   maintainStructure: boolean;
   enablePreview: boolean;
   showFileSize: boolean;
+  style?: React.CSSProperties;
+  'data-index'?: number;
 }
 
 const formatFileSize = (bytes: number): string => {
@@ -21,52 +23,97 @@ const isImageFile = (path: string): boolean => {
   return ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tga'].includes(extension);
 };
 
-const FileListItem: React.FC<FileListItemProps> = ({
+const isTextPreviewFile = (path: string): boolean => {
+  const extension = path.split('.').pop()?.toLowerCase() ?? '';
+  return [
+    'anim',
+    'asmdef',
+    'asmref',
+    'asset',
+    'cginc',
+    'compute',
+    'controller',
+    'cs',
+    'css',
+    'glsl',
+    'hlsl',
+    'html',
+    'js',
+    'json',
+    'jsx',
+    'mat',
+    'md',
+    'meta',
+    'prefab',
+    'shader',
+    'ts',
+    'tsx',
+    'txt',
+    'unity',
+    'uss',
+    'uxml',
+    'xml',
+    'yaml',
+    'yml',
+  ].includes(extension);
+};
+
+const textDecoder = new TextDecoder('utf-8', { fatal: false });
+
+const getTextPreview = (content: Uint8Array): string => {
+  const decoded = textDecoder.decode(content.slice(0, 4096));
+  return content.byteLength > 4096 ? `${decoded}\n...` : decoded;
+};
+
+const FileListItem = React.forwardRef<HTMLLIElement, FileListItemProps>(({
   path,
   content,
   maintainStructure,
   enablePreview,
   showFileSize,
-}) => {
+  style,
+  'data-index': dataIndex,
+}, ref) => {
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
-  const urlRef = useRef<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const fileName = maintainStructure ? path : path.split('/').pop() ?? path;
 
   useEffect(() => {
+    if (!content) {
+      setBlobUrl(null);
+      return undefined;
+    }
+
+    const blob = new Blob([content as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
+    const nextUrl = URL.createObjectURL(blob);
+    setBlobUrl(nextUrl);
+
     return () => {
-      if (urlRef.current) {
-        URL.revokeObjectURL(urlRef.current);
-        urlRef.current = null;
-      }
+      URL.revokeObjectURL(nextUrl);
     };
-  }, []);
+  }, [content]);
 
   if (!content) {
     console.warn(`Content is undefined for file: ${path}`);
-    return <li className="file-list-item">Error loading: {fileName}</li>;
-  }
-
-  if (!urlRef.current) {
-    const blob = new Blob([content as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' });
-    urlRef.current = URL.createObjectURL(blob);
+    return <li ref={ref} data-index={dataIndex} className="file-list-item virtual-row" style={style}>Error loading: {fileName}</li>;
   }
 
   const handleMouseOver = () => {
-    if (enablePreview && isImageFile(path)) {
+    if (enablePreview && (isImageFile(path) || isTextPreviewFile(path))) {
       setIsPreviewVisible(true);
     }
   };
 
   const handleMouseOut = () => {
-    if (enablePreview && isImageFile(path)) {
+    if (enablePreview && (isImageFile(path) || isTextPreviewFile(path))) {
       setIsPreviewVisible(false);
     }
   };
 
   return (
-    <li className="file-list-item">
+    <li ref={ref} data-index={dataIndex} className="file-list-item virtual-row" style={style}>
       <a
-        href={urlRef.current || '#'}
+        href={blobUrl || '#'}
         download={fileName}
         onMouseOver={handleMouseOver}
         onMouseOut={handleMouseOut}
@@ -79,10 +126,13 @@ const FileListItem: React.FC<FileListItemProps> = ({
         </span>
       )}
       {enablePreview && isImageFile(path) && isPreviewVisible && (
-        <img src={urlRef.current || ''} alt={`${fileName} preview`} className="preview" />
+        <img src={blobUrl || ''} alt={`${fileName} preview`} className="preview" />
+      )}
+      {enablePreview && isTextPreviewFile(path) && isPreviewVisible && (
+        <pre className="preview text-preview">{getTextPreview(content)}</pre>
       )}
     </li>
   );
-};
+});
 
 export default FileListItem;
