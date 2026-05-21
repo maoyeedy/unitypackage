@@ -12,7 +12,7 @@ lists efficiently, support richer previews, and persist user-facing settings.
 |----|-------|------|---------------|------------|-------|----------|
 | P1 | Worker parsing and loading state | Move package parsing into a worker and show useful loading progress or file context. | P2 | - | `apps/web/src/App.tsx`, `apps/web/src/**/*.ts`, `apps/web/vite.config.ts`, `apps/web/package.json` | worker |
 | P2 | File list performance | Virtualize the file list and memoize filtering/categorization work. | P1 | - | `apps/web/src/components/FileList.tsx`, `apps/web/src/components/FileListItem.tsx`, `apps/web/src/App.css`, `apps/web/package.json` | worker |
-| P3 | Preview and settings UX | Add dark mode variables, text preview support, simpler image preview rendering, URL state for settings, and robust blob URL refresh. | - | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/index.css`, `apps/web/src/components/*.tsx` | worker |
+| P3 | Preview and settings UX | Add dark mode variables, text preview support, URL state for settings, parse diagnostics display, and robust blob URL refresh. | - | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/index.css`, `apps/web/src/components/*.tsx` | worker |
 | P4 | Download worker and integration | Move zip creation off the main thread or to streaming, then run full web/workspace verification. | - | P3 | `apps/web/src/App.tsx`, `apps/web/src/**/*.ts`, `apps/web/src/**/*.tsx`, `apps/web/package.json` | worker |
 
 ### P1 - Worker parsing and loading state
@@ -47,14 +47,16 @@ Exit criteria
 ### P3 - Preview and settings UX
 
 Add the remaining UX correctness items while following the existing component
-style. Do not introduce a landing page or broad redesign.
+style. Phase 1 already made the image preview setting visible and conditional,
+so this phase should focus on richer previews, persisted settings, and surfacing
+parser diagnostics. Do not introduce a landing page or broad redesign.
 
 Exit criteria
 ```text
 - Dark mode uses `prefers-color-scheme` CSS variables at body/App scope.
 - Text preview supports code/data file extensions from the roadmap with raw or highlighted content.
-- Image preview conditionally renders only when needed; no hidden always-mounted image node remains.
 - URL state persists `excludeMeta`, `categorize`, and `language`.
+- Parse diagnostics from `parseUnityPackageEntries` are visible to users without blocking successful extraction.
 - `FileListItem` blob URLs update when `content` changes.
 - Run: bun run --filter @unitypackage-tools/web build
 ```

@@ -4,7 +4,7 @@ import { createUnityPackage, type CreateUnityPackageEntry } from 'unitypackage-c
 import { type Meta, parseMeta, generateMeta, serializeMeta } from '../util/meta.js';
 import { sanitizePackagePath } from '../util/path.js';
 import { safeReadFile, safeGetStats } from '../util/fs.js';
-import { info } from '../util/logger.js';
+import { info, warn } from '../util/logger.js';
 
 async function getExistingMeta(assetPath: string): Promise<Meta | null> {
   const content = await safeReadFile(assetPath + '.meta');
@@ -40,9 +40,12 @@ async function collectDirectoryEntries(
   const promises: Promise<CreateUnityPackageEntry[]>[] = [];
 
   for (const entry of dirEntries) {
-    if (entry.name.endsWith('.meta')) continue;
-
     const fullSourcePath = path.join(sourceDir, entry.name);
+    if (entry.name.endsWith('.meta')) {
+      info(`Skipping source meta file: ${fullSourcePath}`);
+      continue;
+    }
+
     const entryPathInPackage = path.posix.join(pathInPackageRoot, entry.name);
     const isDirectory = entry.isDirectory();
 
@@ -69,6 +72,16 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
 
   const processPromises = Object.entries(sanitized).map(async ([sourcePath, pathInPackage]) => {
     const absoluteSourcePath = path.resolve(sourcePath);
+
+    if (path.basename(sourcePath).endsWith('.meta')) {
+      info(`Skipping source meta file: ${absoluteSourcePath}`);
+      return [];
+    }
+
+    if (!pathInPackage.startsWith('Assets/')) {
+      warn(`pathInPackage '${pathInPackage}' does not start with 'Assets/'`);
+    }
+
     const stats = await safeGetStats(absoluteSourcePath);
 
     if (!stats) {

@@ -57,6 +57,7 @@ async function runExtract(positional: string[], flags: Record<string, string | b
   await extract(packagePath, outputDir, {
     force: flagBool(flags, 'force'),
     skipExisting: flagBool(flags, 'skip-existing'),
+    noMeta: flagBool(flags, 'no-meta'),
   });
 }
 
@@ -108,6 +109,7 @@ Flags:
 extract flags:
   --force            Overwrite existing files
   --skip-existing    Skip files that already exist
+  --no-meta          Do not write .meta files
 
 pack: pairs of <source-path> <path-in-package>
 

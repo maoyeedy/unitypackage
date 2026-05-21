@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createUnityPackage } from 'unitypackage-core';
 import { extract } from './commands/extract.js';
 import { pack } from './commands/pack.js';
@@ -70,6 +70,19 @@ describe('extract', () => {
     await expect(extract(packagePath, outDir, { force: true })).resolves.not.toThrow();
   });
 
+  it('skips meta files with --no-meta', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildMinimalPackage());
+    await extract(packagePath, outDir, { noMeta: true });
+
+    const asset = await readFile(path.join(outDir, 'Assets/Scripts/MyScript.cs'));
+    expect(decoder.decode(asset)).toBe('public class MyScript {}');
+    await expect(readFile(path.join(outDir, 'Assets/Scripts/MyScript.cs.meta'))).rejects.toThrow();
+  });
+
   it('skips traversal paths', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'traversal.unitypackage');
@@ -88,6 +101,32 @@ describe('extract', () => {
 
     // File must not exist outside outDir
     await expect(readFile(path.join(dir, 'escape.txt'))).rejects.toThrow();
+  });
+
+  it('reports skipped traversal entries in the summary', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'traversal.unitypackage');
+    const outDir = path.join(dir, 'out');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const data = createUnityPackage([
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: '../escape.txt',
+        asset: encoder.encode('escaped'),
+        meta: encoder.encode('guid: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+      },
+    ]);
+
+    try {
+      await writeFile(packagePath, data);
+      await extract(packagePath, outDir);
+      expect(logSpy).toHaveBeenCalledWith('Skipped 1 traversal entry.');
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });
 
@@ -124,6 +163,43 @@ describe('pack', () => {
     const { entries } = await inspect(packageFile);
     expect(entries.some(e => e.pathname === 'Assets/Editor' && !e.hasAsset)).toBe(true);
     expect(entries.some(e => e.pathname === 'Assets/Editor/Tool.cs' && e.hasAsset)).toBe(true);
+  });
+
+  it('warns when pathInPackage does not start with Assets/', async () => {
+    const dir = await makeTempDir();
+    const sourceFile = path.join(dir, 'MyScript.cs');
+    const packageFile = path.join(dir, 'out.unitypackage');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await writeFile(sourceFile, 'public class MyScript {}');
+
+    try {
+      await pack({ [sourceFile]: 'Scripts/MyScript.cs' }, packageFile);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "WARNING: pathInPackage 'Scripts/MyScript.cs' does not start with 'Assets/'",
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('logs skipped source meta files', async () => {
+    const dir = await makeTempDir();
+    const sourceDir = path.join(dir, 'Editor');
+    const metaFile = path.join(sourceDir, 'Tool.cs.meta');
+    const packageFile = path.join(dir, 'out.unitypackage');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await mkdir(sourceDir);
+    await writeFile(path.join(sourceDir, 'Tool.cs'), 'public class Tool {}');
+    await writeFile(metaFile, 'fileFormatVersion: 2\nguid: abcdefabcdefabcdefabcdefabcdefab\n');
+
+    try {
+      await pack({ [sourceDir]: 'Assets/Editor' }, packageFile);
+      expect(logSpy).toHaveBeenCalledWith(`Skipping source meta file: ${metaFile}`);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });
 

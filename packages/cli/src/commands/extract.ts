@@ -9,11 +9,16 @@ import { CliError, EXIT } from '../util/exit.js';
 export interface ExtractOptions {
   force?: boolean;
   skipExisting?: boolean;
+  noMeta?: boolean;
 }
 
 interface WriteTask {
   dest: string;
   data: Uint8Array;
+}
+
+function hasTraversalSegment(rawPath: string): boolean {
+  return rawPath.split(/[\\/]+/).some(segment => segment === '..');
 }
 
 export async function extract(packagePath: string, outputDir?: string, opts: ExtractOptions = {}): Promise<void> {
@@ -22,12 +27,20 @@ export async function extract(packagePath: string, outputDir?: string, opts: Ext
   const entries = parseUnityPackageEntries(new Uint8Array(raw));
 
   const tasks: WriteTask[] = [];
+  let skippedTraversal = 0;
 
   for (const entry of entries) {
+    if (hasTraversalSegment(entry.pathname)) {
+      skippedTraversal++;
+      warn(`Skipping '${entry.pathname}' — path escapes output directory`);
+      continue;
+    }
+
     const safePath = sanitizeFsPath(entry.pathname);
     const dest = path.join(outDir, safePath);
 
     if (!isInside(outDir, dest)) {
+      skippedTraversal++;
       warn(`Skipping '${entry.pathname}' — path escapes output directory`);
       continue;
     }
@@ -35,14 +48,14 @@ export async function extract(packagePath: string, outputDir?: string, opts: Ext
     if (!entry.asset) {
       // Folder entry — just ensure directory exists and write meta if present
       await ensureDir(dest);
-      if (entry.meta) {
+      if (entry.meta && !opts.noMeta) {
         tasks.push({ dest: dest + '.meta', data: entry.meta });
       }
       continue;
     }
 
     tasks.push({ dest, data: entry.asset });
-    if (entry.meta) {
+    if (entry.meta && !opts.noMeta) {
       tasks.push({ dest: dest + '.meta', data: entry.meta });
     }
   }
@@ -87,5 +100,6 @@ export async function extract(packagePath: string, outputDir?: string, opts: Ext
   }
 
   if (skipped > 0) info(`Skipped ${skipped} existing file(s).`);
+  if (skippedTraversal > 0) info(`Skipped ${skippedTraversal} traversal entr${skippedTraversal === 1 ? 'y' : 'ies'}.`);
   info(`Extracted ${written} file(s) to ${outDir}`);
 }

@@ -28,7 +28,7 @@ The core parser preserves the archive prefix as `guid` and does not validate thi
 | `pathname` | Yes | Forward slashes, `Assets/...`. First line only. Reject absolute, `..`, empty, drive/UNC. UTF-8. |
 | `asset.meta` | Yes (files + folders) | Written to `<pathname>.meta`. Preserve byte-for-byte — GUID + import settings. Checks `metaData` as legacy fallback. |
 | `asset` | Files only | Written to `<pathname>`. Copy byte-for-byte. |
-| `preview.png` | No | Optional thumbnail. |
+| `preview.png` | No | Optional thumbnail, surfaced as `UnityPackageEntry.preview`. Flat extraction ignores it. |
 
 Folder detection: `asset` present → file (create + write asset). No `asset` → folder (create dir + write `<pathname>.meta`).
 
@@ -51,7 +51,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 
 ## Implementation
 
-- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6). Deps: `fflate` only.
+- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, includes structured diagnostics), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
 - **`packages/cli`**: extract, pack, inspect, verify, web.
 
 | Aspect | Detail |
@@ -71,6 +71,14 @@ interface UnityPackageEntry {
   pathname: string;
   asset?: Uint8Array;
   meta?: Uint8Array;
+  preview?: Uint8Array;
+}
+
+interface UnityPackageParseDiagnostic {
+  code: 'empty-pathname' | 'ignored-preview' | 'malformed-tar-entry' | 'non-standard-guid';
+  message: string;
+  path?: string;
+  guid?: string;
 }
 ```
 
@@ -85,7 +93,7 @@ unitypackage-tools web     [--port <n>]
 ## Compatibility
 
 - Old exports: `metaData` instead of `asset.meta`, multi-line `pathname` (use first line only).
-- `preview.png` parsed but not surfaced (`--include-preview` TBD).
+- `preview.png` surfaced by `parseUnityPackageEntries`; flat `parseUnityPackage` ignores it.
 - No streaming — full decompress in memory.
 
 ## References

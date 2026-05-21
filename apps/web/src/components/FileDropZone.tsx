@@ -1,4 +1,5 @@
 import React from 'react';
+import { useState } from 'react';
 
 interface FileDropZoneProps {
   onFileDrop: (file: File) => void;
@@ -7,14 +8,33 @@ interface FileDropZoneProps {
 }
 
 const FileDropZone: React.FC<FileDropZoneProps> = ({ onFileDrop, label, invalidFileMessage }) => {
+  const [isDragActive, setIsDragActive] = useState(false);
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(true);
+  };
+
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsDragActive(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    setIsDragActive(false);
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
@@ -44,7 +64,10 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onFileDrop, label, invalidF
     <>
       <div
         id="dropZone"
+        className={isDragActive ? 'drag-active' : undefined}
+        onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => document.getElementById('fileInput')?.click()}
       >

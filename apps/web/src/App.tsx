@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Component, useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import './App.css';
 import { zip } from 'fflate';
 
-import { parseUnityPackage } from 'unitypackage-core';
-import type { ExtractedFileContent } from 'unitypackage-core';
+import { parseUnityPackageEntries } from 'unitypackage-core';
+import type { ExtractedFileContent, UnityPackageEntry } from 'unitypackage-core';
 
 import FileDropZone from './components/FileDropZone';
 import FileList from './components/FileList';
@@ -17,7 +18,48 @@ const isValidLanguage = (lang: string): lang is Language => {
   return lang in translations;
 };
 
-function App() {
+const entriesToFiles = (entries: UnityPackageEntry[]): ExtractedFileContent => {
+  const result: ExtractedFileContent = {};
+
+  for (const entry of entries) {
+    if (entry.asset) {
+      result[entry.pathname] = entry.asset;
+    }
+
+    if (entry.meta) {
+      result[`${entry.pathname}.meta`] = entry.meta;
+    }
+  }
+
+  return result;
+};
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    console.error('Unhandled web error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="App app-error" role="alert">
+          <h1>Something went wrong.</h1>
+          <p>Reload the page and try opening the package again.</p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function AppContent() {
   const [files, setFiles] = useState<ExtractedFileContent>({});
   const [excludeMeta, setExcludeMeta] = useState(true);
   const [categorizeByExtension, setCategorizeByExtension] = useState(true);
@@ -46,7 +88,7 @@ function App() {
     const startTime = performance.now();
     try {
       const buffer = await file.arrayBuffer();
-      const extracted = parseUnityPackage(new Uint8Array(buffer));
+      const extracted = entriesToFiles(parseUnityPackageEntries(new Uint8Array(buffer)));
       const endTime = performance.now();
       console.log(`Extraction completed in ${(endTime - startTime).toFixed(2)}ms`);
       setFiles(extracted);
@@ -132,6 +174,14 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }
 

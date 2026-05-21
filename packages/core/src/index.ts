@@ -7,6 +7,7 @@ export interface UnityPackageEntry {
   pathname: string;
   asset?: Uint8Array;
   meta?: Uint8Array;
+  preview?: Uint8Array;
 }
 
 export interface CreateUnityPackageEntry {
@@ -20,7 +21,25 @@ export interface CreateUnityPackageOptions {
   gzipLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 }
 
+export type UnityPackageParseDiagnosticCode =
+  | 'empty-pathname'
+  | 'ignored-preview'
+  | 'malformed-tar-entry'
+  | 'non-standard-guid';
+
+export interface UnityPackageParseDiagnostic {
+  code: UnityPackageParseDiagnosticCode;
+  message: string;
+  path?: string;
+  guid?: string;
+}
+
+export type UnityPackageEntriesResult = UnityPackageEntry[] & {
+  diagnostics: UnityPackageParseDiagnostic[];
+};
+
 const BLOCK_SIZE = 512;
+const UNITY_GUID_PATTERN = /^[0-9a-fA-F]{32}$/;
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
@@ -40,16 +59,28 @@ export function parseUnityPackage(data: Uint8Array): ExtractedFileContent {
   return result;
 }
 
-export function parseUnityPackageEntries(data: Uint8Array): UnityPackageEntry[] {
+export function parseUnityPackageEntries(data: Uint8Array): UnityPackageEntriesResult {
+  const diagnostics: UnityPackageParseDiagnostic[] = [];
   const decompressed = gunzipSync(data);
-  const tarFiles = parseTar(decompressed);
-  return mapUnityEntries(tarFiles);
+  const tarFiles = parseTar(decompressed, diagnostics);
+  const entries = mapUnityEntries(tarFiles, diagnostics) as UnityPackageEntriesResult;
+  Object.defineProperty(entries, 'diagnostics', {
+    value: diagnostics,
+    enumerable: false,
+  });
+  return entries;
 }
 
 export function createUnityPackage(entries: CreateUnityPackageEntry[], options: CreateUnityPackageOptions = {}): Uint8Array {
   const tarEntries: Uint8Array[] = [];
+  const guids = new Set<string>();
 
   for (const entry of entries) {
+    if (guids.has(entry.guid)) {
+      throw new Error(`Duplicate GUID in package entries: ${entry.guid}`);
+    }
+    guids.add(entry.guid);
+
     tarEntries.push(createTarEntry(`${entry.guid}/pathname`, textEncoder.encode(entry.pathname)));
     tarEntries.push(createTarEntry(`${entry.guid}/asset.meta`, entry.meta));
 
@@ -63,7 +94,7 @@ export function createUnityPackage(entries: CreateUnityPackageEntry[], options: 
   return gzipSync(tar, { level: options.gzipLevel ?? 6 });
 }
 
-function parseTar(data: Uint8Array): Record<string, Uint8Array> {
+function parseTar(data: Uint8Array, diagnostics: UnityPackageParseDiagnostic[]): Record<string, Uint8Array> {
   const files: Record<string, Uint8Array> = {};
   let offset = 0;
 
@@ -74,6 +105,10 @@ function parseTar(data: Uint8Array): Record<string, Uint8Array> {
 
     const name = textDecoder.decode(header.slice(0, 100)).replace(/\0/g, '').trim();
     if (!name) {
+      diagnostics.push({
+        code: 'malformed-tar-entry',
+        message: 'Skipped tar entry with an empty name.',
+      });
       offset += BLOCK_SIZE;
       continue;
     }
@@ -81,6 +116,11 @@ function parseTar(data: Uint8Array): Record<string, Uint8Array> {
     const sizeStr = textDecoder.decode(header.slice(124, 136)).replace(/\0/g, '').trim();
     const size = parseInt(sizeStr, 8);
     if (Number.isNaN(size)) {
+      diagnostics.push({
+        code: 'malformed-tar-entry',
+        message: 'Skipped tar entry with an invalid size field.',
+        path: name,
+      });
       offset += BLOCK_SIZE;
       continue;
     }
@@ -89,6 +129,12 @@ function parseTar(data: Uint8Array): Record<string, Uint8Array> {
 
     if (offset + size <= data.length && !name.endsWith('/')) {
       files[name] = data.slice(offset, offset + size);
+    } else if (offset + size > data.length) {
+      diagnostics.push({
+        code: 'malformed-tar-entry',
+        message: 'Skipped tar entry whose content extends beyond the archive.',
+        path: name,
+      });
     }
 
     offset += Math.ceil(size / BLOCK_SIZE) * BLOCK_SIZE;
@@ -97,7 +143,7 @@ function parseTar(data: Uint8Array): Record<string, Uint8Array> {
   return files;
 }
 
-function mapUnityEntries(files: Record<string, Uint8Array>): UnityPackageEntry[] {
+function mapUnityEntries(files: Record<string, Uint8Array>, diagnostics: UnityPackageParseDiagnostic[]): UnityPackageEntry[] {
   const result: UnityPackageEntry[] = [];
 
   for (const [path, content] of Object.entries(files)) {
@@ -111,12 +157,39 @@ function mapUnityEntries(files: Record<string, Uint8Array>): UnityPackageEntry[]
 
     try {
       const pathname = textDecoder.decode(content).split('\n')[0].trim();
-      if (!pathname) continue;
+      if (!pathname) {
+        diagnostics.push({
+          code: 'empty-pathname',
+          message: 'Skipped record with an empty pathname.',
+          path,
+          guid,
+        });
+        continue;
+      }
+
+      if (!UNITY_GUID_PATTERN.test(guid)) {
+        diagnostics.push({
+          code: 'non-standard-guid',
+          message: 'Record prefix is not a 32-character hexadecimal GUID.',
+          path,
+          guid,
+        });
+      }
 
       const asset = files[`${guid}/asset`];
       const meta = files[`${guid}/asset.meta`] ?? files[`${guid}/metaData`];
+      const preview = files[`${guid}/preview.png`];
 
-      result.push({ guid, pathname, asset, meta });
+      if (preview) {
+        diagnostics.push({
+          code: 'ignored-preview',
+          message: 'preview.png is exposed on entries and ignored by flat parsing.',
+          path: `${guid}/preview.png`,
+          guid,
+        });
+      }
+
+      result.push({ guid, pathname, asset, meta, preview });
     } catch {
       continue;
     }

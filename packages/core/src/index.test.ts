@@ -122,7 +122,15 @@ describe('parseUnityPackage', () => {
     const parsedFiles = parseUnityPackage(data);
 
     expect(parsedEntries).toHaveLength(1);
-    expect(parsedEntries[0]).not.toHaveProperty('preview');
+    expect(decoder.decode(parsedEntries[0].preview!)).toBe('thumbnail');
+    expect(parsedEntries.diagnostics).toEqual([
+      {
+        code: 'ignored-preview',
+        message: 'preview.png is exposed on entries and ignored by flat parsing.',
+        path: `${guid}/preview.png`,
+        guid,
+      },
+    ]);
     expect(Object.keys(parsedFiles)).toEqual(['Assets/Texture.png', 'Assets/Texture.png.meta']);
   });
 
@@ -164,6 +172,14 @@ describe('parseUnityPackage', () => {
     const parsedFiles = parseUnityPackage(data);
 
     expect(parsedEntries).toEqual([]);
+    expect(parsedEntries.diagnostics).toEqual([
+      {
+        code: 'empty-pathname',
+        message: 'Skipped record with an empty pathname.',
+        path: `${guid}/pathname`,
+        guid,
+      },
+    ]);
     expect(parsedFiles).toEqual({});
   });
 
@@ -217,6 +233,14 @@ describe('parseUnityPackage', () => {
     expect(parsedEntries).toHaveLength(1);
     expect(parsedEntries[0].guid).toBe(guid);
     expect(parsedEntries[0].pathname).toBe('Assets/LooseGuid.asset');
+    expect(parsedEntries.diagnostics).toEqual([
+      {
+        code: 'non-standard-guid',
+        message: 'Record prefix is not a 32-character hexadecimal GUID.',
+        path: `${guid}/pathname`,
+        guid,
+      },
+    ]);
   });
 
   it('skips malformed tar entries with invalid size fields', () => {
@@ -225,7 +249,16 @@ describe('parseUnityPackage', () => {
     header.set(encoder.encode('not-octal'), 124);
     const data = gzipSync(concatUint8Arrays([header, new Uint8Array(1024)]));
 
-    expect(parseUnityPackageEntries(data)).toEqual([]);
+    const parsedEntries = parseUnityPackageEntries(data);
+
+    expect(parsedEntries).toEqual([]);
+    expect(parsedEntries.diagnostics).toEqual([
+      {
+        code: 'malformed-tar-entry',
+        message: 'Skipped tar entry with an invalid size field.',
+        path: 'bad/pathname',
+      },
+    ]);
     expect(parseUnityPackage(data)).toEqual({});
   });
 
@@ -243,6 +276,27 @@ describe('parseUnityPackage', () => {
 });
 
 describe('createUnityPackage', () => {
+  it('throws for duplicate GUID entries', () => {
+    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    expect(() =>
+      createUnityPackage([
+        {
+          guid,
+          pathname: 'Assets/First.asset',
+          asset: encoder.encode('first'),
+          meta: encoder.encode('first meta'),
+        },
+        {
+          guid,
+          pathname: 'Assets/Second.asset',
+          asset: encoder.encode('second'),
+          meta: encoder.encode('second meta'),
+        },
+      ], { gzipLevel: 1 }),
+    ).toThrow(`Duplicate GUID in package entries: ${guid}`);
+  });
+
   it('enforces the ustar 100-byte entry name limit', () => {
     const exactLimitGuid = 'a'.repeat(89);
     const tooLongGuid = 'b'.repeat(90);

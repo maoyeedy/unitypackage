@@ -3,8 +3,9 @@
 ## Context
 
 This phase evolves the core API for streaming, reproducible package creation,
-large package sizing, parse warnings, and browser-side repacking. Changes should
-preserve compatibility for existing consumers while enabling new workflows.
+large package sizing, Phase 1 diagnostics ergonomics, and browser-side
+repacking. Changes should preserve compatibility for existing consumers while
+enabling new workflows.
 
 ## Phases
 
@@ -12,7 +13,7 @@ preserve compatibility for existing consumers while enabling new workflows.
 |----|-------|------|---------------|------------|-------|----------|
 | P1 | Streaming parse API | Add `parseUnityPackageStream(reader: ReadableStream)` yielding `AsyncIterable<UnityPackageEntry>`. | P2 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
 | P2 | Deterministic and sized package creation | Make package creation deterministic and add a size-estimation path before allocation. | P1 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
-| P3 | Parse warnings compatibility | Export parse warnings from `parseUnityPackageEntries` through a compatibility-preserving overload or options bag. | - | P1, P2 | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md`, `packages/cli/src/**/*.ts`, `apps/web/src/**/*.tsx` | worker |
+| P3 | Parse diagnostics ergonomics | Formalize and extend the Phase 1 diagnostics API for streaming, options-bag ergonomics, and caller adoption. | - | P1, P2 | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md`, `packages/cli/src/**/*.ts`, `apps/web/src/**/*.tsx` | worker |
 | P4 | Browser-side repack | Expose `createUnityPackage` through the web app as a repack-selection download flow. | - | P3 | `apps/web/src/App.tsx`, `apps/web/src/components/*.tsx`, `apps/web/src/App.css`, `packages/core/src/index.ts` | worker |
 
 ### P1 - Streaming parse API
@@ -46,18 +47,20 @@ Exit criteria
 - Run: bun run --filter unitypackage-core build
 ```
 
-### P3 - Parse warnings compatibility
+### P3 - Parse diagnostics ergonomics
 
-Extend the Phase 1 parse diagnostics API for streaming and large-package
-workflows without forcing existing callers to change. Update CLI and web call
-sites only where the new API shape requires it.
+Formalize the Phase 1 parse diagnostics API for streaming and large-package
+workflows without forcing existing callers to change. Keep the existing
+array-compatible diagnostics access working while adding any options-bag or
+streaming integration needed by the new APIs.
 
 Exit criteria
 ```text
 - Existing calls to `parseUnityPackageEntries(data)` continue to compile.
-- Callers can opt into structured warnings through the compatibility-preserving API shape established in Phase 1.
-- Core tests cover warning collection and default compatibility.
-- CLI and web typecheck against the final API.
+- Callers can use the structured diagnostics established in Phase 1 through the final compatibility-preserving API shape.
+- Streaming parse diagnostics use the same codes and structure as buffer parsing.
+- Core README documents diagnostics, `UnityPackageEntry.preview`, and duplicate GUID rejection.
+- CLI and web typecheck against the final API and adopt diagnostics only where useful.
 - Run: bun run --filter unitypackage-core test
 - Run: bun run typecheck
 ```

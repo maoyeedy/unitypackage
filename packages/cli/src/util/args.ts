@@ -14,6 +14,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       json: { type: 'boolean' },
       force: { type: 'boolean' },
       'skip-existing': { type: 'boolean' },
+      'no-meta': { type: 'boolean' },
       port: { type: 'string' },
     },
     allowPositionals: true,
