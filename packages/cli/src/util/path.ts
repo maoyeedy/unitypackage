@@ -4,7 +4,13 @@ const windowsReservedName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
 function sanitizeFilename(name: string): string {
   const sanitized = name
-    .replace(/[<>:"|?*\x00-\x1F\x80-\x9F]/g, '')
+    .replace(/[<>:"|?*]/g, '')
+    .split('')
+    .filter(char => {
+      const code = char.charCodeAt(0);
+      return code > 0x1f && (code < 0x80 || code > 0x9f);
+    })
+    .join('')
     .replace(/[. ]+$/g, '')
     .trim();
 

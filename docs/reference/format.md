@@ -21,6 +21,7 @@ Not zip, AssetBundle, Addressables, or UPM.
 ## Records
 
 Each tar dir = one Unity asset record. Dir name must match `^[0-9a-fA-F]{32}$`.
+The core parser preserves the archive prefix as `guid` and does not validate this shape.
 
 | Entry | Required | Notes |
 |---|---|---|
@@ -60,6 +61,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 | Entry name limit | 100 bytes (ustar) |
 | pathname read | First line, trimmed |
 | Legacy fallback | `asset.meta` → `metaData` |
+| GUID validation | Unity exports use 32 hex; core preserves any archive prefix as `guid` |
 | GUID generation | MD5 of UTF-16LE path |
 | Archive model | Fully buffered (no streaming) |
 

@@ -20,7 +20,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     strict: false,
   });
 
-  const [command, ...rest] = positionals as string[];
+  const [command, ...rest] = positionals;
   return {
     command,
     positional: rest,

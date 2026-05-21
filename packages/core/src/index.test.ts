@@ -109,6 +109,38 @@ describe('parseUnityPackage', () => {
     expect(decoder.decode(result['Assets/Texture.png.meta'])).toBe('guid: legacy');
   });
 
+  it('ignores preview.png entries', () => {
+    const guid = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/Texture.png',
+      [`${guid}/asset`]: 'binary data',
+      [`${guid}/asset.meta`]: 'guid: preview',
+      [`${guid}/preview.png`]: 'thumbnail',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const parsedFiles = parseUnityPackage(data);
+
+    expect(parsedEntries).toHaveLength(1);
+    expect(parsedEntries[0]).not.toHaveProperty('preview');
+    expect(Object.keys(parsedFiles)).toEqual(['Assets/Texture.png', 'Assets/Texture.png.meta']);
+  });
+
+  it('uses the trimmed first line from multi-line pathnames', () => {
+    const guid = 'ffffffffffffffffffffffffffffffff';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: '  Assets/First.prefab  \nAssets/Ignored.prefab\n',
+      [`${guid}/asset`]: 'prefab',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const parsedFiles = parseUnityPackage(data);
+
+    expect(parsedEntries[0].pathname).toBe('Assets/First.prefab');
+    expect(decoder.decode(parsedFiles['Assets/First.prefab'])).toBe('prefab');
+    expect(parsedFiles['Assets/Ignored.prefab']).toBeUndefined();
+  });
+
   it('skips entries without a pathname', () => {
     const guid = 'cccccccccccccccccccccccccccccc';
     const data = createLegacyUnityPackage({
@@ -118,6 +150,87 @@ describe('parseUnityPackage', () => {
     const result = parseUnityPackage(data);
 
     expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  it('skips empty pathname records', () => {
+    const guid = '11111111111111111111111111111111';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: '\nAssets/Ignored.cs',
+      [`${guid}/asset`]: 'ignored',
+      [`${guid}/asset.meta`]: 'ignored meta',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const parsedFiles = parseUnityPackage(data);
+
+    expect(parsedEntries).toEqual([]);
+    expect(parsedFiles).toEqual({});
+  });
+
+  it('preserves non-ASCII pathnames', () => {
+    const guid = '22222222222222222222222222222222';
+    const pathname = 'Assets/Tėst/日本語.prefab';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: pathname,
+      [`${guid}/asset`]: 'unicode asset',
+      [`${guid}/asset.meta`]: 'unicode meta',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const parsedFiles = parseUnityPackage(data);
+
+    expect(parsedEntries[0].pathname).toBe(pathname);
+    expect(decoder.decode(parsedFiles[pathname])).toBe('unicode asset');
+    expect(decoder.decode(parsedFiles[`${pathname}.meta`])).toBe('unicode meta');
+  });
+
+  it('keeps duplicate pathnames as separate entries while flat extraction uses the later file', () => {
+    const firstGuid = '33333333333333333333333333333333';
+    const secondGuid = '44444444444444444444444444444444';
+    const data = createLegacyUnityPackage({
+      [`${firstGuid}/pathname`]: 'Assets/Duplicate.asset',
+      [`${firstGuid}/asset`]: 'first',
+      [`${firstGuid}/asset.meta`]: 'first meta',
+      [`${secondGuid}/pathname`]: 'Assets/Duplicate.asset',
+      [`${secondGuid}/asset`]: 'second',
+      [`${secondGuid}/asset.meta`]: 'second meta',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const parsedFiles = parseUnityPackage(data);
+
+    expect(parsedEntries.map(entry => entry.guid)).toEqual([firstGuid, secondGuid]);
+    expect(parsedEntries.map(entry => entry.pathname)).toEqual(['Assets/Duplicate.asset', 'Assets/Duplicate.asset']);
+    expect(decoder.decode(parsedFiles['Assets/Duplicate.asset'])).toBe('second');
+    expect(decoder.decode(parsedFiles['Assets/Duplicate.asset.meta'])).toBe('second meta');
+  });
+
+  it('preserves non-32-hex record prefixes as GUIDs', () => {
+    const guid = 'not-a-32-hex-guid';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/LooseGuid.asset',
+      [`${guid}/asset`]: 'loose',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+
+    expect(parsedEntries).toHaveLength(1);
+    expect(parsedEntries[0].guid).toBe(guid);
+    expect(parsedEntries[0].pathname).toBe('Assets/LooseGuid.asset');
+  });
+
+  it('skips malformed tar entries with invalid size fields', () => {
+    const header = new Uint8Array(512);
+    header.set(encoder.encode('bad/pathname'), 0);
+    header.set(encoder.encode('not-octal'), 124);
+    const data = gzipSync(concatUint8Arrays([header, new Uint8Array(1024)]));
+
+    expect(parseUnityPackageEntries(data)).toEqual([]);
+    expect(parseUnityPackage(data)).toEqual({});
+  });
+
+  it('throws for malformed gzip data', () => {
+    expect(() => parseUnityPackageEntries(encoder.encode('not gzip'))).toThrow();
   });
 
   it('returns empty object for empty tar', () => {
@@ -130,6 +243,33 @@ describe('parseUnityPackage', () => {
 });
 
 describe('createUnityPackage', () => {
+  it('enforces the ustar 100-byte entry name limit', () => {
+    const exactLimitGuid = 'a'.repeat(89);
+    const tooLongGuid = 'b'.repeat(90);
+
+    expect(() =>
+      createUnityPackage([
+        {
+          guid: exactLimitGuid,
+          pathname: 'Assets/Exact.asset',
+          asset: encoder.encode('asset'),
+          meta: encoder.encode('meta'),
+        },
+      ], { gzipLevel: 1 }),
+    ).not.toThrow();
+
+    expect(() =>
+      createUnityPackage([
+        {
+          guid: tooLongGuid,
+          pathname: 'Assets/TooLong.asset',
+          asset: encoder.encode('asset'),
+          meta: encoder.encode('meta'),
+        },
+      ], { gzipLevel: 1 }),
+    ).toThrow('Tar entry name is too long');
+  });
+
   it('round-trips file and folder entries', () => {
     const entries: CreateUnityPackageEntry[] = [
       {
@@ -154,6 +294,7 @@ describe('createUnityPackage', () => {
     expect(parsedEntries[1].asset).toBeUndefined();
     expect(decoder.decode(parsedFiles['Assets/MyScript.cs'])).toBe('public class MyScript {}');
     expect(decoder.decode(parsedFiles['Assets/MyScript.cs.meta'])).toBe('guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(parsedFiles['Assets/Editor']).toBeUndefined();
     expect(decoder.decode(parsedFiles['Assets/Editor.meta'])).toBe('folderAsset: true');
   });
 });
