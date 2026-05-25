@@ -48,28 +48,18 @@ node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackag
 - `docs/reference/format.md` — `.unitypackage` format spec
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/publishing.md` — publishing checklist
-- `docs/reference/playwright.md` — Playwright reference (E2E, MCP, best practices)
+- `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features
 
 ## Playwright
 
-Three tools exist — use the right one per task:
+E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/mcp` for this project.
 
-| Tool | Purpose | Install | How to invoke |
-|------|---------|---------|---------------|
-| `@playwright/test` | E2E test suites (committed tests) | `apps/web` dev dep | `cd apps/web && bunx playwright test` |
-| `@playwright/cli` | **Default agent browser automation** | global `npm i -g @playwright/cli` | `playwright-cli` (CLI commands) |
-| `@playwright/mcp` | *Optional* — exploratory persistent sessions | via `claude mcp add` | only when explicitly requested |
-
-### E2E Tests
-- `apps/web/playwright.config.ts` (Chromium + Firefox, port 5173 Vite preview).
+- Config: `apps/web/playwright.config.ts` (Chromium + Firefox, port 4173 — `vite preview` default, not the dev-server 5173).
 - Tests: `apps/web/tests/`. Run: `cd apps/web && bunx playwright test`.
-
-### Agent Browser Automation (Default: `@playwright/cli`)
-- Installed globally as `playwright-cli`; skills at `.claude/skills/playwright-cli/`.
-- Default browser: Microsoft Edge (config at `.playwright/cli.config.json`).
-- Full skill reference at `.claude/skills/playwright-cli/SKILL.md`.
-- Reference: `docs/reference/playwright.md#playwright-cli-agent-automation`.
+- Debug: `cd apps/web && bunx playwright test --debug`.
+- Report: `cd apps/web && bunx playwright show-report`.
+- For detailed API docs (locators, assertions, fixtures, codegen, tracing), check Context7: `@playwright/test`.
 
 ## Architecture Rules
 
@@ -98,6 +88,9 @@ Three tools exist — use the right one per task:
 - **`build:cli` order**: `node scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
 - **100-byte tar entry name limit**: entry format `<guid>/pathname`, `<guid>/asset.meta`, `<guid>/asset`. GUID is 32 chars — remaining budget tight.
 - **`sanitize-filename` removed**: inlined as `sanitizeFilename()` in `packages/cli/src/util/path.ts` via simple regex (Node ≥22).
+- **E2E tests are ESM**: `__dirname` is unavailable in `apps/web/tests/*.spec.ts`; use `path.dirname(fileURLToPath(import.meta.url))` for fixture paths.
+- **`getByRole` name matching is substring by default**: `getByRole('button', { name: 'Pack' })` also matches "Stage for pack". Add `exact: true` whenever the button label appears inside another button's label.
+- **E2E fixture path**: `fixtures/static/editor-packed.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/editor-packed.unitypackage')`.
 
 ## Do Not Edit
 

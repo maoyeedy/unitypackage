@@ -159,14 +159,15 @@ fixtures/generated/
 node_modules.bun
 package-json.lock
 
-# Playwright specific artifacts
-/results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-/.local-browsers/
+# Playwright artifacts
+.playwright-mcp/
+**/playwright-report/
+**/test-results/
+**/blob-report/
+**/playwright/.cache/
+**/.local-browsers/
 
 # Authentication storage
-/playwright/.auth/
+**/playwright/.auth/
 
 # Repo-specific
