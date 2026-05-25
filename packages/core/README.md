@@ -47,6 +47,11 @@ There are no public subpath exports. Treat internal files such as
 - Generate random or deterministic GUIDs.
 - Generate minimal Unity `.meta` YAML text.
 - Detect importer type from a pathname.
+- Inspect existing `.meta` bytes for GUIDs and declared importer blocks.
+- Analyze entries for shared format issues.
+- Convert GUID-aware entries into asset/meta/preview component records.
+- Classify package paths by extension, MIME type, preview kind, and syntax
+  language.
 - Validate package pathnames for extraction safety.
 - Detect case-folded pathname collisions.
 - Resolve selected assets to their matching `.meta` sidecars.
@@ -210,6 +215,33 @@ interface StreamParseProgressEvent {
 Progress callbacks are synchronous, rate-limited to about one call every 16 ms,
 and always receive a final event when parsing completes.
 
+### Streamed Gzip Parse
+
+```ts
+import { parseUnityPackageStreamed } from 'unitypackage-core';
+
+const { entries, diagnostics } = parseUnityPackageStreamed(bytes, {
+  maxOutputBytes: 50_000_000,
+  chunkSize: 64 * 1024,
+});
+```
+
+`parseUnityPackageStreamed(data, options?)` uses fflate's streaming `Gunzip`
+API while decompressing. It still returns the same `{ entries, diagnostics }`
+shape as `parseUnityPackageEntries`, but `maxOutputBytes` is checked while gzip
+output chunks are produced, before retaining the full decompressed tar buffer.
+
+Options extend `ParseUnityPackageOptions` with:
+
+```ts
+{
+  chunkSize?: number;
+}
+```
+
+`chunkSize` controls how many compressed bytes are pushed into `Gunzip` per
+step. The default is `64 * 1024`.
+
 ## Parse Diagnostics
 
 ```ts
@@ -227,11 +259,15 @@ interface UnityPackageParseDiagnostic {
 | `asset-missing` | `warning` | An entry has pathname and meta bytes but no `asset` member. |
 | `duplicate-guid` | `error` | The same GUID pathname member appears more than once. |
 | `empty-pathname` | `error` | A `pathname` member decoded to an empty string. |
+| `entries-outside-guid-directory` | `warning` | A tar member is not inside a single GUID directory. |
 | `ignored-preview` | `info` | `preview.png` exists. It is exposed on entries but ignored by flat parsing. |
+| `invalid-tar-checksum` | `warning` | A tar member checksum does not match its header. |
 | `malformed-tar-entry` | `error` | A tar member has an empty name, invalid size field, or truncated content. |
 | `meta-missing` | `warning` | An entry has asset bytes but no `asset.meta` or `metaData`. |
 | `non-standard-guid` | `info` | A record prefix is not 32 hexadecimal characters. |
 | `oversized-entry-name` | `warning` | The decoded pathname is longer than 200 characters. |
+| `unexpected-guid-directory-file` | `warning` | A GUID directory contains a member other than `pathname`, `asset`, `asset.meta`, `metaData`, or `preview.png`. |
+| `unsupported-tar-typeflag` | `warning` | A tar member uses an unsupported typeflag and is skipped. |
 | `zero-byte-asset` | `warning` | An `asset` member exists but has zero bytes. |
 
 ## Creating Packages
@@ -480,6 +516,147 @@ using `detectMetaImporterType`.
 These helpers emit YAML text only. They do not parse existing YAML, merge
 importer settings, or infer Unity asset semantics beyond the rules above.
 
+## Meta Inspection
+
+```ts
+import {
+  readDeclaredMetaImporter,
+  readMetaGuid,
+} from 'unitypackage-core';
+
+const guid = readMetaGuid(metaBytes);
+const importer = readDeclaredMetaImporter(metaBytes);
+```
+
+`readMetaGuid(meta)` line-scans existing `.meta` text and returns the first
+`guid:` value as lowercase 32-hex, or `null` when no GUID line is found.
+
+`readDeclaredMetaImporter(meta)` line-scans for a top-level Unity importer block
+without using a YAML parser:
+
+```ts
+type DeclaredMetaImporter =
+  | { kind: 'known'; type: MetaImporterType }
+  | { kind: 'unknown'; name: string };
+```
+
+Known generated/importer types are `DefaultImporter`,
+`DefaultImporterFolder`, `TextScriptImporter`, and `MonoImporter`.
+`DefaultImporter` plus `folderAsset: yes` is reported as
+`DefaultImporterFolder`.
+
+Other Unity importers, such as `TextureImporter`, are returned as
+`{ kind: 'unknown', name: 'TextureImporter' }`. Unknown importers are preserved
+as facts about the existing metadata; core does not treat them as invalid.
+
+## Entry Analysis
+
+```ts
+import { analyzeUnityPackageEntries } from 'unitypackage-core';
+
+const analysis = analyzeUnityPackageEntries(entries, diagnostics);
+```
+
+`analyzeUnityPackageEntries(entries, parseDiagnostics?)` performs shared
+format-level checks and returns stable findings plus severity counts:
+
+```ts
+interface UnityPackageAnalysisResult {
+  findings: UnityPackageAnalysisFinding[];
+  summary: {
+    info: number;
+    warning: number;
+    error: number;
+  };
+}
+```
+
+Finding codes:
+
+| Code | Meaning |
+| --- | --- |
+| `parser-diagnostic` | A parse diagnostic was passed through into analysis. |
+| `unsafe-pathname` | `validatePathname` rejected the entry pathname. |
+| `duplicate-pathname` | Two or more entries have the exact same pathname. |
+| `case-colliding-pathname` | Two or more entries collide after case-folding. |
+| `duplicate-guid` | The same GUID appears on more than one parsed entry. |
+| `meta-guid-mismatch` | The archive GUID and `.meta` GUID disagree. |
+| `meta-missing` | Asset bytes are present but meta bytes are missing. |
+| `meta-importer-mismatch` | A known declared importer does not match the generated importer type expected for the pathname. |
+
+The analyzer does not validate full Unity YAML schemas. Unknown declared
+importers are not reported as mismatches.
+
+## Component Records
+
+```ts
+import { entriesToComponentRecords } from 'unitypackage-core';
+
+const records = entriesToComponentRecords(entries, diagnostics);
+```
+
+`entriesToComponentRecords(entries, diagnostics?)` converts GUID-aware entries
+into one record per present component: `asset`, `meta`, and `preview`.
+
+```ts
+interface UnityPackageComponentRecord {
+  id: string;
+  guid: string;
+  pathname: string;
+  virtualPath: string;
+  component: 'asset' | 'meta' | 'preview';
+  content: Uint8Array;
+  byteLength: number;
+  extension: string;
+  mimeType: string;
+  previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
+  diagnostics: UnityPackageParseDiagnostic[];
+  hasAsset: boolean;
+  hasMeta: boolean;
+  hasPreview: boolean;
+  assetSize?: number;
+  metaSize?: number;
+  previewSize?: number;
+  duplicatePathCount: number;
+}
+```
+
+Virtual paths are:
+
+- Asset component: `entry.pathname`
+- Meta component: `${entry.pathname}.meta`
+- Preview component: `${entry.pathname}.preview.png`
+
+Diagnostics are routed to the component they describe. For example,
+`meta-missing` attaches to the asset record, and `asset-missing` attaches to the
+meta record.
+
+## File Classification
+
+```ts
+import {
+  getMimeTypeForPath,
+  getPathExtension,
+  getPreviewKindForPath,
+  getSyntaxLanguageForPath,
+  getUnityFileCategory,
+} from 'unitypackage-core';
+```
+
+Classification helpers are extension-based and browser-safe:
+
+- `getPathExtension(pathname)` returns a lowercase extension without the dot, or
+  `''` for extensionless paths.
+- `getUnityFileCategory(pathname)` returns `image`, `audio`, `video`, `pdf`,
+  `code`, `unity-yaml`, `meta`, `document`, or `binary`.
+- `getMimeTypeForPath(pathname)` returns a display/download MIME type.
+- `getPreviewKindForPath(pathname, bytes?)` returns `text`, `image`, `pdf`,
+  `audio`, `video`, or `unsupported`. When the extension is unknown, a small
+  byte sample is used to detect likely UTF-8 text.
+- `getSyntaxLanguageForPath(pathname)` returns the Shiki-oriented syntax
+  language used by the web app.
+
 ## Sidecar Selection
 
 ```ts
@@ -571,6 +748,7 @@ Summary rules:
 
 ```ts
 import {
+  analyzeUnityPackageEntries,
   detectPathnameCollisions,
   parseUnityPackageEntries,
   summarizePackage,
@@ -579,8 +757,14 @@ import {
 const { entries, diagnostics } = parseUnityPackageEntries(bytes);
 const summary = summarizePackage(entries, diagnostics);
 const collisions = detectPathnameCollisions(entries);
+const analysis = analyzeUnityPackageEntries(entries, diagnostics);
 
-console.log(summary.entryCount, diagnostics.length, collisions.length);
+console.log(
+  summary.entryCount,
+  diagnostics.length,
+  collisions.length,
+  analysis.summary.error,
+);
 ```
 
 ### Repack Selected Entries
@@ -642,14 +826,21 @@ Runtime exports:
 - `DEFAULT_MAX_OUTPUT_BYTES`
 - `DecompressionBombError`
 - `assetPathForMetaSidecar`
+- `analyzeUnityPackageEntries`
 - `createMinimalFolderMeta`
 - `createMinimalMeta`
 - `createMinimalMetaFor`
 - `createUnityPackage`
 - `detectMetaImporterType`
 - `detectPathnameCollisions`
+- `entriesToComponentRecords`
 - `estimateUnityPackageSize`
 - `generateGuid`
+- `getMimeTypeForPath`
+- `getPathExtension`
+- `getPreviewKindForPath`
+- `getSyntaxLanguageForPath`
+- `getUnityFileCategory`
 - `guidFromPath`
 - `isMetaSidecarPath`
 - `isValidGuid`
@@ -657,6 +848,9 @@ Runtime exports:
 - `parseUnityPackage`
 - `parseUnityPackageEntries`
 - `parseUnityPackageStream`
+- `parseUnityPackageStreamed`
+- `readDeclaredMetaImporter`
+- `readMetaGuid`
 - `resolveMetaSidecarSelection`
 - `summarizePackage`
 - `tryCreateUnityPackage`
@@ -668,12 +862,14 @@ Type exports:
 - `CreateUnityPackageDiagnosticCode`
 - `CreateUnityPackageEntry`
 - `CreateUnityPackageOptions`
+- `DeclaredMetaImporter`
 - `ExtractedFileContent`
 - `MetaImporterType`
 - `ParseUnityPackageOptions`
 - `PathnameCollision`
 - `PathnameRejectionReason`
 - `PathnameValidationResult`
+- `PreviewKind`
 - `ResolveMetaSidecarsResult`
 - `SidecarSelectableKind`
 - `SidecarSelectableRecord`
@@ -682,9 +878,17 @@ Type exports:
 - `StreamParseProgressEvent`
 - `StreamedDiagnostic`
 - `StreamedEntry`
+- `SyntaxLanguage`
+- `UnityFileCategory`
+- `UnityPackageAnalysisFinding`
+- `UnityPackageAnalysisFindingCode`
+- `UnityPackageAnalysisResult`
+- `UnityPackageAnalysisSummary`
+- `UnityPackageComponentRecord`
 - `UnityPackageDiagnosticSeverity`
 - `UnityPackageEntriesResult`
 - `UnityPackageEntry`
+- `UnityPackageEntryComponent`
 - `UnityPackageParseDiagnostic`
 - `UnityPackageParseDiagnosticCode`
 - `UnityPackageSummary`
@@ -700,7 +904,6 @@ This package intentionally does not:
 - Resolve Unity asset references.
 - Read or write local files.
 - Preserve every non-standard tar header field.
-- Stream gzip decompression incrementally.
 - Create missing sidecar records during selection.
 - Expose public subpath imports.
 

@@ -1,4 +1,5 @@
 import { isValidGuid } from './guid';
+import { textDecoder } from './tar';
 
 // ---------------------------------------------------------------------------
 // Minimal meta YAML generator
@@ -34,6 +35,67 @@ export type MetaImporterType =
   | 'DefaultImporterFolder'
   | 'TextScriptImporter'
   | 'MonoImporter';
+
+export type DeclaredMetaImporter =
+  | { kind: 'known'; type: MetaImporterType }
+  | { kind: 'unknown'; name: string };
+
+const KNOWN_IMPORTER_NAMES = new Set<MetaImporterType>([
+  'DefaultImporter',
+  'DefaultImporterFolder',
+  'TextScriptImporter',
+  'MonoImporter',
+]);
+
+const IMPORTER_LINE_PATTERN = /^([A-Za-z][A-Za-z0-9_]*Importer):\s*(?:#.*)?$/;
+const GUID_LINE_PATTERN = /^guid:\s*([0-9a-fA-F]{32})\s*(?:#.*)?$/;
+const FOLDER_ASSET_LINE_PATTERN = /^folderAsset:\s*yes\s*(?:#.*)?$/;
+
+function metaToString(meta: Uint8Array | string): string {
+  return typeof meta === 'string' ? meta : textDecoder.decode(meta);
+}
+
+export function readMetaGuid(meta: Uint8Array | string): string | null {
+  const text = metaToString(meta);
+  for (const rawLine of text.split(/\r?\n/)) {
+    const match = GUID_LINE_PATTERN.exec(rawLine.trim());
+    if (match) return match[1].toLowerCase();
+  }
+  return null;
+}
+
+export function readDeclaredMetaImporter(meta: Uint8Array | string): DeclaredMetaImporter | null {
+  const text = metaToString(meta);
+  let importerName: string | null = null;
+  let isFolderAsset = false;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (FOLDER_ASSET_LINE_PATTERN.test(line)) {
+      isFolderAsset = true;
+      continue;
+    }
+
+    const match = IMPORTER_LINE_PATTERN.exec(line);
+    if (match) {
+      importerName ??= match[1];
+    }
+  }
+
+  if (isFolderAsset && importerName === 'DefaultImporter') {
+    return { kind: 'known', type: 'DefaultImporterFolder' };
+  }
+
+  if (importerName === null) {
+    return null;
+  }
+
+  if (KNOWN_IMPORTER_NAMES.has(importerName as MetaImporterType)) {
+    return { kind: 'known', type: importerName as MetaImporterType };
+  }
+
+  return { kind: 'unknown', name: importerName };
+}
 
 function defaultImporterFolderTemplate(guid: string): string {
   return `fileFormatVersion: 2\nguid: ${guid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\nfolderAsset: yes\n`;

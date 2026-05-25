@@ -1,10 +1,17 @@
+/// <reference types="node" />
+
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   createMinimalFolderMeta,
   createMinimalMeta,
   createMinimalMetaFor,
   detectMetaImporterType,
+  readDeclaredMetaImporter,
+  readMetaGuid,
 } from './index';
+
+const textureMeta = new URL('../../../fixtures/static/texture_02.png.meta', import.meta.url);
 
 describe('createMinimalMeta', () => {
   const validGuid = '0123456789abcdef0123456789abcdef';
@@ -132,6 +139,26 @@ describe('detectMetaImporterType', () => {
   });
 
   void validGuid; // suppress unused-variable lint in this describe block
+});
+
+describe('meta inspection', () => {
+  it('reads the GUID from a real TextureImporter meta fixture', () => {
+    const meta = readFileSync(textureMeta);
+
+    expect(readMetaGuid(meta)).toBe('b2164c38ac6d28c478b53462658238f8');
+  });
+
+  it('reports TextureImporter as an unknown declared importer', () => {
+    const meta = readFileSync(textureMeta);
+
+    expect(readDeclaredMetaImporter(meta)).toEqual({ kind: 'unknown', name: 'TextureImporter' });
+  });
+
+  it('recognizes folderAsset as the folder importer variant', () => {
+    const meta = 'fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\nDefaultImporter:\nfolderAsset: yes\n';
+
+    expect(readDeclaredMetaImporter(meta)).toEqual({ kind: 'known', type: 'DefaultImporterFolder' });
+  });
 });
 
 // ---------------------------------------------------------------------------

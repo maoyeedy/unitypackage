@@ -17,6 +17,12 @@ Constraints carried forward:
 - `PackageFileRecord` keeps no `kind` field. Derive category with
   `getRecordCategory(record)` and use the primitive predicates (`extension ===
   'meta'`, `isUnityPreview`, `!isUnityPreview && extension !== 'meta'`).
+- Core now owns component records and file classification. Keep web helpers as
+  UI adapters over `entriesToComponentRecords`, `getPathExtension`,
+  `getMimeTypeForPath`, `getPreviewKindForPath`, and
+  `getSyntaxLanguageForPath`; do not reintroduce local extension tables.
+- Use `analyzeUnityPackageEntries` for global diagnostics and analysis
+  findings. Parser diagnostics are not the only diagnostic source anymore.
 - Selection logic and pure helpers live in `apps/web/src/App.tsx` and
   `apps/web/src/packageModel.ts`. Selection stays scoped to filtered visible
   records. Do not reintroduce Shift-click range selection; any new range
@@ -39,9 +45,9 @@ Constraints carried forward:
 | P2 | Explorer ergonomics | Add expand/collapse all, virtualize the extension list, add a breadcrumb above the preview, and a "Reveal in tree" action from the extension grouping. | P1 | - | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P3 | Keyboard navigation and selection power | Arrow-key traversal of visible rows, `Shift+Arrow` extending the drag-sweep range, `Ctrl/Cmd+A` for visible, Invert and Select-by-extension actions, focus ring and tree a11y polish. | - | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/explorer.spec.ts` | worker |
 | P4 | Preview enrichment | Larger virtualized text preview with chunked load, find-in-preview, hex view for binary, image zoom toggle and dimensions, audio duration, copy preview text, download active record. | P3 | P1 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/syntaxHighlight.ts`, `apps/web/src/syntaxHighlight.test.ts`, `apps/web/src/fileIcons.ts` | worker |
-| P5 | Metadata, diagnostics drawer, copy affordances | Copy buttons for GUID and Path, collapsible global Diagnostics drawer with filter-on-click navigation, per-record meta sidecar quick view, per-extension breakdown in stats. | P4 | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/src/syntaxHighlight.ts` | worker |
+| P5 | Metadata, diagnostics drawer, copy affordances | Copy buttons for GUID and Path, collapsible global Diagnostics drawer fed by parser diagnostics plus core analysis findings, per-record meta sidecar quick view, per-extension breakdown in stats. | P4 | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/src/syntaxHighlight.ts`, `apps/web/src/parsePackage.worker.ts`, `apps/web/src/workerTypes.ts` | worker |
 | P6 | Persistence, recents, theme, PWA file handlers | IndexedDB recents keyed by name+size+head-hash, localStorage for grouping/sort/filter/theme, manual auto/light/dark theme toggle, PWA File Handlers registration. | - | P1, P2 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/src/main.tsx`, `apps/web/vite.config.ts`, `apps/web/tests/package-load.spec.ts` | worker |
-| P7 | Performance and accessibility polish | Memoization audit on the explorer, optional adoption of streaming parse if available, keyboard-only Playwright spec, final a11y pass. | - | P1, P2, P3, P4, P5, P6 | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/parsePackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/tests/explorer.spec.ts`, `apps/web/tests/smoke.spec.ts` | worker |
+| P7 | Performance and accessibility polish | Memoization audit on the explorer, adopt core streamed gzip parsing in the parse worker, keyboard-only Playwright spec, final a11y pass. | - | P1, P2, P3, P4, P5, P6 | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/parsePackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/tests/explorer.spec.ts`, `apps/web/tests/smoke.spec.ts` | worker |
 
 ### P1 - Search, filter, and sort
 
@@ -59,10 +65,11 @@ Scope:
   `packageModel.ts`).
 - Category chips: Assets, Meta, Previews. Use the `getRecordCategory` helper
   and the primitive predicates already in `packageModel.ts`. Do not reintroduce
-  a `kind` field.
+  a `kind` field or depend on the core component field leaking into
+  `PackageFileRecord`.
 - Size range filter (min/max bytes; accept human shorthand like `100k`, `2m`).
 - Diagnostic code chips that filter to records carrying any of the selected
-  codes.
+  parser diagnostic codes or core analysis finding codes.
 - Sort keys for the filtered list and the tree leaves: Name, Size, Extension,
   GUID. Stable secondary sort by path. Ascending/descending toggle.
 - Filter state retains the existing 200 ms search debounce; new chips and
@@ -192,19 +199,27 @@ Scope:
 
 - Copy buttons next to GUID and Path in the metadata `<dl>`.
 - Collapsible global Diagnostics drawer toggled from the status bar
-  diagnostics count chip. The drawer lists all parser diagnostics with code,
-  message, and affected record path where applicable. Clicking a diagnostic
-  filters the explorer to that record and reveals it in the tree.
+  diagnostics count chip. The drawer lists parser diagnostics and
+  `analyzeUnityPackageEntries` findings with code, severity, message, and
+  affected record path where applicable. Clicking a diagnostic filters the
+  explorer to that record and reveals it in the tree.
+- The parse worker response includes `analysis` from
+  `analyzeUnityPackageEntries(entries, diagnostics)`. Routing to records lives
+  in pure helpers so `packageModel.test.ts` can cover `guid`, `pathname`, and
+  tar-member `path` targets.
 - Per-record meta sidecar quick view: when a non-meta record has a `.meta`
   sibling, render the sidecar's text content syntax-highlighted as YAML
-  through the existing Shiki path. Do not introduce a YAML parser.
+  through the existing Shiki path. Use `readMetaGuid` and
+  `readDeclaredMetaImporter` for facts displayed above the raw YAML. Do not
+  introduce a YAML parser.
 - Per-extension breakdown summary in the sidebar `Stats` grid: top extensions
   by record count and by byte size.
 
 Exit criteria
 ```text
 - Metadata pane has copy buttons for GUID and Path that write to `navigator.clipboard` with a transient confirmation.
-- Status bar diagnostics chip toggles a global Diagnostics drawer that lists every diagnostic and supports click-to-navigate (sets the filter and reveals the row in tree mode).
+- Status bar diagnostics chip toggles a global Diagnostics drawer that lists every parser diagnostic and core analysis finding and supports click-to-navigate (sets the filter and reveals the row in tree mode).
+- Parse worker returns core analysis; tests cover routing of `meta-guid-mismatch`, `meta-importer-mismatch`, duplicate pathname, and unsafe pathname findings.
 - The metadata pane renders the sibling meta file's text content as syntax-highlighted YAML when present; absence is handled silently.
 - Sidebar `Stats` grid includes a Top Extensions section by record count and by byte size.
 - Diagnostics drawer state survives mode switches within the same session.
@@ -262,10 +277,11 @@ Scope:
   selectors into memoized helpers, and verify no unnecessary re-renders on
   selection toggles. Use the React DevTools profiler informally; capture
   before/after notes inline in the PR description, not in source.
-- If the core streaming parse API is available (out of scope to ship here),
-  wire `parsePackage.worker.ts` and `workerTypes.ts` to consume it behind a
-  feature flag. If not available, leave the wiring untouched; treat this bullet
-  as conditional.
+- Wire `parsePackage.worker.ts` and `workerTypes.ts` to use
+  `parseUnityPackageStreamed` for gzip decompression so `maxOutputBytes` is
+  enforced before retaining the full decompressed tar buffer. Keep the existing
+  `parseUnityPackageEntries` path only as a temporary fallback if needed for
+  compatibility during rollout.
 - Final a11y pass: visible focus ring on every interactive control, color
   contrast against current CSS variables, `aria-label`s on icon-only buttons,
   Esc dismisses the diagnostics drawer and the find-in-preview bar.
@@ -276,7 +292,7 @@ Scope:
 Exit criteria
 ```text
 - Explorer row components are memoized and selection toggles do not re-render unrelated rows (verified by an inline test or profiler note).
-- Streaming parse adoption is either wired behind a flag (when the core API is present) or explicitly deferred with a comment in `parsePackage.worker.ts`.
+- Parse worker uses `parseUnityPackageStreamed` or has a narrowly scoped fallback comment explaining why it cannot yet do so.
 - Every interactive control has a visible focus indicator and an accessible name.
 - A keyboard-only Playwright spec passes against the built preview server.
 - Run: bun run --filter @unitypackage-tools/web test

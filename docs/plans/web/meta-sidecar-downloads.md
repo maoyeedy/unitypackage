@@ -13,7 +13,9 @@ Users often want assets and metas together, but they do not need extra buttons
 for every download action. The right behavior is one low-friction setting that
 changes the existing downloads.
 
-Prerequisite: `docs/plans/core/meta-sidecar-selection.md`.
+Core prerequisite is already available: `resolveMetaSidecarSelection` is
+exported from `unitypackage-core`. The web record model now derives from core
+component records, but `PackageFileRecord` still has no `kind` field.
 
 ## Scope
 
@@ -21,7 +23,7 @@ In:
 
 - One default-off Extract setting in the existing sidebar.
 - Hide `.meta` records from the middle explorer when the setting is on.
-- Expand selected asset downloads through the core sidecar resolver.
+- Expand selected asset downloads through `resolveMetaSidecarSelection`.
 - Keep existing `Selected ZIP`, `All ZIP`, and preview download controls.
 - Unit and Playwright coverage for hidden metas and ZIP contents.
 
@@ -30,8 +32,8 @@ Out:
 - No new download buttons.
 - No Pack mode changes.
 - No `.meta` generation.
-- No change to package parsing or `PackageFileRecord` shape unless a small
-  helper type adapter is needed.
+- No change to package parsing or `PackageFileRecord` shape. Use a small
+  adapter helper for the sidecar resolver.
 
 ## UX Contract
 
@@ -64,7 +66,7 @@ When on:
 
 | ID | Title | Goal | Depends on | Files |
 |----|-------|------|------------|-------|
-| P1 | Visible records model | Split internal records from visible explorer records when metas are hidden. | Core | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` |
+| P1 | Visible records model | Split internal records from visible explorer records when metas are hidden. | core runtime | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` |
 | P2 | ZIP selection expansion | Reuse existing ZIP buttons while adding implicit sidecars. | P1 | `apps/web/src/App.tsx`, `apps/web/src/downloadZip.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/src/packageModel.test.ts` |
 | P3 | Preview download behavior | Keep one preview download icon; save asset+meta ZIP only when needed. | P2 | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts` |
 | P4 | Tests and polish | Cover UX and ZIP contents without adding controls. | P1-P3 | `apps/web/tests/explorer.spec.ts`, `apps/web/tests/smoke.spec.ts`, `apps/web/src/App.css` |
@@ -128,6 +130,11 @@ Adapt records to the core resolver using current web fields:
 - `pathname`: `record.virtualPath`
 - `kind`: `getRecordCategory(record)`
 
+Put this adapter in `packageModel.ts` as a pure helper, for example
+`toSidecarSelectableRecords(records)`. Do not add `kind` to
+`PackageFileRecord`; the adapter is the only place that produces the
+`SidecarSelectableRecord` shape.
+
 Selected ZIP:
 
 - If `includeMetaSidecars` is false, keep current call:
@@ -156,6 +163,7 @@ Exit criteria:
 - `All ZIP` continues to include all package records, including metas, even when metas are hidden.
 - No duplicate ZIP entries are produced when a meta was selected before toggling or through another path.
 - Missing sidecars create a non-blocking warning.
+- `packageModel.test.ts` covers `toSidecarSelectableRecords` and the resolver path with asset, meta, and preview records.
 - Run: bun run --filter @unitypackage-tools/web test
 - Run: bun run --filter @unitypackage-tools/web typecheck
 - Run: bunx eslint apps/web/src

@@ -1,10 +1,19 @@
-import type { UnityPackageEntry, UnityPackageParseDiagnostic } from 'unitypackage-core';
+import {
+  entriesToComponentRecords,
+  getMimeTypeForPath,
+  getPreviewKindForPath,
+  getSyntaxLanguageForPath,
+  type PreviewKind,
+  type SyntaxLanguage,
+  type UnityPackageEntry,
+  type UnityPackageParseDiagnostic,
+} from 'unitypackage-core';
+
+export type { PreviewKind, SyntaxLanguage } from 'unitypackage-core';
 
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
 export type RecordCategory = 'asset' | 'meta' | 'preview';
-export type PreviewKind = 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'unsupported';
-export type SyntaxLanguage = 'text' | 'yaml' | 'json' | 'xml' | 'css' | 'csharp' | 'shaderlab' | 'hlsl' | 'glsl' | 'typescript' | 'javascript' | 'markdown' | 'html';
 
 export interface PackageFileRecord {
   id: string;
@@ -28,8 +37,6 @@ export interface PackageFileRecord {
   syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
 }
-
-type EntryComponent = 'asset' | 'meta' | 'preview';
 
 export function getRecordCategory(record: PackageFileRecord): RecordCategory {
   if (record.isUnityPreview) return 'preview';
@@ -69,96 +76,32 @@ export interface PackValidation {
 
 export type SelectionState = 'none' | 'partial' | 'all';
 
-const yamlExtensions = new Set([
-  'anim',
-  'asset',
-  'meta',
-  'yaml',
-  'yml',
-  'unity',
-  'prefab',
-  'mat',
-  'controller',
-  'overridecontroller',
-  'physicmaterial',
-  'physicsmaterial2d',
-  'playable',
-  'mask',
-  'brush',
-  'flare',
-  'fontsettings',
-  'guiskin',
-  'giparams',
-  'rendertexture',
-  'spriteatlas',
-  'spriteatlasv2',
-  'terrainlayer',
-  'mixer',
-  'shadervariants',
-  'preset',
-  'lighting',
-  'dwlt',
-  'vfx',
-  'vfxblock',
-  'vfxoperator',
-]);
-
-const jsonExtensions = new Set(['json', 'asmdef', 'asmref', 'inputactions', 'shadergraph', 'shadersubgraph']);
-const xmlExtensions = new Set(['xml', 'uxml']);
-const cssExtensions = new Set(['css', 'uss', 'tss']);
-const csharpExtensions = new Set(['cs']);
-const shaderlabExtensions = new Set(['shader']);
-const hlslExtensions = new Set(['cginc', 'compute', 'hlsl']);
-const glslExtensions = new Set(['glsl']);
-const typescriptExtensions = new Set(['ts', 'tsx']);
-const javascriptExtensions = new Set(['js', 'jsx']);
-const markdownExtensions = new Set(['md']);
-const htmlExtensions = new Set(['html']);
-const textExtensions = new Set([
-  ...yamlExtensions,
-  ...jsonExtensions,
-  ...xmlExtensions,
-  ...cssExtensions,
-  ...csharpExtensions,
-  ...shaderlabExtensions,
-  ...hlslExtensions,
-  ...glslExtensions,
-  ...typescriptExtensions,
-  ...javascriptExtensions,
-  ...markdownExtensions,
-  ...htmlExtensions,
-  'txt',
-]);
-
-const imageExtensions = new Set(['apng', 'avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
-const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'webm']);
-const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm']);
-
 export function entriesToRecords(
   entries: UnityPackageEntry[],
   diagnostics: UnityPackageParseDiagnostic[],
 ): PackageFileRecord[] {
-  const pathCounts = new Map<string, number>();
-  for (const entry of entries) {
-    pathCounts.set(entry.pathname, (pathCounts.get(entry.pathname) ?? 0) + 1);
-  }
-
-  const records: PackageFileRecord[] = [];
-  for (const entry of entries) {
-    if (entry.asset) {
-      records.push(createRecord(entry, 'asset', entry.pathname, entry.asset, pathCounts, getRecordDiagnostics(entry, 'asset', diagnostics)));
-    }
-
-    if (entry.meta) {
-      records.push(createRecord(entry, 'meta', `${entry.pathname}.meta`, entry.meta, pathCounts, getRecordDiagnostics(entry, 'meta', diagnostics)));
-    }
-
-    if (entry.preview) {
-      records.push(createRecord(entry, 'preview', `${entry.pathname}.preview.png`, entry.preview, pathCounts, getRecordDiagnostics(entry, 'preview', diagnostics)));
-    }
-  }
-
-  return records.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath) || a.guid.localeCompare(b.guid));
+  return entriesToComponentRecords(entries, diagnostics).map(record => ({
+    id: record.id,
+    guid: record.guid,
+    pathname: record.pathname,
+    virtualPath: record.virtualPath,
+    fileName: record.virtualPath.split('/').pop() ?? record.virtualPath,
+    extension: record.extension,
+    mimeType: record.mimeType,
+    isUnityPreview: record.component === 'preview',
+    content: record.content,
+    byteLength: record.byteLength,
+    hasAsset: record.hasAsset,
+    hasMeta: record.hasMeta,
+    hasPreview: record.hasPreview,
+    assetSize: record.assetSize,
+    metaSize: record.metaSize,
+    previewSize: record.previewSize,
+    duplicatePathCount: record.duplicatePathCount,
+    previewKind: record.previewKind,
+    syntaxLanguage: record.syntaxLanguage,
+    diagnostics: record.diagnostics,
+  }));
 }
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {
@@ -274,47 +217,15 @@ export function getSelectionState(recordIds: readonly string[], selectedIds: Rea
 }
 
 export function getPreviewKind(path: string, bytes?: Uint8Array): PreviewKind {
-  const extension = getExtension(path);
-  if (extension === 'pdf') return 'pdf';
-  if (imageExtensions.has(extension)) return 'image';
-  if (audioExtensions.has(extension)) return 'audio';
-  if (videoExtensions.has(extension)) return 'video';
-  if (textExtensions.has(extension) || isLikelyUtf8Text(bytes)) return 'text';
-  return 'unsupported';
+  return getPreviewKindForPath(path, bytes);
 }
 
 export function getMimeType(path: string): string {
-  const extension = getExtension(path);
-  if (extension === 'pdf') return 'application/pdf';
-  if (extension === 'json') return 'application/json';
-  if (extension === 'md') return 'text/markdown';
-  if (extension === 'svg') return 'image/svg+xml';
-  if (extension === 'png') return 'image/png';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'gif') return 'image/gif';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'mp3') return 'audio/mpeg';
-  if (extension === 'wav') return 'audio/wav';
-  if (extension === 'mp4' || extension === 'm4v') return 'video/mp4';
-  if (textExtensions.has(extension)) return 'text/plain;charset=utf-8';
-  return 'application/octet-stream';
+  return getMimeTypeForPath(path);
 }
 
 export function getSyntaxLanguage(path: string): SyntaxLanguage {
-  const extension = getExtension(path);
-  if (yamlExtensions.has(extension)) return 'yaml';
-  if (jsonExtensions.has(extension)) return 'json';
-  if (xmlExtensions.has(extension)) return 'xml';
-  if (cssExtensions.has(extension)) return 'css';
-  if (csharpExtensions.has(extension)) return 'csharp';
-  if (shaderlabExtensions.has(extension)) return 'shaderlab';
-  if (hlslExtensions.has(extension)) return 'hlsl';
-  if (glslExtensions.has(extension)) return 'glsl';
-  if (typescriptExtensions.has(extension)) return 'typescript';
-  if (javascriptExtensions.has(extension)) return 'javascript';
-  if (markdownExtensions.has(extension)) return 'markdown';
-  if (htmlExtensions.has(extension)) return 'html';
-  return 'text';
+  return getSyntaxLanguageForPath(path);
 }
 
 export function formatBytes(bytes: number): string {
@@ -363,106 +274,4 @@ export function validatePackDraft(records: PackageFileRecord[]): PackValidation 
     messages,
     createEntryCount: stagedAssets.length,
   };
-}
-
-function createRecord(
-  entry: UnityPackageEntry,
-  component: EntryComponent,
-  virtualPath: string,
-  content: Uint8Array,
-  pathCounts: ReadonlyMap<string, number>,
-  diagnostics: UnityPackageParseDiagnostic[],
-): PackageFileRecord {
-  const fileName = virtualPath.split('/').pop() ?? virtualPath;
-  const extension = getExtension(virtualPath);
-  return {
-    id: `${entry.guid}:${virtualPath}`,
-    guid: entry.guid,
-    pathname: entry.pathname,
-    virtualPath,
-    fileName,
-    extension,
-    mimeType: getMimeType(virtualPath),
-    isUnityPreview: component === 'preview',
-    content,
-    byteLength: content.byteLength,
-    hasAsset: Boolean(entry.asset),
-    hasMeta: Boolean(entry.meta),
-    hasPreview: Boolean(entry.preview),
-    assetSize: entry.asset?.byteLength,
-    metaSize: entry.meta?.byteLength,
-    previewSize: entry.preview?.byteLength,
-    duplicatePathCount: pathCounts.get(entry.pathname) ?? 1,
-    previewKind: getPreviewKind(virtualPath, content),
-    syntaxLanguage: getSyntaxLanguage(virtualPath),
-    diagnostics,
-  };
-}
-
-function getRecordDiagnostics(
-  entry: UnityPackageEntry,
-  component: EntryComponent,
-  diagnostics: UnityPackageParseDiagnostic[],
-): UnityPackageParseDiagnostic[] {
-  return diagnostics.filter(diagnostic => {
-    if (diagnostic.guid !== entry.guid && !diagnostic.path?.startsWith(`${entry.guid}/`)) {
-      return false;
-    }
-
-    if (diagnostic.code === 'ignored-preview') {
-      return false; // preview is surfaced as its own record; not ignored in entry-aware parsing
-    }
-
-    // duplicate-guid: route to 'asset' (primary representative of the entry)
-    if (diagnostic.code === 'duplicate-guid') {
-      return component === 'asset';
-    }
-
-    // asset-missing: asset record does not exist; attach to 'meta' (the only present component)
-    if (diagnostic.code === 'asset-missing') {
-      return component === 'meta';
-    }
-
-    // meta-missing: meta record does not exist; attach to 'asset' (the only present component)
-    if (diagnostic.code === 'meta-missing') {
-      return component === 'asset';
-    }
-
-    // oversized-entry-name: prefer 'asset', fall back to 'meta' when asset is absent
-    if (diagnostic.code === 'oversized-entry-name') {
-      return entry.asset !== undefined ? component === 'asset' : component === 'meta';
-    }
-
-    if (diagnostic.path?.endsWith('/preview.png')) {
-      return component === 'preview';
-    }
-
-    if (diagnostic.path?.endsWith('/asset.meta') || diagnostic.path?.endsWith('/metaData')) {
-      return component === 'meta';
-    }
-
-    if (diagnostic.path?.endsWith('/asset')) {
-      return component === 'asset';
-    }
-
-    return true;
-  });
-}
-
-function getExtension(path: string): string {
-  const fileName = path.split('/').pop() ?? path;
-  const dotIndex = fileName.lastIndexOf('.');
-  if (dotIndex <= 0 || dotIndex === fileName.length - 1) return '';
-  return fileName.slice(dotIndex + 1).toLowerCase();
-}
-
-function isLikelyUtf8Text(bytes?: Uint8Array): boolean {
-  if (!bytes || bytes.byteLength === 0) return false;
-  const sample = bytes.slice(0, Math.min(bytes.byteLength, 512));
-  let suspicious = 0;
-  for (const byte of sample) {
-    if (byte === 0) return false;
-    if (byte < 7 || (byte > 13 && byte < 32)) suspicious += 1;
-  }
-  return suspicious / sample.byteLength < 0.08;
 }

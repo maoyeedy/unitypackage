@@ -8,6 +8,7 @@ import {
   parseUnityPackage,
   parseUnityPackageEntries,
   parseUnityPackageStream,
+  parseUnityPackageStreamed,
   type CreateUnityPackageEntry,
   type StreamedDiagnostic,
   type StreamedEntry,
@@ -397,6 +398,45 @@ describe('parseUnityPackageEntries diagnostics', () => {
     // Entry is still added despite diagnostic
     expect(parsedEntries).toHaveLength(1);
     expect(parsedEntries[0].pathname).toBe(longPathname);
+  });
+
+  it('emits diagnostics for unsupported tar typeflags and unexpected member names', () => {
+    const guid = 'abababababababababababababababab';
+    const symlinkHeader = new Uint8Array(512);
+    symlinkHeader.set(encoder.encode(`${guid}/link`), 0);
+    symlinkHeader.set(encoder.encode('00000000000'), 124);
+    symlinkHeader[156] = 0x32;
+    for (let i = 148; i < 156; i += 1) symlinkHeader[i] = 0x20;
+    const symlinkChecksum = symlinkHeader.reduce((sum, byte) => sum + byte, 0);
+    symlinkHeader.set(encoder.encode(symlinkChecksum.toString(8).padStart(6, '0') + '\0 '), 148);
+    const pkg = gzipSync(concatUint8Arrays([
+      createTarEntry(`${guid}/pathname`, encoder.encode('Assets/A.asset')),
+      createTarEntry(`${guid}/asset`, encoder.encode('asset')),
+      createTarEntry(`${guid}/asset.meta`, encoder.encode(`guid: ${guid}`)),
+      createTarEntry(`${guid}/notes.txt`, encoder.encode('unexpected')),
+      createTarEntry('loose.txt', encoder.encode('outside')),
+      symlinkHeader,
+      new Uint8Array(1024),
+    ]));
+
+    const { diagnostics } = parseUnityPackageEntries(pkg);
+
+    expect(diagnostics.map(diagnostic => diagnostic.code)).toEqual(expect.arrayContaining([
+      'unexpected-guid-directory-file',
+      'entries-outside-guid-directory',
+      'unsupported-tar-typeflag',
+    ]));
+  });
+
+  it('emits invalid-tar-checksum for a regular entry with a bad checksum', () => {
+    const guid = 'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd';
+    const entry = createTarEntry(`${guid}/pathname`, encoder.encode('Assets/A.asset'));
+    entry[0] = 0x78;
+    const pkg = gzipSync(concatUint8Arrays([entry, new Uint8Array(1024)]));
+
+    const { diagnostics } = parseUnityPackageEntries(pkg);
+
+    expect(diagnostics.map(diagnostic => diagnostic.code)).toContain('invalid-tar-checksum');
   });
 });
 
@@ -944,6 +984,18 @@ describe('parseUnityPackageStream', () => {
     // Entry is still yielded despite the diagnostic
     expect(entries).toHaveLength(1);
     expect(entries[0].pathname).toBe(longPathname);
+  });
+
+  it('parseUnityPackageStreamed parses normal packages and enforces maxOutputBytes during gunzip', () => {
+    const guid = 'edededededededededededededededed';
+    const pkg = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/Big.asset',
+      [`${guid}/asset`]: 'x'.repeat(100),
+      [`${guid}/asset.meta`]: `guid: ${guid}`,
+    });
+
+    expect(parseUnityPackageStreamed(pkg).entries).toHaveLength(1);
+    expect(() => parseUnityPackageStreamed(pkg, { maxOutputBytes: 50, chunkSize: 8 })).toThrow(DecompressionBombError);
   });
 });
 

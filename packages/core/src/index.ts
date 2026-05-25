@@ -26,13 +26,42 @@ export type {
   SidecarSelectableRecord,
 } from './sidecar';
 export { resolveMetaSidecarSelection } from './sidecar';
-export type { MetaImporterType } from './meta';
+export type {
+  DeclaredMetaImporter,
+  MetaImporterType,
+} from './meta';
 export {
   createMinimalFolderMeta,
   createMinimalMeta,
   createMinimalMetaFor,
   detectMetaImporterType,
+  readDeclaredMetaImporter,
+  readMetaGuid,
 } from './meta';
+export type {
+  PreviewKind,
+  SyntaxLanguage,
+  UnityFileCategory,
+} from './classify';
+export {
+  getMimeTypeForPath,
+  getPathExtension,
+  getPreviewKindForPath,
+  getSyntaxLanguageForPath,
+  getUnityFileCategory,
+} from './classify';
+export type {
+  UnityPackageAnalysisFinding,
+  UnityPackageAnalysisFindingCode,
+  UnityPackageAnalysisResult,
+  UnityPackageAnalysisSummary,
+} from './analyze';
+export { analyzeUnityPackageEntries } from './analyze';
+export type {
+  UnityPackageComponentRecord,
+  UnityPackageEntryComponent,
+} from './component';
+export { entriesToComponentRecords } from './component';
 export type {
   ParseUnityPackageOptions,
   StreamedDiagnostic,
@@ -51,6 +80,7 @@ export {
   parseUnityPackage,
   parseUnityPackageEntries,
   parseUnityPackageStream,
+  parseUnityPackageStreamed,
 } from './parse';
 export type {
   CreateUnityPackageDiagnostic,
