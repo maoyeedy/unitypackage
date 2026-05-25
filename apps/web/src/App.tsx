@@ -39,6 +39,7 @@ import {
   type TreeRow,
   type WorkspaceMode,
 } from './packageModel';
+import { highlightCode, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
 
 interface ParseResult {
   records: PackageFileRecord[];
@@ -50,6 +51,7 @@ interface AppErrorBoundaryState {
 }
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
+const textPreviewByteLimit = 20000;
 
 function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
@@ -721,7 +723,6 @@ function FileRow({
       </button>
       <Icon aria-hidden="true" size={17} />
       <span className="file-name">{record.fileName}</span>
-      <small>{record.kind}</small>
       <small>{formatBytes(record.byteLength)}</small>
     </div>
   );
@@ -823,12 +824,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'text') {
-    const preview = textDecoder.decode(record.content.slice(0, 20000));
-    return (
-      <pre className="preview-frame text-frame">
-        {record.content.byteLength > 20000 ? `${preview}\n\n[Preview truncated at 20 KB]` : preview}
-      </pre>
-    );
+    return <TextPreview record={record} />;
   }
 
   return (
@@ -838,6 +834,106 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
       <p>This file type can still be downloaded and staged for pack workflows.</p>
     </div>
   );
+}
+
+function TextPreview({ record }: { record: PackageFileRecord }) {
+  const themeMode = usePreferredSyntaxTheme();
+  const preview = useMemo(() => textDecoder.decode(record.content.slice(0, textPreviewByteLimit)), [record.content]);
+  const isTruncated = record.content.byteLength > textPreviewByteLimit;
+  const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHighlightedCode(null);
+
+    void highlightCode(preview, record.syntaxLanguage, themeMode)
+      .then(result => {
+        if (!cancelled) setHighlightedCode(result);
+      })
+      .catch(() => {
+        if (!cancelled) setHighlightedCode(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preview, record.syntaxLanguage, themeMode]);
+
+  if (!highlightedCode) {
+    return (
+      <pre className="preview-frame text-frame">
+        {formatTextPreview(preview, isTruncated)}
+      </pre>
+    );
+  }
+
+  return (
+    <pre
+      className="preview-frame text-frame highlighted-text-frame"
+      style={{
+        backgroundColor: highlightedCode.background,
+        color: highlightedCode.foreground,
+      }}
+    >
+      <code>
+        {highlightedCode.lines.map((line, lineIndex) => (
+          <span className="code-line" key={lineIndex.toString()}>
+            {line.map((token, tokenIndex) => (
+              <span className="syntax-token" key={`${lineIndex.toString()}-${tokenIndex.toString()}`} style={tokenStyle(token)}>
+                {token.content}
+              </span>
+            ))}
+          </span>
+        ))}
+        {isTruncated ? <span className="preview-truncation">[Preview truncated at 20 KB]</span> : null}
+      </code>
+    </pre>
+  );
+}
+
+function usePreferredSyntaxTheme(): SyntaxThemeMode {
+  const [themeMode, setThemeMode] = useState<SyntaxThemeMode>(() => getPreferredSyntaxTheme());
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const updateTheme = () => {
+      setThemeMode(mediaQuery.matches ? 'dark' : 'light');
+    };
+    mediaQuery.addEventListener('change', updateTheme);
+    updateTheme();
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateTheme);
+    };
+  }, []);
+
+  return themeMode;
+}
+
+function getPreferredSyntaxTheme(): SyntaxThemeMode {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function formatTextPreview(preview: string, isTruncated: boolean): string {
+  return isTruncated ? `${preview}\n\n[Preview truncated at 20 KB]` : preview;
+}
+
+function tokenStyle(token: HighlightedToken): CSSProperties {
+  const style: CSSProperties = {
+    color: token.color,
+    backgroundColor: token.backgroundColor,
+  };
+
+  if (token.fontStyle !== undefined) {
+    if ((token.fontStyle & 1) !== 0) style.fontStyle = 'italic';
+    if ((token.fontStyle & 2) !== 0) style.fontWeight = 700;
+    if ((token.fontStyle & 4) !== 0) style.textDecoration = 'underline';
+  }
+
+  return {
+    ...style,
+    ...token.htmlStyle,
+  };
 }
 
 function Metadata({ record }: { record: PackageFileRecord }) {
@@ -853,6 +949,7 @@ function Metadata({ record }: { record: PackageFileRecord }) {
     ['Preview bytes', record.previewSize === undefined ? 'None' : formatBytes(record.previewSize)],
     ['Duplicate paths', record.duplicatePathCount.toString()],
     ['Preview support', previewLabel(record.previewKind)],
+    ['Syntax language', record.previewKind === 'text' ? record.syntaxLanguage : 'None'],
   ];
 
   return (
@@ -949,7 +1046,7 @@ function previewLabel(kind: PreviewKind): string {
     case 'pdf':
       return 'Native PDF';
     case 'text':
-      return 'Text';
+      return 'Highlighted text';
     case 'video':
       return 'Native video';
     case 'unsupported':

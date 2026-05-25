@@ -13,11 +13,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@shikijs/langs": "^4.1.0",
+    "@shikijs/themes": "^4.1.0",
     "@tanstack/react-virtual": "^3.13.25",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "shiki": "^4.1.0",
     "unitypackage-core": "workspace:*",
     "workbox-window": "^7.3.0"
   },

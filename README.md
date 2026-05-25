@@ -18,9 +18,10 @@ The project was rewritten from:
 
 The web app runs fully in the browser. It parses `.unitypackage` files in a
 worker, shows a tree view by default, can group files by extension, previews the
-selected record on the right, and shows derived metadata such as GUID, package
-path, kind, MIME guess, byte size, paired meta/preview state, duplicates, and
-related parser diagnostics.
+selected record on the right, syntax-highlights text previews with Unity file
+associations, and shows derived metadata such as GUID, package path, kind, MIME
+guess, byte size, paired meta/preview state, duplicates, and related parser
+diagnostics.
 
 Extract mode supports ZIP downloads for all files or selected records. Pack mode
 is prepared as a staging shell, but `.unitypackage` export stays disabled until

@@ -11,6 +11,7 @@
 | react-dom | *(part of `/facebook/react`)* |
 | @tanstack/react-virtual | `/tanstack/virtual` |
 | lucide-react | `/lucide-icons/lucide` |
+| shiki | `/shikijs/shiki` |
 | workbox-window | *(part of vite-plugin-pwa docs; no separate ID recorded)* |
 | chalk | `/chalk/chalk` |
 

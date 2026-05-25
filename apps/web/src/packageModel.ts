@@ -4,6 +4,7 @@ export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
 export type PackageRecordKind = 'asset' | 'meta' | 'preview';
 export type PreviewKind = 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'unsupported';
+export type SyntaxLanguage = 'text' | 'yaml' | 'json' | 'xml' | 'css' | 'csharp' | 'shaderlab' | 'hlsl' | 'glsl' | 'typescript' | 'javascript' | 'markdown' | 'html';
 
 export interface PackageFileRecord {
   id: string;
@@ -24,6 +25,7 @@ export interface PackageFileRecord {
   previewSize?: number;
   duplicatePathCount: number;
   previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
 }
 
@@ -57,36 +59,65 @@ export interface PackValidation {
   createEntryCount: number;
 }
 
-const textExtensions = new Set([
+const yamlExtensions = new Set([
   'anim',
-  'asmdef',
-  'asmref',
   'asset',
-  'cginc',
-  'compute',
-  'controller',
-  'cs',
-  'css',
-  'glsl',
-  'hlsl',
-  'html',
-  'js',
-  'json',
-  'jsx',
-  'mat',
-  'md',
   'meta',
-  'prefab',
-  'shader',
-  'ts',
-  'tsx',
-  'txt',
-  'unity',
-  'uss',
-  'uxml',
-  'xml',
   'yaml',
   'yml',
+  'unity',
+  'prefab',
+  'mat',
+  'controller',
+  'overridecontroller',
+  'physicmaterial',
+  'physicsmaterial2d',
+  'playable',
+  'mask',
+  'brush',
+  'flare',
+  'fontsettings',
+  'guiskin',
+  'giparams',
+  'rendertexture',
+  'spriteatlas',
+  'spriteatlasv2',
+  'terrainlayer',
+  'mixer',
+  'shadervariants',
+  'preset',
+  'lighting',
+  'dwlt',
+  'vfx',
+  'vfxblock',
+  'vfxoperator',
+]);
+
+const jsonExtensions = new Set(['json', 'asmdef', 'asmref', 'inputactions', 'shadergraph', 'shadersubgraph']);
+const xmlExtensions = new Set(['xml', 'uxml']);
+const cssExtensions = new Set(['css', 'uss', 'tss']);
+const csharpExtensions = new Set(['cs']);
+const shaderlabExtensions = new Set(['shader']);
+const hlslExtensions = new Set(['cginc', 'compute', 'hlsl']);
+const glslExtensions = new Set(['glsl']);
+const typescriptExtensions = new Set(['ts', 'tsx']);
+const javascriptExtensions = new Set(['js', 'jsx']);
+const markdownExtensions = new Set(['md']);
+const htmlExtensions = new Set(['html']);
+const textExtensions = new Set([
+  ...yamlExtensions,
+  ...jsonExtensions,
+  ...xmlExtensions,
+  ...cssExtensions,
+  ...csharpExtensions,
+  ...shaderlabExtensions,
+  ...hlslExtensions,
+  ...glslExtensions,
+  ...typescriptExtensions,
+  ...javascriptExtensions,
+  ...markdownExtensions,
+  ...htmlExtensions,
+  'txt',
 ]);
 
 const imageExtensions = new Set(['apng', 'avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
@@ -218,6 +249,23 @@ export function getMimeType(path: string): string {
   return 'application/octet-stream';
 }
 
+export function getSyntaxLanguage(path: string): SyntaxLanguage {
+  const extension = getExtension(path);
+  if (yamlExtensions.has(extension)) return 'yaml';
+  if (jsonExtensions.has(extension)) return 'json';
+  if (xmlExtensions.has(extension)) return 'xml';
+  if (cssExtensions.has(extension)) return 'css';
+  if (csharpExtensions.has(extension)) return 'csharp';
+  if (shaderlabExtensions.has(extension)) return 'shaderlab';
+  if (hlslExtensions.has(extension)) return 'hlsl';
+  if (glslExtensions.has(extension)) return 'glsl';
+  if (typescriptExtensions.has(extension)) return 'typescript';
+  if (javascriptExtensions.has(extension)) return 'javascript';
+  if (markdownExtensions.has(extension)) return 'markdown';
+  if (htmlExtensions.has(extension)) return 'html';
+  return 'text';
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -278,6 +326,7 @@ function createRecord(
   const extension = getExtension(virtualPath);
   const previewKind = kind === 'meta' ? 'text' : getPreviewKind(virtualPath, content);
   const mimeType = kind === 'meta' ? 'text/plain;charset=utf-8' : getMimeType(virtualPath);
+  const syntaxLanguage = kind === 'meta' ? 'yaml' : getSyntaxLanguage(virtualPath);
   return {
     id: `${entry.guid}:${kind}:${virtualPath}`,
     guid: entry.guid,
@@ -297,6 +346,7 @@ function createRecord(
     previewSize: entry.preview?.byteLength,
     duplicatePathCount: pathCounts.get(entry.pathname) ?? 1,
     previewKind,
+    syntaxLanguage,
     diagnostics,
   };
 }

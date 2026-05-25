@@ -9,6 +9,7 @@ import {
   buildTreeRows,
   entriesToRecords,
   getPreviewKind,
+  getSyntaxLanguage,
   validatePackDraft,
 } from './packageModel';
 
@@ -133,7 +134,57 @@ describe('package model helpers', () => {
     expect(getPreviewKind('Assets/Sound.wav')).toBe('audio');
     expect(getPreviewKind('Assets/Movie.mp4')).toBe('video');
     expect(getPreviewKind('Assets/Data.asset')).toBe('text');
+    expect(getPreviewKind('Assets/Graph.shadergraph')).toBe('text');
+    expect(getPreviewKind('Assets/Input.inputactions')).toBe('text');
+    expect(getPreviewKind('Assets/Layout.uxml')).toBe('text');
+    expect(getPreviewKind('Assets/Theme.tss')).toBe('text');
     expect(getPreviewKind('Assets/Data.bytes', new Uint8Array([0, 1, 2]))).toBe('unsupported');
+  });
+
+  it('maps Unity text assets to Shiki languages', () => {
+    for (const extension of [
+      'meta',
+      'unity',
+      'prefab',
+      'asset',
+      'mat',
+      'anim',
+      'controller',
+      'overrideController',
+      'physicMaterial',
+      'physicsMaterial2D',
+      'playable',
+      'mask',
+      'brush',
+      'flare',
+      'fontsettings',
+      'guiskin',
+      'giparams',
+      'renderTexture',
+      'spriteatlas',
+      'spriteatlasv2',
+      'terrainlayer',
+      'mixer',
+      'shadervariants',
+      'preset',
+      'lighting',
+      'dwlt',
+      'vfx',
+      'vfxblock',
+      'vfxoperator',
+    ]) {
+      expect(getSyntaxLanguage(`Assets/File.${extension}`)).toBe('yaml');
+    }
+
+    for (const extension of ['asmdef', 'asmref', 'inputactions', 'shadergraph', 'shadersubgraph']) {
+      expect(getSyntaxLanguage(`Assets/File.${extension}`)).toBe('json');
+    }
+
+    expect(getSyntaxLanguage('Assets/Layout.uxml')).toBe('xml');
+    expect(getSyntaxLanguage('Assets/Styles.uss')).toBe('css');
+    expect(getSyntaxLanguage('Assets/Styles.tss')).toBe('css');
+    expect(getSyntaxLanguage('Assets/Script.CS')).toBe('csharp');
+    expect(getSyntaxLanguage('Assets/Unknown.txt')).toBe('text');
   });
 
   it('keeps pack export blocked until the creation API plan lands', () => {

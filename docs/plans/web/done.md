@@ -22,6 +22,7 @@ preview and metadata pane.
 - Replaced the app UI with a workspace layout: top app bar, Extract and Pack tabs, left controls, central explorer, right preview/metadata pane, and status bar.
 - Removed localization and old UI files: translations, language selector, legacy controls, legacy file list, legacy drop zone, old header, and React starter asset.
 - Added native previews for text, image, PDF, audio, and video records, with metadata fallback for unsupported types.
+- Added Shiki syntax highlighting for text previews, including Unity serialized YAML-ish, JSON, XML, and CSS file associations.
 - Added PWA setup with `vite-plugin-pwa`, service worker registration, manifest metadata, and SVG app icons.
 - Added `lucide-react`, `vite-plugin-pwa`, `workbox-window`, and web-local Vitest scripts.
 - Added unit coverage for tree rows, extension groups, preview kind detection, pack validation, duplicate path metadata, and real PNG fixture behavior.
@@ -39,7 +40,7 @@ preview and metadata pane.
 - Browser-side `.unitypackage` export is not implemented. Pack mode is intentionally a disabled shell until `docs/plans/web/new-api.md` adds the final browser-safe creation API.
 - Streaming parse is not implemented in core or web yet.
 - Deterministic/sized package creation APIs are not implemented yet.
-- Rich PDF navigation and syntax highlighting were intentionally left out; current previews use browser-native rendering.
+- Rich PDF navigation was intentionally left out; current PDF previews use browser-native rendering.
 - Playwright/browser smoke coverage is not added yet. `docs/plans/ci/ci-release.md` now expects a smoke test against the workspace tree and preview pane.
 - Manual browser smoke with `fixtures/static/editor-packed.unitypackage` should still be done after the next UI-affecting change.
 
@@ -54,7 +55,7 @@ bun run --filter @unitypackage-tools/web build
 bun run check
 ```
 
-The web test suite currently includes 6 `packageModel` tests.
+The web test suite currently includes `packageModel` and syntax highlighting tests.
 
 ## Next Agent Notes
 

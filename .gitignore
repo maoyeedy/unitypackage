@@ -141,6 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+apps/web/dev-dist/
 
 # Monorepo build outputs
 **/dist/
