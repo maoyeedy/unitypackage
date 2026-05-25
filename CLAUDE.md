@@ -64,6 +64,8 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 ## Architecture Rules
 
 - **`packages/core` browser-safe**: no `node:*`, `fs`, `path`, `crypto`, `os`, `yaml`, HTTP. Only dep: `fflate`.
+- **`packages/core` public API**: keep `packages/core/src/index.ts` as the root barrel only. Consumers import from `unitypackage-core`; do not add public subpath exports unless the package API is deliberately expanded.
+- **`packages/core` module layout**: runtime implementation is split by domain: `model.ts`, `guid.ts`, `pathname.ts`, `meta.ts`, `parse.ts`, `create.ts`, `summary.ts`, and private tar helpers in `tar.ts`. Put tests beside the matching domain file (`parse.test.ts`, `create.test.ts`, etc.); keep `index.test.ts` as a small barrel smoke test.
 - CLI must use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage` (flat alias). `apps/web` also uses entry-aware parsing through its parse worker and derives `PackageFileRecord` values in `apps/web/src/packageModel.ts`.
 - `apps/web` is English-only. Do not reintroduce translation files, language selectors, or `language` URL state.
 - Web Extract selection lives in `apps/web/src/App.tsx` plus pure helpers in `apps/web/src/packageModel.ts`; keep checkbox, drag-sweep, folder select-all, and extension select-all behavior scoped to filtered visible records.
@@ -82,6 +84,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **Generated fixtures currently include** `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, and `truncated`; use `minimal` vs `nested` for diff smoke, not `multi-entry`.
 - **`packages/core/tsconfig.json` omits `moduleResolution`** intentionally: TS 5.9 forbids `module:CommonJS` + `moduleResolution:Node16`. Don't add it.
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
+- **`packages/core` test helpers**: avoid non-test helper files under `packages/core/src`; `tsconfig.json` includes all non-`*.test.ts` source files in the published build.
 - **`apps/web` typecheck is `tsc -b`** (not `--noEmit`). `--noEmit` skips project reference resolution.
 - **`apps/web` tests are Vitest unit tests**: use `bun run --filter @unitypackage-tools/web test` for model/helper coverage.
 - **`bun run --filter @unitypackage-tools/web lint` may lint generated `apps/web/dev-dist/`**: use `bunx eslint apps/web/src` for source-only lint after web UI edits.
@@ -92,6 +95,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **E2E tests are ESM**: `__dirname` is unavailable in `apps/web/tests/*.spec.ts`; use `path.dirname(fileURLToPath(import.meta.url))` for fixture paths.
 - **`getByRole` name matching is substring by default**: `getByRole('button', { name: 'Pack' })` also matches "Stage for pack". Add `exact: true` whenever the button label appears inside another button's label.
 - **E2E fixture path**: `fixtures/static/editor-packed.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/editor-packed.unitypackage')`.
+- **`PARSER_IGNORED_PREVIEW` is silently skipped in `verify`**: the core emits it for every `preview.png` in a GUID directory (normal Unity Editor output), but `packages/cli/src/commands/verify.ts` filters it out before adding to `findings` — intentional, not an oversight.
 
 ## Do Not Edit
 

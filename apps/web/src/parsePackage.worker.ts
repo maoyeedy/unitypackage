@@ -10,9 +10,9 @@ interface ParsePackageRequest {
 
 self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
   try {
-    const entries = parseUnityPackageEntries(new Uint8Array(data.buffer));
-    const records = entriesToRecords(entries, entries.diagnostics);
-    self.postMessage({ type: 'success', records, diagnostics: entries.diagnostics } satisfies ParsePackageResponse);
+    const { entries, diagnostics } = parseUnityPackageEntries(new Uint8Array(data.buffer));
+    const records = entriesToRecords(entries, diagnostics);
+    self.postMessage({ type: 'success', records, diagnostics } satisfies ParsePackageResponse);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to parse package';
     self.postMessage({ type: 'error', message } satisfies ParsePackageResponse);

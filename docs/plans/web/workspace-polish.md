@@ -26,7 +26,9 @@ Constraints carried forward:
 - `apps/web` is English-only.
 - `PackageFileRecord` has no `kind` field; use `getRecordCategory`,
   `isUnityPreview`, and `extension === 'meta'`.
-- `packages/core` stays browser-safe; only dep is `fflate`.
+- `packages/core` stays browser-safe; only dep is `fflate`. Prefer shipped
+  core helpers over web-local format logic: component records, classification,
+  meta inspection, analysis findings, and streamed gzip parse are available.
 - Selection/staging stays scoped to filtered visible records and uses the
   single `stagedRecordIds` model.
 - ZIP downloads stay in Extract mode; pack export stays in Pack mode.
@@ -117,10 +119,9 @@ Exit criteria
   pack exported, draft saved, settings reset.
 - Toasts auto-dismiss after a configurable timeout (default 4 seconds).
   Error toasts persist until dismissed.
-- Workers post progress messages: parse posts byte-read progress (using
-  streaming parse if `unitypackage-core` exposes it; otherwise stays binary
-  start/finish), ZIP posts entry-count progress, pack export posts the
-  estimate-then-write boundary.
+- Workers post progress messages: parse posts byte-read progress through
+  `parseUnityPackageStreamed` or its worker wrapper, ZIP posts entry-count
+  progress, pack export posts the estimate-then-write boundary.
 - Concurrent operations are tolerated; the current-operation segment shows
   the most recently started one and toasts arrive in completion order.
 - The existing parse-error path renders as a persistent error toast and the
@@ -166,7 +167,9 @@ Exit criteria
 ```text
 - A new `getRelatedRecords(records, record)` helper in `packageModel.ts`
   returns the sibling records sharing the same GUID, categorized as asset /
-  meta / preview, with unit coverage.
+  meta / preview, with unit coverage. It should be a UI adapter over the
+  component semantics already supplied by `entriesToComponentRecords`; do not
+  add a `kind` field to `PackageFileRecord`.
 - The metadata pane gains a Related section that lists the present
   siblings with their category labels. Clicking a sibling sets it as the
   active record without modifying selection or staging.
