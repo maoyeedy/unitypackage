@@ -33,15 +33,18 @@ export async function doctor(packagePath: string, opts: { json?: boolean } = {})
     checks.push({ level, code, message, ...(entry !== undefined && { entry }) });
   }
 
-  let entries;
+  let entries: ReturnType<typeof parseUnityPackageEntries>['entries'];
+  let parseDiagnostics: ReturnType<typeof parseUnityPackageEntries>['diagnostics'];
   try {
-    entries = parseUnityPackageEntries(new Uint8Array(raw));
+    const parsed = parseUnityPackageEntries(new Uint8Array(raw));
+    entries = parsed.entries;
+    parseDiagnostics = parsed.diagnostics;
   } catch (err) {
     check('error', 'PARSE_FAILED', `Failed to parse package: ${err instanceof Error ? err.message : String(err)}`);
     return output(packagePath, raw.length, 0, checks, opts);
   }
 
-  for (const diagnostic of entries.diagnostics) {
+  for (const diagnostic of parseDiagnostics) {
     check(
       'warn',
       `PARSER_${diagnostic.code.toUpperCase().replaceAll('-', '_')}`,

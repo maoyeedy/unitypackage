@@ -73,7 +73,8 @@ async function loadEntries(packagePath: string): Promise<UnityPackageEntry[]> {
   const raw = await readFile(packagePath).catch(() => {
     throw new CliError(`Cannot read file: ${packagePath}`, EXIT.IO);
   });
-  return parseUnityPackageEntries(new Uint8Array(raw));
+  const { entries } = parseUnityPackageEntries(new Uint8Array(raw));
+  return entries;
 }
 
 function toDiffEntry(entry: UnityPackageEntry): DiffEntry {

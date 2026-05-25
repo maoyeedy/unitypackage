@@ -81,7 +81,7 @@ function printTree(node: TreeNode, depth = 1): void {
 export async function inspect(packagePath: string, opts: InspectOptions = {}): Promise<InspectResult> {
   const raw = await readFile(packagePath);
   const sha256 = crypto.createHash('sha256').update(raw).digest('hex');
-  const entries = parseUnityPackageEntries(new Uint8Array(raw));
+  const { entries } = parseUnityPackageEntries(new Uint8Array(raw));
   const inspectEntries = entries.map(e => ({
     guid: e.guid,
     pathname: e.pathname,

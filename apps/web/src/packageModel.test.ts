@@ -46,6 +46,7 @@ describe('package model helpers', () => {
         guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         path: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/preview.png',
         message: 'preview.png is exposed on entries and ignored by flat parsing.',
+        severity: 'info',
       },
     ];
 
@@ -288,6 +289,7 @@ describe('package model helpers', () => {
         guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         path: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pathname',
         message: 'GUID appears more than once in the archive.',
+        severity: 'error',
       },
     ];
 
@@ -315,6 +317,7 @@ describe('package model helpers', () => {
         guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         path: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/asset',
         message: 'Entry has a pathname and meta but no asset file.',
+        severity: 'warning',
       },
     ];
 
@@ -342,6 +345,7 @@ describe('package model helpers', () => {
         guid: 'cccccccccccccccccccccccccccccccc',
         path: 'cccccccccccccccccccccccccccccccc/asset.meta',
         message: 'Entry has a pathname and asset but no asset.meta or metaData file.',
+        severity: 'warning',
       },
     ];
 
@@ -369,6 +373,7 @@ describe('package model helpers', () => {
         guid: 'dddddddddddddddddddddddddddddddd',
         path: 'dddddddddddddddddddddddddddddddd/asset',
         message: 'Asset file is present but has zero bytes.',
+        severity: 'warning',
       },
     ];
 
@@ -397,6 +402,7 @@ describe('package model helpers', () => {
         guid: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
         path: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/pathname',
         message: `Pathname exceeds 200 characters (${longName.length + 13}).`,
+        severity: 'warning',
       },
     ];
 
@@ -423,6 +429,7 @@ describe('package model helpers', () => {
         guid: 'ffffffffffffffffffffffffffffffff',
         path: 'ffffffffffffffffffffffffffffffff/pathname',
         message: `Pathname exceeds 200 characters (${longName.length + 13}).`,
+        severity: 'warning',
       },
     ];
 

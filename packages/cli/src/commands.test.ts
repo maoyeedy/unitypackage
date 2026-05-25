@@ -620,9 +620,27 @@ describe('verify', () => {
     );
     await writeFile(malformedPackage, buildMalformedTarPackage());
 
-    expect((await verify(emptyPathPackage)).findings.some(f => f.code === 'PARSER_EMPTY_PATHNAME')).toBe(true);
+    // empty-pathname has severity 'error' -- verify throws; capture result via json mode
+    const emptyWriteSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await verify(emptyPathPackage, { json: true }).catch(() => undefined);
+      const emptyJson = JSON.parse(emptyWriteSpy.mock.calls.map(call => call[0]).join('')) as { findings: Array<{ code: string }> };
+      expect(emptyJson.findings.some(f => f.code === 'PARSER_EMPTY_PATHNAME')).toBe(true);
+    } finally {
+      emptyWriteSpy.mockRestore();
+    }
+
     expect((await verify(looseGuidPackage)).findings.some(f => f.code === 'PARSER_NON_STANDARD_GUID')).toBe(true);
-    expect((await verify(malformedPackage)).findings.some(f => f.code === 'PARSER_MALFORMED_TAR_ENTRY')).toBe(true);
+
+    // malformed-tar-entry has severity 'error' -- verify throws; capture result via json mode
+    const malformedWriteSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await verify(malformedPackage, { json: true }).catch(() => undefined);
+      const malformedJson = JSON.parse(malformedWriteSpy.mock.calls.map(call => call[0]).join('')) as { findings: Array<{ code: string }> };
+      expect(malformedJson.findings.some(f => f.code === 'PARSER_MALFORMED_TAR_ENTRY')).toBe(true);
+    } finally {
+      malformedWriteSpy.mockRestore();
+    }
   });
 
   it('reports PARSER_DUPLICATE_GUID when the same GUID appears twice', async () => {
@@ -652,8 +670,15 @@ describe('verify', () => {
     const dupGuidPackage = path.join(dir, 'dup-guid2.unitypackage');
     await writeFile(dupGuidPackage, gzipSync(tarBytes));
 
-    const result = await verify(dupGuidPackage);
-    expect(result.findings.some(f => f.code === 'PARSER_DUPLICATE_GUID')).toBe(true);
+    // duplicate-guid has severity 'error' -- verify throws; capture result via json mode
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await verify(dupGuidPackage, { json: true }).catch(() => undefined);
+      const json = JSON.parse(writeSpy.mock.calls.map(call => call[0]).join('')) as { findings: Array<{ code: string }> };
+      expect(json.findings.some(f => f.code === 'PARSER_DUPLICATE_GUID')).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 
   it('reports PARSER_ASSET_MISSING when entry has meta but no asset file', async () => {
@@ -742,6 +767,41 @@ describe('verify', () => {
     );
 
     await expect(verify(packagePath, { strict: true })).rejects.toThrow(/Package has warnings/);
+  });
+
+  it('exits non-zero when an error-severity parse diagnostic is present', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'empty-pathname.unitypackage');
+    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    // empty-pathname has severity 'error' -- verify should throw even without --strict
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: '\nAssets/Ignored.cs',
+      }),
+    );
+
+    await expect(verify(packagePath)).rejects.toThrow(/Package has errors/);
+  });
+
+  it('exits zero for packages with only warning-severity diagnostics (no strict)', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'warning-only.unitypackage');
+    const guid = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    // meta-missing has severity 'warning' -- verify should pass without --strict
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: 'Assets/NoMeta.cs',
+        [`${guid}/asset`]: 'asset',
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.ok).toBe(true);
+    expect(result.findings.some(f => f.code === 'PARSER_META_MISSING')).toBe(true);
   });
 });
 

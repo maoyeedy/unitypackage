@@ -39,18 +39,22 @@ export async function verify(packagePath: string, opts: { json?: boolean; strict
     findings.push({ level, code, message, ...(entry !== undefined && { entry }) });
   }
 
-  let entries;
+  let entries: ReturnType<typeof parseUnityPackageEntries>['entries'];
+  let parseDiagnostics: ReturnType<typeof parseUnityPackageEntries>['diagnostics'];
   try {
-    entries = parseUnityPackageEntries(new Uint8Array(raw));
+    const parsed = parseUnityPackageEntries(new Uint8Array(raw));
+    entries = parsed.entries;
+    parseDiagnostics = parsed.diagnostics;
   } catch (err) {
     finding('error', 'PARSE_FAILED', `Failed to parse package: ${err instanceof Error ? err.message : String(err)}`);
     return output(packagePath, raw.length, findings, opts);
   }
 
-  for (const diagnostic of entries.diagnostics) {
+  for (const diagnostic of parseDiagnostics) {
     if (diagnostic.code === 'ignored-preview') continue;
+    const level: FindingLevel = diagnostic.severity === 'error' ? 'error' : 'warn';
     finding(
-      'warn',
+      level,
       `PARSER_${diagnostic.code.toUpperCase().replaceAll('-', '_')}`,
       diagnostic.message,
       diagnostic.path,

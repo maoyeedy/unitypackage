@@ -51,7 +51,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 
 ## Implementation
 
-- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, includes structured diagnostics), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
+- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, buffered, includes structured diagnostics), `parseUnityPackageStream` (iterator-based; yields entries and diagnostics as each GUID group completes; supports `onProgress` and bomb guards), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
 - **`packages/cli`**: extract, pack, inspect, verify, diff, doctor, web.
 
 | Aspect | Detail |
@@ -63,7 +63,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 | Legacy fallback | `asset.meta` → `metaData` |
 | GUID validation | Unity exports use 32 hex; core preserves any archive prefix as `guid` |
 | GUID generation | MD5 of UTF-16LE path |
-| Archive model | Fully buffered (no streaming) |
+| Archive model | Gzip decompressed synchronously (fflate); tar parsed entry-by-entry via `parseUnityPackageStream`; buffered collection via `parseUnityPackageEntries` |
 
 ```ts
 interface UnityPackageEntry {
@@ -102,7 +102,7 @@ does not validate Unity YAML schemas.
 
 - Old exports: `metaData` instead of `asset.meta`, multi-line `pathname` (use first line only).
 - `preview.png` surfaced by `parseUnityPackageEntries`; flat `parseUnityPackage` ignores it.
-- No streaming — full decompress in memory.
+- Streaming: `parseUnityPackageStream` yields entries as each GUID group completes; gzip decompression remains synchronous (fflate). Use `parseUnityPackageEntries` for a fully buffered result.
 
 ## References
 

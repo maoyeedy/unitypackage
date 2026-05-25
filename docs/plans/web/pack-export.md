@@ -231,13 +231,23 @@ Exit criteria
 Let users build a package from local files, not just from staged
 Extract records.
 
+> **Cross-plan note (core/utils-expand.md P4 -- DONE 2026-05-25):**
+> `createMinimalMeta(guid)` is now exported from `unitypackage-core`.
+> This phase must import and call `createMinimalMeta` instead of inlining
+> the YAML template below. Example:
+> ```ts
+> import { createMinimalMeta, generateGuid } from 'unitypackage-core';
+> const meta = new TextEncoder().encode(createMinimalMeta(freshGuid));
+> ```
+
 - Drag-drop target on `PackPanel`'s staged list area. Accept `DataTransfer`
   files; if a folder is dropped, walk it via `webkitGetAsEntry` /
   `FileSystemDirectoryHandle` where available, otherwise accept top-level
   files only.
 - Sidecar pairing: for each pair where one file is `<X>` and another is
   `<X>.meta`, stage a single asset entry with both. For loose `<X>` with
-  no sidecar, auto-generate a minimal Unity meta YAML:
+  no sidecar, auto-generate a minimal Unity meta YAML using
+  `createMinimalMeta(guid)` from `unitypackage-core` (see note above):
   ```text
   fileFormatVersion: 2
   guid: <fresh 32-hex>
@@ -249,9 +259,9 @@ Extract records.
   ```
   Document that this is a minimal fallback and may not match Unity's
   type-specific importer defaults.
-- GUID generation: produce fresh 32-hex GUIDs via
-  `crypto.getRandomValues(new Uint8Array(16))` and hex-encode. Reject
-  any GUID that collides with already-staged entries; retry up to 4
+- GUID generation: produce fresh 32-hex GUIDs via `generateGuid()` from
+  `unitypackage-core` (which uses `globalThis.crypto.getRandomValues`).
+  Reject any GUID that collides with already-staged entries; retry up to 4
   times before surfacing an error.
 - Pathname editing: each raw-imported record gets an inline editable
   `pathname` (default: the dropped file's relative path with backslashes
