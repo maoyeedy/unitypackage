@@ -145,6 +145,69 @@ When `options.guid` is omitted, the `oversized-tar-entry` check is skipped.
 The 100-byte limit check matches the internal check in `tryCreateUnityPackage`
 for the same `guid` input.
 
+## Meta sidecar selection
+
+```ts
+import {
+  assetPathForMetaSidecar,
+  isMetaSidecarPath,
+  metaSidecarPathForAsset,
+  resolveMetaSidecarSelection,
+} from 'unitypackage-core';
+```
+
+Unity `.meta` sidecars carry GUIDs and importer settings. Keeping a selected
+asset with its existing sidecar preserves references and import behavior when
+the files are used again.
+
+The path helpers work directly on package pathnames:
+
+- `isMetaSidecarPath(pathname)` returns `true` for pathnames ending in
+  `.meta`.
+- `assetPathForMetaSidecar(pathname)` removes the `.meta` suffix, or returns
+  `null` when the pathname is not a sidecar.
+- `metaSidecarPathForAsset(pathname)` appends `.meta`.
+
+`resolveMetaSidecarSelection(records, selectedIds)` expands selected asset IDs
+with matching existing meta record IDs:
+
+```ts
+const records = [
+  {
+    id: 'asset-1',
+    guid: '006f7fc78b046e2408cecc07a80417b5',
+    pathname: 'Assets/Texture.png',
+    kind: 'asset',
+  },
+  {
+    id: 'meta-1',
+    guid: '006f7fc78b046e2408cecc07a80417b5',
+    pathname: 'Assets/Texture.png.meta',
+    kind: 'meta',
+  },
+] as const;
+
+const selection = resolveMetaSidecarSelection(records, ['asset-1']);
+// {
+//   ids: ['asset-1', 'meta-1'],
+//   explicitIds: ['asset-1'],
+//   implicitMetaIds: ['meta-1'],
+//   missingMetaForAssetIds: [],
+// }
+```
+
+Selected asset records are the only sidecar sources. Selected meta records stay
+selected but do not expand anything; preview records are ignored for expansion.
+For each selected asset, the resolver looks for a meta record with the same
+GUID and `pathname === metaSidecarPathForAsset(asset.pathname)` first, then
+falls back to the first meta record with that exact pathname. Explicit selected
+IDs keep caller order, and implicit meta IDs are appended in selected asset
+order without duplicates.
+
+The resolver only selects sidecars that already exist in `records`. It does
+not generate missing `.meta` files. Callers still own UI hiding, ZIP creation,
+filesystem writes, and `--no-meta` style opt-outs.
+
 ## Streaming parse
 
 ```ts

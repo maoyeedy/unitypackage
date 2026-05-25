@@ -14,9 +14,18 @@ export type {
   PathnameValidationResult,
 } from './pathname';
 export {
+  assetPathForMetaSidecar,
   detectPathnameCollisions,
+  isMetaSidecarPath,
+  metaSidecarPathForAsset,
   validatePathname,
 } from './pathname';
+export type {
+  ResolveMetaSidecarsResult,
+  SidecarSelectableKind,
+  SidecarSelectableRecord,
+} from './sidecar';
+export { resolveMetaSidecarSelection } from './sidecar';
 export type { MetaImporterType } from './meta';
 export {
   createMinimalFolderMeta,

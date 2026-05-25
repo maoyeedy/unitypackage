@@ -20,6 +20,22 @@ export interface PathnameValidationResult {
 }
 
 const _tarEntryNameEncoder = new TextEncoder();
+const META_SIDECAR_SUFFIX = '.meta';
+
+export function isMetaSidecarPath(pathname: string): boolean {
+  return pathname.endsWith(META_SIDECAR_SUFFIX);
+}
+
+export function assetPathForMetaSidecar(pathname: string): string | null {
+  if (!isMetaSidecarPath(pathname)) {
+    return null;
+  }
+  return pathname.slice(0, -META_SIDECAR_SUFFIX.length);
+}
+
+export function metaSidecarPathForAsset(pathname: string): string {
+  return `${pathname}${META_SIDECAR_SUFFIX}`;
+}
 
 /**
  * Validates a pathname against the rejection rules in the .unitypackage
