@@ -20,10 +20,10 @@ without reimplementing matching rules.
 
 In:
 
-- Browser-safe pure utilities in `packages/core/src/index.ts`.
+- Browser-safe pure utilities in the relevant `packages/core/src` domain module, exported through `packages/core/src/index.ts`.
 - Types that let callers pass lightweight records without depending on web or
   CLI types.
-- Unit tests in `packages/core/src/index.test.ts`.
+- Unit tests in the matching `packages/core/src/*.test.ts` file.
 - README docs for the utility behavior.
 
 Out:
@@ -38,8 +38,8 @@ Out:
 
 | ID | Title | Goal | Depends on | Files |
 |----|-------|------|------------|-------|
-| P1 | Path helpers | Add minimal `.meta` sidecar path helpers. | -- | `packages/core/src/index.ts`, `packages/core/src/index.test.ts` |
-| P2 | Selection resolver | Add a generic resolver for selected IDs plus implicit sidecars. | P1 | `packages/core/src/index.ts`, `packages/core/src/index.test.ts` |
+| P1 | Path helpers | Add minimal `.meta` sidecar path helpers. | -- | `packages/core/src/pathname.ts`, matching test, `packages/core/src/index.ts` |
+| P2 | Selection resolver | Add a generic resolver for selected IDs plus implicit sidecars. | P1 | relevant core domain module, matching test, `packages/core/src/index.ts` |
 | P3 | Docs and examples | Document the resolver and its matching order. | P1, P2 | `packages/core/README.md` |
 
 ### P1 -- Path helpers

@@ -2,7 +2,7 @@
 
 ## Context
 
-Our core library (`packages/core/src/index.ts`) currently generates only `DefaultImporter` meta files via `createMinimalMeta(guid)`. DeNA/unity-meta-check uses 4 importer types based on file extension (folders, `.cs`, text-based data files, generic). We should match this so packages produced by our CLI carry correct meta types — avoiding Unity importer warnings and ensuring proper asset handling.
+Our core library generated only `DefaultImporter` meta files via `createMinimalMeta(guid)`. DeNA/unity-meta-check uses 4 importer types based on file extension (folders, `.cs`, text-based data files, generic). We should match this so packages produced by our CLI carry correct meta types -- avoiding Unity importer warnings and ensuring proper asset handling.
 
 ## Scope
 
@@ -25,17 +25,17 @@ Our core library (`packages/core/src/index.ts`) currently generates only `Defaul
 
 ### P1 -- Importer type definitions and templates  [DONE 2026-05-25]
 
-Shipped: Exported `MetaImporterType` union (`DefaultImporter | DefaultImporterFolder | TextScriptImporter | MonoImporter`) and three internal template functions (`defaultImporterFolderTemplate`, `textScriptImporterTemplate`, `monoImporterTemplate`) in `packages/core/src/index.ts`.
+Shipped: Exported `MetaImporterType` union (`DefaultImporter | DefaultImporterFolder | TextScriptImporter | MonoImporter`) through `packages/core/src/index.ts`; implementation now lives in `packages/core/src/meta.ts`.
 Each template mirrors Unity Editor YAML output for its asset kind. See git log for implementation detail.
 
 ### P2 -- Extension-based detection  [DONE 2026-05-25]
 
-Shipped: Exported `detectMetaImporterType(pathname, isDir?)` in `packages/core/src/index.ts` using string-only extension extraction (no `node:path`).
+Shipped: Exported `detectMetaImporterType(pathname, isDir?)` through `packages/core/src/index.ts` using string-only extension extraction (no `node:path`).
 Implements the full priority chain: `isDir` flag, `.cs`, text-script set, `LICENSE` basename, YAML set, extensionless fallback, and default. See git log for implementation detail.
 
 ### P3 -- Public convenience API and tests  [DONE 2026-05-25]
 
-Shipped: Exported `createMinimalMetaFor(guid, pathname, isDir?)` and `createMinimalFolderMeta(guid)` in `packages/core/src/index.ts`.
+Shipped: Exported `createMinimalMetaFor(guid, pathname, isDir?)` and `createMinimalFolderMeta(guid)` through `packages/core/src/index.ts`.
 Added 27 new tests across 4 describe blocks covering all 4 importer types, all detection rules, edge cases, and backward compat of `createMinimalMeta`; 157/157 pass. See git log for implementation detail.
 
 ## Verification

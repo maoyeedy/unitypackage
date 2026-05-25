@@ -2,6 +2,19 @@
 
 Browser-safe `.unitypackage` parser and writer.
 
+## Source layout
+
+The public API is the package root:
+
+```ts
+import { parseUnityPackageEntries } from 'unitypackage-core';
+```
+
+`src/index.ts` is intentionally a small barrel. Runtime implementation is split
+by domain (`guid`, `pathname`, `meta`, `parse`, `create`, `summary`) with shared
+model types in `model.ts` and private tar helpers in `tar.ts`. There are no
+public subpath exports; internal file paths are not package API.
+
 ## API
 
 ```ts
@@ -10,9 +23,12 @@ import { parseUnityPackage, parseUnityPackageEntries, createUnityPackage } from 
 
 See source for full type definitions. No Node.js or browser globals required beyond `Uint8Array` and `TextEncoder`/`TextDecoder`.
 
-`parseUnityPackageEntries(data)` returns GUID-aware entries and preserves array
-compatibility. The returned array also exposes a non-enumerable `diagnostics`
-property with structured parser diagnostics.
+`parseUnityPackageEntries(data)` returns GUID-aware entries and structured
+parser diagnostics:
+
+```ts
+const { entries, diagnostics } = parseUnityPackageEntries(bytes);
+```
 
 `UnityPackageEntry.preview` contains optional `preview.png` thumbnail bytes when
 present. Flat `parseUnityPackage(data)` output ignores previews.
@@ -135,14 +151,14 @@ for the same `guid` input.
 import { parseUnityPackageStream } from 'unitypackage-core';
 ```
 
-`parseUnityPackageStream(bytes, options?)` is an `AsyncGenerator` that yields
+`parseUnityPackageStream(bytes, options?)` is a synchronous `Generator` that yields
 entries and diagnostics as each GUID group completes. Gzip decompression
 remains synchronous (fflate); streaming applies at the tar layer.
 
 Each yielded item carries a `_kind` discriminator:
 
 ```ts
-for await (const item of parseUnityPackageStream(bytes)) {
+for (const item of parseUnityPackageStream(bytes)) {
   if (item._kind === 'entry') {
     // item is UnityPackageEntry & { _kind: 'entry' }
   } else {

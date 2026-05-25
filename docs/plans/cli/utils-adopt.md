@@ -395,17 +395,14 @@ the buffered call used to return so downstream code does not branch.
 core rollout, then a clean gate.
 
 - `docs/reference/format.md`
-  - Replace the `interface UnityPackageParseDiagnostic { ... }`
-    snippet (lines 77-83) with the current union of 9 codes and the
-    `severity` field.
+  - Confirm the `interface UnityPackageParseDiagnostic { ... }`
+    snippet lists the current union of 9 codes and the `severity` field.
   - Optionally add a note that `unitypackage-tools` exposes
     `--max-output-bytes` and `--max-entries` after P6.
 - `packages/core/README.md`
-  - The `parseUnityPackageStream` example currently uses
-    `for await (const item of parseUnityPackageStream(bytes))`. The
-    helper is a synchronous `function*` generator, so update the
-    example to `for (const item of parseUnityPackageStream(bytes))`.
-  - Update the description from "AsyncGenerator" to "Generator".
+  - Confirm `parseUnityPackageStream` is documented as a synchronous
+    `Generator` and the example uses
+    `for (const item of parseUnityPackageStream(bytes))`.
   - The `onProgress` description is correct; leave it.
 
 This phase is docs-only. No code changes.

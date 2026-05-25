@@ -46,8 +46,8 @@ if extract enrichment slips.
 
 | ID | Title | Goal | Parallel with | Depends on | Files | Subagent | Status |
 |----|-------|------|---------------|------------|-------|----------|--------|
-| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
-| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
+| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/create.ts`, `packages/core/src/tar.ts`, `packages/core/src/create.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
+| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/create.ts`, `packages/core/src/create.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
 | P3 | Pack worker and enabled export | Add `createPackage.worker.ts`, wire it into `App.tsx`, and enable the Export button when `validatePackDraft` succeeds. | - | P1, P2 | `apps/web/src/createPackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P4 | Pack UX enrichment | Compression level, output filename, size estimate, per-record validation rows, success state, and inline creation diagnostics. | P5 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P5 | Raw file import and meta authoring | Drag-drop OS files into Pack mode, pair `<file>` + `<file>.meta`, auto-generate minimal meta for loose assets, fresh non-colliding GUIDs, inline `pathname` edit with byte-budget validation. | P4 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/pack.spec.ts` | worker |
@@ -77,7 +77,7 @@ Exit criteria
 - `createUnityPackage` emits entries sorted by GUID; two calls with the same input produce byte-equal output.
 - Tar headers use deterministic timestamps, mode, uid/gid, and uname/gname.
 - `estimateUnityPackageSize(entries)` is exported from `packages/core` and matches the actual tar byte length produced by `createUnityPackage` for the same input.
-- New tests in `packages/core/src/index.test.ts` cover: byte-equality across two identical calls, GUID-order independence (shuffled input yields the same bytes), and estimate-vs-actual byte equality for both asset and asset-less entries.
+- New tests in `packages/core/src/create.test.ts` cover: byte-equality across two identical calls, GUID-order independence (shuffled input yields the same bytes), and estimate-vs-actual byte equality for both asset and asset-less entries.
 - `packages/core/README.md` documents deterministic ordering and `estimateUnityPackageSize`.
 - Run: bun run --filter unitypackage-core test
 - Run: bun run --filter unitypackage-core build
