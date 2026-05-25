@@ -35,7 +35,7 @@ Note: `<header>` and `<footer>` only carry `banner`/`contentinfo` roles when dir
 
 | Locator | Element | Notes |
 |---------|---------|-------|
-| `getByPlaceholder('Filter path, GUID, or kind')` | Search input | `type="search"` |
+| `getByPlaceholder('Filter path or GUID')` | Search input | `type="search"` |
 | `getByRole('button', { name: 'Tree' })` | Tree grouping button | Segmented control |
 | `getByRole('button', { name: 'Extension' })` | Extension grouping button | Segmented control |
 

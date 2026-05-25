@@ -188,8 +188,7 @@ function AppContent() {
     return records.filter(record => {
       return (
         record.virtualPath.toLowerCase().includes(normalizedQuery) ||
-        record.guid.toLowerCase().includes(normalizedQuery) ||
-        record.kind.includes(normalizedQuery)
+        record.guid.toLowerCase().includes(normalizedQuery)
       );
     });
   }, [query, records]);
@@ -340,7 +339,7 @@ function AppContent() {
             <input
               type="search"
               value={query}
-              placeholder="Filter path, GUID, or kind"
+              placeholder="Filter path or GUID"
               onChange={event => {
                 setQuery(event.target.value);
               }}
@@ -533,9 +532,9 @@ function Stats({
   totalBytes: number;
   diagnostics: UnityPackageParseDiagnostic[];
 }) {
-  const assetCount = records.filter(record => record.kind === 'asset').length;
-  const metaCount = records.filter(record => record.kind === 'meta').length;
-  const previewCount = records.filter(record => record.kind === 'preview').length;
+  const assetCount = records.filter(record => !record.isUnityPreview && record.extension !== 'meta').length;
+  const metaCount = records.filter(record => record.extension === 'meta').length;
+  const previewCount = records.filter(record => record.isUnityPreview).length;
 
   return (
     <dl className="stats-grid">
@@ -1251,7 +1250,6 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
 
 function Metadata({ record }: { record: PackageFileRecord }) {
   const rows = [
-    ['Kind', record.kind],
     ['Path', record.virtualPath],
     ['GUID', record.guid],
     ['Extension', record.extension || 'None'],
@@ -1339,7 +1337,6 @@ function PackPanel({
           <div key={record.id} className="staged-row">
             <File aria-hidden="true" size={16} />
             <span>{record.virtualPath}</span>
-            <small>{record.kind}</small>
             <button type="button" className="icon-button" aria-label={`Remove ${record.fileName}`} onClick={() => { onRemove(record.id); }}>
               <RefreshCw aria-hidden="true" size={15} />
             </button>

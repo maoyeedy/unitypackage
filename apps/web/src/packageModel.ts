@@ -2,7 +2,7 @@ import type { UnityPackageEntry, UnityPackageParseDiagnostic } from 'unitypackag
 
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
-export type PackageRecordKind = 'asset' | 'meta' | 'preview';
+export type RecordCategory = 'asset' | 'meta' | 'preview';
 export type PreviewKind = 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'unsupported';
 export type SyntaxLanguage = 'text' | 'yaml' | 'json' | 'xml' | 'css' | 'csharp' | 'shaderlab' | 'hlsl' | 'glsl' | 'typescript' | 'javascript' | 'markdown' | 'html';
 
@@ -14,7 +14,7 @@ export interface PackageFileRecord {
   fileName: string;
   extension: string;
   mimeType: string;
-  kind: PackageRecordKind;
+  isUnityPreview: boolean;
   content: Uint8Array;
   byteLength: number;
   hasAsset: boolean;
@@ -27,6 +27,14 @@ export interface PackageFileRecord {
   previewKind: PreviewKind;
   syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
+}
+
+type EntryComponent = 'asset' | 'meta' | 'preview';
+
+export function getRecordCategory(record: PackageFileRecord): RecordCategory {
+  if (record.isUnityPreview) return 'preview';
+  if (record.extension === 'meta') return 'meta';
+  return 'asset';
 }
 
 export interface TreeFolderRow {
@@ -150,7 +158,7 @@ export function entriesToRecords(
     }
   }
 
-  return records.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath) || a.kind.localeCompare(b.kind));
+  return records.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath) || a.guid.localeCompare(b.guid));
 }
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {
@@ -319,8 +327,8 @@ export function formatBytes(bytes: number): string {
 
 export function validatePackDraft(records: PackageFileRecord[]): PackValidation {
   const messages: string[] = [];
-  const stagedAssets = records.filter(record => record.kind === 'asset');
-  const unsupported = records.filter(record => record.kind === 'preview');
+  const stagedAssets = records.filter(record => !record.isUnityPreview && record.extension !== 'meta');
+  const unsupported = records.filter(record => record.isUnityPreview);
   const guidCounts = new Map<string, number>();
 
   for (const record of stagedAssets) {
@@ -359,7 +367,7 @@ export function validatePackDraft(records: PackageFileRecord[]): PackValidation 
 
 function createRecord(
   entry: UnityPackageEntry,
-  kind: PackageRecordKind,
+  component: EntryComponent,
   virtualPath: string,
   content: Uint8Array,
   pathCounts: ReadonlyMap<string, number>,
@@ -367,18 +375,15 @@ function createRecord(
 ): PackageFileRecord {
   const fileName = virtualPath.split('/').pop() ?? virtualPath;
   const extension = getExtension(virtualPath);
-  const previewKind = kind === 'meta' ? 'text' : getPreviewKind(virtualPath, content);
-  const mimeType = kind === 'meta' ? 'text/plain;charset=utf-8' : getMimeType(virtualPath);
-  const syntaxLanguage = kind === 'meta' ? 'yaml' : getSyntaxLanguage(virtualPath);
   return {
-    id: `${entry.guid}:${kind}:${virtualPath}`,
+    id: `${entry.guid}:${virtualPath}`,
     guid: entry.guid,
     pathname: entry.pathname,
     virtualPath,
     fileName,
     extension,
-    mimeType,
-    kind,
+    mimeType: getMimeType(virtualPath),
+    isUnityPreview: component === 'preview',
     content,
     byteLength: content.byteLength,
     hasAsset: Boolean(entry.asset),
@@ -388,15 +393,15 @@ function createRecord(
     metaSize: entry.meta?.byteLength,
     previewSize: entry.preview?.byteLength,
     duplicatePathCount: pathCounts.get(entry.pathname) ?? 1,
-    previewKind,
-    syntaxLanguage,
+    previewKind: getPreviewKind(virtualPath, content),
+    syntaxLanguage: getSyntaxLanguage(virtualPath),
     diagnostics,
   };
 }
 
 function getRecordDiagnostics(
   entry: UnityPackageEntry,
-  kind: PackageRecordKind,
+  component: EntryComponent,
   diagnostics: UnityPackageParseDiagnostic[],
 ): UnityPackageParseDiagnostic[] {
   return diagnostics.filter(diagnostic => {
@@ -405,19 +410,19 @@ function getRecordDiagnostics(
     }
 
     if (diagnostic.code === 'ignored-preview') {
-      return kind === 'preview';
+      return component === 'preview';
     }
 
     if (diagnostic.path?.endsWith('/preview.png')) {
-      return kind === 'preview';
+      return component === 'preview';
     }
 
     if (diagnostic.path?.endsWith('/asset.meta') || diagnostic.path?.endsWith('/metaData')) {
-      return kind === 'meta';
+      return component === 'meta';
     }
 
     if (diagnostic.path?.endsWith('/asset')) {
-      return kind === 'asset';
+      return component === 'asset';
     }
 
     return true;

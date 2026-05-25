@@ -12,6 +12,7 @@ import {
   getFolderRecordIds,
   getPreviewKind,
   getRangeRecordIds,
+  getRecordCategory,
   getSelectionState,
   getSyntaxLanguage,
   getTreeFileRecordIds,
@@ -51,10 +52,10 @@ describe('package model helpers', () => {
     const records = entriesToRecords(entries, diagnostics);
 
     expect(records).toHaveLength(5);
-    expect(records.filter(record => record.kind === 'asset')).toHaveLength(2);
+    expect(records.filter(record => getRecordCategory(record) === 'asset')).toHaveLength(2);
     expect(records.every(record => record.duplicatePathCount === 2)).toBe(true);
-    expect(records.find(record => record.kind === 'preview')?.diagnostics[0]?.code).toBe('ignored-preview');
-    expect(records.find(record => record.kind === 'asset' && record.guid.startsWith('b'))?.diagnostics).toEqual([]);
+    expect(records.find(record => record.isUnityPreview)?.diagnostics[0]?.code).toBe('ignored-preview');
+    expect(records.find(record => getRecordCategory(record) === 'asset' && record.guid.startsWith('b'))?.diagnostics).toEqual([]);
   });
 
   it('treats real png and png meta fixture records as separate preview types', () => {
@@ -72,11 +73,13 @@ describe('package model helpers', () => {
     const pngRecord = records.find(record => record.virtualPath === 'Assets/Textures/texture_02.png');
     const metaRecord = records.find(record => record.virtualPath === 'Assets/Textures/texture_02.png.meta');
 
-    expect(pngRecord?.kind).toBe('asset');
+    expect(pngRecord && getRecordCategory(pngRecord)).toBe('asset');
+    expect(pngRecord?.isUnityPreview).toBe(false);
     expect(pngRecord?.previewKind).toBe('image');
     expect(pngRecord?.mimeType).toBe('image/png');
     expect(pngRecord?.byteLength).toBe(png.byteLength);
-    expect(metaRecord?.kind).toBe('meta');
+    expect(metaRecord && getRecordCategory(metaRecord)).toBe('meta');
+    expect(metaRecord?.isUnityPreview).toBe(false);
     expect(metaRecord?.previewKind).toBe('text');
     expect(metaRecord?.mimeType).toBe('text/plain;charset=utf-8');
     expect(metaRecord?.byteLength).toBe(pngMeta.byteLength);

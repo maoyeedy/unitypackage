@@ -15,16 +15,16 @@ test.describe('explorer interactions', () => {
     const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
     const initial = await recordCount.textContent();
     expect(initial).toMatch(/\d+ visible records/);
-    await page.getByPlaceholder('Filter path, GUID, or kind').fill('xyznotexist');
+    await page.getByPlaceholder('Filter path or GUID').fill('xyznotexist');
     await expect(recordCount).toContainText('0 visible records');
   });
 
   test('clearing search restores all records', async ({ page }) => {
     const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
     const initial = await recordCount.textContent();
-    await page.getByPlaceholder('Filter path, GUID, or kind').fill('xyznotexist');
+    await page.getByPlaceholder('Filter path or GUID').fill('xyznotexist');
     await expect(recordCount).toContainText('0 visible records');
-    await page.getByPlaceholder('Filter path, GUID, or kind').clear();
+    await page.getByPlaceholder('Filter path or GUID').clear();
     await expect(recordCount).toHaveText(initial ?? '');
   });
 
