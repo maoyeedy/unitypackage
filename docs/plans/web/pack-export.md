@@ -44,16 +44,16 @@ if extract enrichment slips.
 
 ## Phases
 
-| ID | Title | Goal | Parallel with | Depends on | Files | Subagent |
-|----|-------|------|---------------|------------|-------|----------|
-| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
-| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
+| ID | Title | Goal | Parallel with | Depends on | Files | Subagent | Status |
+|----|-------|------|---------------|------------|-------|----------|--------|
+| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
+| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
 | P3 | Pack worker and enabled export | Add `createPackage.worker.ts`, wire it into `App.tsx`, and enable the Export button when `validatePackDraft` succeeds. | - | P1, P2 | `apps/web/src/createPackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P4 | Pack UX enrichment | Compression level, output filename, size estimate, per-record validation rows, success state, and inline creation diagnostics. | P5 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P5 | Raw file import and meta authoring | Drag-drop OS files into Pack mode, pair `<file>` + `<file>.meta`, auto-generate minimal meta for loose assets, fresh non-colliding GUIDs, inline `pathname` edit with byte-budget validation. | P4 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/pack.spec.ts` | worker |
 | P6 | Draft persistence and round-trip smoke | Persist pack draft (staged IDs + per-entry overrides) across reload and add an export -> re-parse round-trip spec. | - | P4, P5 | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/pack.spec.ts` | worker |
 
-### P1 - Deterministic and sized creation
+### P1 - Deterministic and sized creation -- DONE 2026-05-25
 
 Make `createUnityPackage` reproducible and addable to a size-aware UI without
 allocating the full output.
@@ -83,7 +83,7 @@ Exit criteria
 - Run: bun run --filter unitypackage-core build
 ```
 
-### P2 - Structured creation diagnostics
+### P2 - Structured creation diagnostics -- DONE 2026-05-25
 
 Replace the ad-hoc `throw new Error('Duplicate GUID ...')` flow with a
 structured surface that mirrors `UnityPackageParseDiagnostic`.

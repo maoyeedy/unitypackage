@@ -596,7 +596,7 @@ describe('verify', () => {
     const result = await verify(packagePath);
     expect(result.findings.some(f => f.code === 'UNEXPECTED_FILE' && f.entry === `${guid}/notes.txt`)).toBe(true);
     expect(result.findings.some(f => f.code === 'UNEXPECTED_FILE' && f.entry === `${guid}/preview.png`)).toBe(false);
-    expect(result.findings.some(f => f.code === 'PARSER_IGNORED_PREVIEW')).toBe(true);
+    expect(result.findings.some(f => f.code === 'PARSER_IGNORED_PREVIEW')).toBe(false);
   });
 
   it('reports parser diagnostics for empty pathnames, non-standard GUIDs, and malformed tar entries', async () => {

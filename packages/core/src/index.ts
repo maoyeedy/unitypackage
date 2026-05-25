@@ -21,6 +21,20 @@ export interface CreateUnityPackageOptions {
   gzipLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 }
 
+export type CreateUnityPackageDiagnosticCode =
+  | 'duplicate-guid'
+  | 'missing-meta'
+  | 'oversized-pathname'
+  | 'empty-entries'
+  | 'invalid-guid';
+
+export interface CreateUnityPackageDiagnostic {
+  code: CreateUnityPackageDiagnosticCode;
+  message: string;
+  guid?: string;
+  path?: string;
+}
+
 export type UnityPackageParseDiagnosticCode =
   | 'asset-missing'
   | 'duplicate-guid'
@@ -76,20 +90,127 @@ export function parseUnityPackageEntries(data: Uint8Array): UnityPackageEntriesR
   return entries;
 }
 
-export function createUnityPackage(entries: CreateUnityPackageEntry[], options: CreateUnityPackageOptions = {}): Uint8Array {
-  const tarEntries: Uint8Array[] = [];
-  const guids = new Set<string>();
+export function estimateUnityPackageSize(
+  entries: CreateUnityPackageEntry[],
+): { tarBytes: number; entryCount: number } {
+  let tarBytes = 0;
+  let entryCount = 0;
 
   for (const entry of entries) {
-    if (guids.has(entry.guid)) {
-      throw new Error(`Duplicate GUID in package entries: ${entry.guid}`);
-    }
-    guids.add(entry.guid);
+    // pathname member is always written
+    const pathnameBodyBytes = textEncoder.encode(entry.pathname).length;
+    tarBytes += BLOCK_SIZE + Math.ceil(pathnameBodyBytes / BLOCK_SIZE) * BLOCK_SIZE;
+    entryCount += 1;
 
-    if (entry.pathname.length > 200) {
-      throw new Error(`Pathname exceeds 200 characters (${entry.pathname.length}): ${entry.pathname}`);
+    // asset.meta member is always written
+    tarBytes += BLOCK_SIZE + Math.ceil(entry.meta.length / BLOCK_SIZE) * BLOCK_SIZE;
+    entryCount += 1;
+
+    // asset member is optional
+    if (entry.asset) {
+      tarBytes += BLOCK_SIZE + Math.ceil(entry.asset.length / BLOCK_SIZE) * BLOCK_SIZE;
+      entryCount += 1;
+    }
+  }
+
+  // two trailing end-of-archive zero blocks
+  tarBytes += BLOCK_SIZE * 2;
+
+  return { tarBytes, entryCount };
+}
+
+const VALID_GUID_PATTERN = /^[0-9a-fA-F]{32}$/;
+const TAR_NAME_LIMIT = 100;
+
+export function tryCreateUnityPackage(
+  entries: CreateUnityPackageEntry[],
+  options?: CreateUnityPackageOptions,
+): { bytes: Uint8Array; diagnostics: CreateUnityPackageDiagnostic[] } | { bytes: null; diagnostics: CreateUnityPackageDiagnostic[] } {
+  const diagnostics: CreateUnityPackageDiagnostic[] = [];
+
+  // empty-entries
+  if (entries.length === 0) {
+    diagnostics.push({
+      code: 'empty-entries',
+      message: 'Package must contain at least one entry.',
+    });
+    return { bytes: null, diagnostics };
+  }
+
+  const seenGuids = new Set<string>();
+
+  for (const entry of entries) {
+    const { guid, pathname } = entry;
+
+    // invalid-guid: not exactly 32 hex characters (case-insensitive)
+    if (!VALID_GUID_PATTERN.test(guid)) {
+      diagnostics.push({
+        code: 'invalid-guid',
+        message: `GUID is not exactly 32 hexadecimal characters: ${guid}`,
+        guid,
+      });
     }
 
+    // duplicate-guid
+    if (seenGuids.has(guid)) {
+      diagnostics.push({
+        code: 'duplicate-guid',
+        message: `Duplicate GUID in package entries: ${guid}`,
+        guid,
+      });
+    } else {
+      seenGuids.add(guid);
+    }
+
+    // missing-meta: meta is absent or empty
+    if (!entry.meta || entry.meta.byteLength === 0) {
+      diagnostics.push({
+        code: 'missing-meta',
+        message: `Entry is missing a meta file: ${pathname}`,
+        guid,
+        path: pathname,
+      });
+    }
+
+    // oversized-pathname (200-char pathname body limit)
+    if (pathname.length > 200) {
+      diagnostics.push({
+        code: 'oversized-pathname',
+        message: `Pathname exceeds 200 characters (${pathname.length}): ${pathname}`,
+        guid,
+        path: pathname,
+      });
+    }
+
+    // oversized-pathname (ustar 100-byte tar entry name limit)
+    const tarNames = [
+      `${guid}/pathname`,
+      `${guid}/asset.meta`,
+      ...(entry.asset ? [`${guid}/asset`] : []),
+    ];
+    for (const tarName of tarNames) {
+      if (textEncoder.encode(tarName).length > TAR_NAME_LIMIT) {
+        diagnostics.push({
+          code: 'oversized-pathname',
+          message: `Tar entry name is too long: ${tarName}`,
+          guid,
+          path: tarName,
+        });
+      }
+    }
+  }
+
+  if (diagnostics.length > 0) {
+    return { bytes: null, diagnostics };
+  }
+
+  // Build the tar archive
+  const tarEntries: Uint8Array[] = [];
+
+  // Sort by GUID ascending for reproducible output
+  const sorted = entries.slice().sort((a, b) => (a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0));
+
+  for (const entry of sorted) {
     tarEntries.push(createTarEntry(`${entry.guid}/pathname`, textEncoder.encode(entry.pathname)));
     tarEntries.push(createTarEntry(`${entry.guid}/asset.meta`, entry.meta));
 
@@ -100,7 +221,17 @@ export function createUnityPackage(entries: CreateUnityPackageEntry[], options: 
 
   tarEntries.push(new Uint8Array(BLOCK_SIZE * 2));
   const tar = concatUint8Arrays(tarEntries);
-  return gzipSync(tar, { level: options.gzipLevel ?? 6 });
+  // mtime: 0 makes the gzip header timestamp deterministic
+  const bytes = gzipSync(tar, { level: (options?.gzipLevel ?? 6), mtime: 0 });
+  return { bytes, diagnostics: [] };
+}
+
+export function createUnityPackage(entries: CreateUnityPackageEntry[], options: CreateUnityPackageOptions = {}): Uint8Array {
+  const result = tryCreateUnityPackage(entries, options);
+  if (result.bytes === null) {
+    throw new Error(result.diagnostics[0].message);
+  }
+  return result.bytes;
 }
 
 function parseTar(data: Uint8Array, diagnostics: UnityPackageParseDiagnostic[]): Record<string, Uint8Array> {

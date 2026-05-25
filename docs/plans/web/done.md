@@ -45,7 +45,7 @@ currently visible records.
 
 - Browser-side `.unitypackage` export is not implemented. Pack mode is intentionally a disabled shell until `docs/plans/web/new-api.md` adds the final browser-safe creation API.
 - Streaming parse is not implemented in core or web yet.
-- Deterministic/sized package creation APIs are not implemented yet.
+- Deterministic/sized package creation APIs are implemented (pack-export P1, 2026-05-25).
 - Rich PDF navigation was intentionally left out; current PDF previews use browser-native rendering.
 - Playwright/browser smoke coverage is not added yet. `docs/plans/ci/ci-release.md` now expects a smoke test against the workspace tree and preview pane.
 - Manual browser smoke with `fixtures/static/editor-packed.unitypackage` should still be done after the next UI-affecting change.

@@ -92,6 +92,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **E2E tests are ESM**: `__dirname` is unavailable in `apps/web/tests/*.spec.ts`; use `path.dirname(fileURLToPath(import.meta.url))` for fixture paths.
 - **`getByRole` name matching is substring by default**: `getByRole('button', { name: 'Pack' })` also matches "Stage for pack". Add `exact: true` whenever the button label appears inside another button's label.
 - **E2E fixture path**: `fixtures/static/editor-packed.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/editor-packed.unitypackage')`.
+- **`PARSER_IGNORED_PREVIEW` is silently skipped in `verify`**: the core emits it for every `preview.png` in a GUID directory (normal Unity Editor output), but `packages/cli/src/commands/verify.ts` filters it out before adding to `findings` — intentional, not an oversight.
 
 ## Do Not Edit
 

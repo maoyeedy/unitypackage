@@ -48,6 +48,7 @@ export async function verify(packagePath: string, opts: { json?: boolean; strict
   }
 
   for (const diagnostic of entries.diagnostics) {
+    if (diagnostic.code === 'ignored-preview') continue;
     finding(
       'warn',
       `PARSER_${diagnostic.code.toUpperCase().replaceAll('-', '_')}`,
