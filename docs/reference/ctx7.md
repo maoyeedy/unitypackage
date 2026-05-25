@@ -1,33 +1,55 @@
 # Context7 Library IDs
 
-## Runtime
+Dependencies from each package's `package.json`, split by runtime vs dev. Workspace references (`workspace:*`) are internal -- no Ctx7 ID.
 
-| Dep | ID |
-|---|---|
-| Node.js | `/nodejs/node` |
-| fflate | `/101arrowz/fflate` |
-| yaml | `/eemeli/yaml` |
-| react | `/facebook/react` |
-| react-dom | *(part of `/facebook/react`)* |
-| @tanstack/react-virtual | `/tanstack/virtual` |
-| lucide-react | `/lucide-icons/lucide` |
-| shiki | `/shikijs/shiki` |
-| workbox-window | *(part of vite-plugin-pwa docs; no separate ID recorded)* |
-| chalk | `/chalk/chalk` |
+## Root
 
-Workspace deps (`unitypackage-core`) are internal — no Ctx7 ID.
+| Scope | Dep | ID |
+|-------|-----|----|
+| dev | `@eslint/js` | `/eslint/eslint` |
+| dev | `@types/node` | no separate ctx7 ID; see `/microsoft/typescript` |
+| dev | `eslint` | `/eslint/eslint` |
+| dev | `globals` | `/sindresorhus/globals` |
+| dev | `typescript` | `/microsoft/typescript` |
+| dev | `typescript-eslint` | `/typescript-eslint/typescript-eslint` |
+| dev | `vitest` | `/vitest-dev/vitest` |
 
-## Dev
+## packages/core
 
-| Dep | ID |
-|---|---|
-| bun | `/oven-sh/bun` |
-| typescript | `/microsoft/typescript` |
-| vitest | `/vitest-dev/vitest` |
-| eslint | `/eslint/eslint` |
-| typescript-eslint | `/typescript-eslint/typescript-eslint` |
-| vite | `/vitejs/vite` |
-| vite-plugin-pwa | `/vite-pwa/vite-plugin-pwa` |
+| Scope | Dep | ID |
+|-------|-----|----|
+| runtime | `fflate` | `/101arrowz/fflate` |
+
+## packages/cli
+
+| Scope | Dep | ID |
+|-------|-----|----|
+| runtime | `yaml` | `/eemeli/yaml` |
+| runtime | `unitypackage-core` | *(workspace -- internal)* |
+
+## apps/web
+
+| Scope | Dep | ID |
+|-------|-----|----|
+| runtime | `@shikijs/langs` | `/shikijs/shiki` |
+| runtime | `@shikijs/themes` | `/shikijs/shiki` |
+| runtime | `@tanstack/react-virtual` | `/tanstack/virtual` |
+| runtime | `fflate` | `/101arrowz/fflate` |
+| runtime | `lucide-react` | `/lucide-icons/lucide` |
+| runtime | `react` | `/facebook/react` |
+| runtime | `react-dom` | *(part of `/facebook/react`)* |
+| runtime | `shiki` | `/shikijs/shiki` |
+| runtime | `unitypackage-core` | *(workspace -- internal)* |
+| runtime | `workbox-window` | no separate ctx7 ID; see vite-plugin-pwa docs |
+| dev | `@playwright/test` | `/microsoft/playwright` |
+| dev | `@types/react` | *(part of `/facebook/react`)* |
+| dev | `@types/react-dom` | *(part of `/facebook/react`)* |
+| dev | `@vitejs/plugin-react-swc` | `/vitejs/vite` (SWC variant; no separate ID) |
+| dev | `eslint-plugin-react-hooks` | *(part of `/facebook/react`)* |
+| dev | `eslint-plugin-react-refresh` | no ctx7 ID found |
+| dev | `vite` | `/vitejs/vite` |
+| dev | `vite-plugin-pwa` | `/vite-pwa/vite-plugin-pwa` |
+| dev | `vitest` | `/vitest-dev/vitest` |
 
 ## Notes
 

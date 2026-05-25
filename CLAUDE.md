@@ -48,7 +48,28 @@ node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackag
 - `docs/reference/format.md` — `.unitypackage` format spec
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/publishing.md` — publishing checklist
+- `docs/reference/playwright.md` — Playwright reference (E2E, MCP, best practices)
 - `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features
+
+## Playwright
+
+Three tools exist — use the right one per task:
+
+| Tool | Purpose | Install | How to invoke |
+|------|---------|---------|---------------|
+| `@playwright/test` | E2E test suites (committed tests) | `apps/web` dev dep | `cd apps/web && bunx playwright test` |
+| `@playwright/cli` | **Default agent browser automation** | global `npm i -g @playwright/cli` | `playwright-cli` (CLI commands) |
+| `@playwright/mcp` | *Optional* — exploratory persistent sessions | via `claude mcp add` | only when explicitly requested |
+
+### E2E Tests
+- `apps/web/playwright.config.ts` (Chromium + Firefox, port 5173 Vite preview).
+- Tests: `apps/web/tests/`. Run: `cd apps/web && bunx playwright test`.
+
+### Agent Browser Automation (Default: `@playwright/cli`)
+- Installed globally as `playwright-cli`; skills at `.claude/skills/playwright-cli/`.
+- Default browser: Microsoft Edge (config at `.playwright/cli.config.json`).
+- Full skill reference at `.claude/skills/playwright-cli/SKILL.md`.
+- Reference: `docs/reference/playwright.md#playwright-cli-agent-automation`.
 
 ## Architecture Rules
 
