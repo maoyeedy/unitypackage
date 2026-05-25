@@ -1,12 +1,13 @@
-import type { ExtractedFileContent, UnityPackageParseDiagnostic } from 'unitypackage-core';
+import type { UnityPackageParseDiagnostic } from 'unitypackage-core';
+import type { PackageFileRecord } from './packageModel';
 
 export type ParsePackageResponse =
-  | { type: 'success'; files: ExtractedFileContent; diagnostics: UnityPackageParseDiagnostic[] }
+  | { type: 'success'; records: PackageFileRecord[]; diagnostics: UnityPackageParseDiagnostic[] }
   | { type: 'error'; message: string };
 
 export interface DownloadZipRequest {
-  files: ExtractedFileContent;
-  excludeMeta: boolean;
+  records: PackageFileRecord[];
+  recordIds?: string[];
   maintainStructure: boolean;
 }
 

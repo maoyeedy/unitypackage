@@ -104,7 +104,7 @@ export function buildTruncated(): Uint8Array {
 
 const BLOCK_SIZE = 512;
 
-function buildRawTar(entries: Array<{ name: string; content: Uint8Array }>): Uint8Array {
+function buildRawTar(entries: { name: string; content: Uint8Array }[]): Uint8Array {
   const parts: Uint8Array[] = [];
   for (const { name, content } of entries) {
     const header = new Uint8Array(BLOCK_SIZE);
