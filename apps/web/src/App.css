@@ -10,6 +10,11 @@
   --success: #15803d;
   --warning: #b45309;
   --danger: #b91c1c;
+  --file-icon-image: #0d9488;
+  --file-icon-audio: #7c3aed;
+  --file-icon-video: #db2777;
+  --file-icon-document: #2563eb;
+  --file-icon-shader: #9333ea;
   --shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
   color-scheme: light;
 }
@@ -27,6 +32,11 @@
     --success: #4ade80;
     --warning: #f59e0b;
     --danger: #f87171;
+    --file-icon-image: #2dd4bf;
+    --file-icon-audio: #a78bfa;
+    --file-icon-video: #f472b6;
+    --file-icon-document: #60a5fa;
+    --file-icon-shader: #c084fc;
     --shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
     color-scheme: dark;
   }
@@ -357,6 +367,60 @@ button:disabled {
 .file-row {
   min-height: 38px;
   padding-right: 14px;
+}
+
+.file-kind-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  line-height: 0;
+}
+
+.file-kind-image {
+  color: var(--file-icon-image);
+}
+
+.file-kind-audio {
+  color: var(--file-icon-audio);
+}
+
+.file-kind-video {
+  color: var(--file-icon-video);
+}
+
+.file-kind-pdf {
+  color: var(--danger);
+}
+
+.file-kind-document,
+.file-kind-text {
+  color: var(--file-icon-document);
+}
+
+.file-kind-code {
+  color: var(--success);
+}
+
+.file-kind-json {
+  color: var(--warning);
+}
+
+.file-kind-xml,
+.file-kind-shader {
+  color: var(--file-icon-shader);
+}
+
+.file-kind-unity,
+.file-kind-meta {
+  color: var(--accent-2);
+}
+
+.file-kind-binary {
+  color: var(--muted);
 }
 
 .file-name {

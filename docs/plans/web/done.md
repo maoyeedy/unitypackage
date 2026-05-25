@@ -23,9 +23,10 @@ preview and metadata pane.
 - Removed localization and old UI files: translations, language selector, legacy controls, legacy file list, legacy drop zone, old header, and React starter asset.
 - Added native previews for text, image, PDF, audio, and video records, with metadata fallback for unsupported types.
 - Added Shiki syntax highlighting for text previews, including Unity serialized YAML-ish, JSON, XML, and CSS file associations.
+- Added enriched lucide file-tree icons with explicit per-extension mapping for Unity assets, code, media, documents, metadata, and unknown binary files. See `docs/reference/file-icons.md`.
 - Added PWA setup with `vite-plugin-pwa`, service worker registration, manifest metadata, and SVG app icons.
 - Added `lucide-react`, `vite-plugin-pwa`, `workbox-window`, and web-local Vitest scripts.
-- Added unit coverage for tree rows, extension groups, preview kind detection, pack validation, duplicate path metadata, and real PNG fixture behavior.
+- Added unit coverage for tree rows, extension groups, preview kind detection, file icon descriptors, pack validation, duplicate path metadata, and real PNG fixture behavior.
 
 ## Fixed During Followup
 
@@ -56,6 +57,7 @@ bun run check
 ```
 
 The web test suite currently includes `packageModel` and syntax highlighting tests.
+It also includes file icon descriptor coverage for the documented extension mapping.
 
 ## Next Agent Notes
 

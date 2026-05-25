@@ -10,8 +10,6 @@ import {
   Download,
   File,
   FileArchive,
-  FileImage,
-  FileText,
   Folder,
   FolderOpen,
   Info,
@@ -26,6 +24,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { UnityPackageParseDiagnostic } from 'unitypackage-core';
 
 import './App.css';
+import { getFileIconDescriptor } from './fileIcons';
 import type { DownloadZipResponse, ParsePackageResponse } from './workerTypes';
 import {
   buildExtensionGroups,
@@ -694,7 +693,7 @@ function FileRow({
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
 }) {
-  const Icon = record.previewKind === 'image' ? FileImage : record.previewKind === 'text' ? FileText : File;
+  const { Icon, tone, label } = getFileIconDescriptor(record);
 
   return (
     <div
@@ -721,7 +720,9 @@ function FileRow({
       >
         {selected ? <CheckSquare aria-hidden="true" size={16} /> : <Square aria-hidden="true" size={16} />}
       </button>
-      <Icon aria-hidden="true" size={17} />
+      <span className={`file-kind-icon file-kind-${tone}`} title={label}>
+        <Icon aria-hidden="true" size={17} strokeWidth={1.9} />
+      </span>
       <span className="file-name">{record.fileName}</span>
       <small>{formatBytes(record.byteLength)}</small>
     </div>
