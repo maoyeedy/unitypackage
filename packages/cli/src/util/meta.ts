@@ -18,7 +18,7 @@ export function parseMeta(content: string): Meta | null {
     const parsed = YAML.parse(content) as unknown;
     if (!parsed || typeof parsed !== 'object') return null;
     const obj = parsed as Record<string, unknown>;
-    if (typeof obj['guid'] !== 'string') return null;
+    if (typeof obj.guid !== 'string') return null;
     return obj as unknown as Meta;
   } catch {
     return null;

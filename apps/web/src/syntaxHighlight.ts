@@ -74,8 +74,8 @@ export async function highlightCode(code: string, language: SyntaxLanguage, mode
 
 function getHighlighter(): Promise<UnityHighlighter> {
   highlighterPromise ??= createUnityHighlighter({
-    langs: Object.keys(languageLoaders) as Exclude<SyntaxLanguage, 'text'>[],
-    themes: Object.keys(themeLoaders) as Array<keyof typeof themeLoaders>,
+    langs: Object.keys(languageLoaders),
+    themes: Object.keys(themeLoaders),
   });
   return highlighterPromise;
 }
