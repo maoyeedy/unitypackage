@@ -1,193 +1,497 @@
 # unitypackage-core
 
-Browser-safe `.unitypackage` parser and writer.
+Browser-safe `.unitypackage` parser, writer, validator, and helper runtime.
 
-## Source layout
+`unitypackage-core` is the low-level package behind the CLI and web app. It
+works with bytes and plain JavaScript data structures: no filesystem access, no
+`node:*` imports, no browser DOM dependency, and no YAML dependency. The only
+runtime dependency is `fflate` for gzip compression and decompression.
 
-The public API is the package root:
+## Install
+
+```sh
+npm install unitypackage-core
+```
+
+The package publishes CommonJS, ESM, and TypeScript declarations from the root
+entry point only:
+
+```ts
+import {
+  parseUnityPackageEntries,
+  createUnityPackage,
+  summarizePackage,
+} from 'unitypackage-core';
+```
+
+There are no public subpath exports. Treat internal files such as
+`dist/parse.js` or `src/parse.ts` as implementation details.
+
+## Runtime Requirements
+
+- JavaScript runtimes must provide `Uint8Array`, `TextEncoder`, and
+  `TextDecoder`.
+- `generateGuid()` additionally requires `globalThis.crypto.getRandomValues`.
+- The published package declares Node.js `>=24`.
+- Core itself is browser-safe. It does not read files, write files, inspect the
+  current OS, or perform network requests.
+
+## What This Package Does
+
+- Parse gzip-compressed Unity `.unitypackage` files.
+- Return either flat pathname-to-bytes output or GUID-aware Unity entries.
+- Surface structured diagnostics for malformed or unusual archive content.
+- Expose `preview.png` thumbnail bytes on GUID-aware entries.
+- Write deterministic `.unitypackage` bytes from validated entries.
+- Estimate uncompressed tar size before writing.
+- Generate random or deterministic GUIDs.
+- Generate minimal Unity `.meta` YAML text.
+- Detect importer type from a pathname.
+- Validate package pathnames for extraction safety.
+- Detect case-folded pathname collisions.
+- Resolve selected assets to their matching `.meta` sidecars.
+- Summarize parsed package contents.
+
+## Core Types
+
+```ts
+export type ExtractedFileContent = Record<string, Uint8Array>;
+
+export interface UnityPackageEntry {
+  guid: string;
+  pathname: string;
+  asset?: Uint8Array;
+  meta?: Uint8Array;
+  preview?: Uint8Array;
+}
+
+export type UnityPackageDiagnosticSeverity = 'info' | 'warning' | 'error';
+```
+
+A `.unitypackage` is a gzipped tar archive. Unity stores each logical asset in a
+GUID-named directory with members such as `pathname`, `asset`, `asset.meta`, and
+sometimes `preview.png`. `UnityPackageEntry` is the GUID-aware representation of
+that logical record.
+
+Entries without `asset` are treated as folder-like records by helpers such as
+`summarizePackage`. Entries may still have `meta` bytes.
+
+## Parsing
+
+### GUID-Aware Parse
 
 ```ts
 import { parseUnityPackageEntries } from 'unitypackage-core';
-```
 
-`src/index.ts` is intentionally a small barrel. Runtime implementation is split
-by domain (`guid`, `pathname`, `meta`, `parse`, `create`, `summary`) with shared
-model types in `model.ts` and private tar helpers in `tar.ts`. There are no
-public subpath exports; internal file paths are not package API.
-
-## API
-
-```ts
-import { parseUnityPackage, parseUnityPackageEntries, createUnityPackage } from 'unitypackage-core';
-```
-
-See source for full type definitions. No Node.js or browser globals required beyond `Uint8Array` and `TextEncoder`/`TextDecoder`.
-
-`parseUnityPackageEntries(data)` returns GUID-aware entries and structured
-parser diagnostics:
-
-```ts
 const { entries, diagnostics } = parseUnityPackageEntries(bytes);
 ```
 
-`UnityPackageEntry.preview` contains optional `preview.png` thumbnail bytes when
-present. Flat `parseUnityPackage(data)` output ignores previews.
-
-`createUnityPackage(entries, options?)` rejects duplicate GUIDs before writing
-the archive. Output is **reproducible**: entries are sorted by GUID (ascending,
-lexicographic) before writing, and the GZIP header timestamp is fixed at epoch
-zero, so two calls with identical inputs always produce byte-equal output
-regardless of the order entries are supplied.
-
-`tryCreateUnityPackage(entries, options?)` is the non-throwing variant. It
-validates all entries and returns a discriminated result:
+`parseUnityPackageEntries(data, options?)` returns:
 
 ```ts
-// success
-{ bytes: Uint8Array; diagnostics: [] }
-
-// failure -- one or more fatal diagnostics
-{ bytes: null; diagnostics: CreateUnityPackageDiagnostic[] }
+{
+  entries: UnityPackageEntry[];
+  diagnostics: UnityPackageParseDiagnostic[];
+}
 ```
 
-All diagnostics are collected before returning (the function does not stop at
-the first problem). Every diagnostic carries a `severity` field
-(`'info' | 'warning' | 'error'`). `CreateUnityPackageDiagnosticCode` values
-(all `'error'` severity):
+Behavior:
 
-| Code | Meaning |
-|------|---------|
-| `empty-entries` | The entries array is empty. |
-| `invalid-guid` | A GUID is not exactly 32 lowercase hexadecimal characters. |
-| `duplicate-guid` | Two entries share the same GUID. |
-| `missing-meta` | An entry's `meta` field is absent or zero-length. |
-| `oversized-pathname` | A pathname exceeds 200 characters, or a tar entry name exceeds the 100-byte ustar header limit. |
+- Decompresses gzip synchronously with `fflate`.
+- Parses the tar archive into Unity GUID groups.
+- Reads the first trimmed line of each `pathname` member.
+- Uses `asset.meta` as metadata, falling back to legacy `metaData`.
+- Preserves the archive prefix as `entry.guid`; non-standard GUIDs are reported
+  but not normalized.
+- Exposes `preview.png` as `entry.preview`.
+- Skips orphan GUID directories that do not contain a `pathname`.
+- Keeps duplicate pathnames as separate GUID-aware entries.
 
-`UnityPackageParseDiagnosticCode` values and their default severities:
-
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `empty-pathname` | `error` | A GUID directory's pathname file decoded to an empty string. |
-| `malformed-tar-entry` | `error` | A tar entry has a missing or unparseable header field. |
-| `duplicate-guid` | `error` | The same GUID prefix appears more than once in the archive. |
-| `non-standard-guid` | `info` | A GUID directory prefix is not a 32-character hex string. |
-| `ignored-preview` | `info` | A `preview.png` file is present; ignored by flat parsing. |
-| `asset-missing` | `warning` | An entry has a meta file but no asset file. |
-| `meta-missing` | `warning` | An entry has an asset file but no meta file. |
-| `zero-byte-asset` | `warning` | An asset file is present but has zero bytes. |
-| `oversized-entry-name` | `warning` | A pathname exceeds 200 characters. |
-
-`createUnityPackage` wraps `tryCreateUnityPackage` and throws an `Error` with
-the first diagnostic's message when validation fails.
-
-`estimateUnityPackageSize(entries)` returns the uncompressed tar byte size and
-total member count without allocating the tar buffer:
+Options:
 
 ```ts
+interface ParseUnityPackageOptions {
+  maxOutputBytes?: number;
+  maxEntries?: number;
+}
+```
+
+Defaults:
+
+```ts
+import {
+  DEFAULT_MAX_ENTRIES,
+  DEFAULT_MAX_OUTPUT_BYTES,
+} from 'unitypackage-core';
+```
+
+- `DEFAULT_MAX_OUTPUT_BYTES` is `4 * 1024 * 1024 * 1024`.
+- `DEFAULT_MAX_ENTRIES` is `250_000`.
+
+If a limit is exceeded, parsing throws `DecompressionBombError`:
+
+```ts
+try {
+  parseUnityPackageEntries(bytes, { maxOutputBytes: 50_000_000 });
+} catch (error) {
+  if (error instanceof DecompressionBombError) {
+    console.log(error.kind);     // 'output-bytes' or 'entry-count'
+    console.log(error.observed); // observed byte or entry count
+  }
+}
+```
+
+Malformed gzip data is thrown by the decompressor.
+
+### Flat Parse
+
+```ts
+import { parseUnityPackage } from 'unitypackage-core';
+
+const files = parseUnityPackage(bytes);
+const scriptBytes = files['Assets/Scripts/Player.cs'];
+const metaBytes = files['Assets/Scripts/Player.cs.meta'];
+```
+
+`parseUnityPackage(data, options?)` is a convenience wrapper around
+`parseUnityPackageEntries`. It returns a pathname-to-bytes object:
+
+- `entry.asset` is stored at `entry.pathname`.
+- `entry.meta` is stored at `${entry.pathname}.meta`.
+- `preview.png` is ignored in flat output.
+- If duplicate pathnames occur, the later assignment wins in the returned
+  object.
+- Diagnostics are not returned. Use `parseUnityPackageEntries` when diagnostics
+  matter.
+
+### Streaming Parse
+
+```ts
+import { parseUnityPackageStream } from 'unitypackage-core';
+
+for (const item of parseUnityPackageStream(bytes, {
+  onProgress(event) {
+    console.log(event.entryCount, event.bytesRead, event.bytesTotal);
+  },
+})) {
+  if (item._kind === 'entry') {
+    console.log(item.pathname);
+  } else {
+    console.warn(item.code, item.message);
+  }
+}
+```
+
+`parseUnityPackageStream(bytes, options?)` is a synchronous generator. It still
+decompresses the full gzip payload synchronously, then streams at the tar layer
+and yields items as GUID groups complete.
+
+Yielded items are discriminated unions:
+
+```ts
+type StreamedEntry = UnityPackageEntry & { _kind: 'entry' };
+type StreamedDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
+```
+
+`StreamParseOptions` extends `ParseUnityPackageOptions` with:
+
+```ts
+interface StreamParseOptions extends ParseUnityPackageOptions {
+  onProgress?: (event: StreamParseProgressEvent) => void;
+}
+
+interface StreamParseProgressEvent {
+  bytesRead: number;
+  bytesTotal: number;
+  entryCount: number;
+}
+```
+
+Progress callbacks are synchronous, rate-limited to about one call every 16 ms,
+and always receive a final event when parsing completes.
+
+## Parse Diagnostics
+
+```ts
+interface UnityPackageParseDiagnostic {
+  code: UnityPackageParseDiagnosticCode;
+  message: string;
+  severity: UnityPackageDiagnosticSeverity;
+  path?: string;
+  guid?: string;
+}
+```
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| `asset-missing` | `warning` | An entry has pathname and meta bytes but no `asset` member. |
+| `duplicate-guid` | `error` | The same GUID pathname member appears more than once. |
+| `empty-pathname` | `error` | A `pathname` member decoded to an empty string. |
+| `ignored-preview` | `info` | `preview.png` exists. It is exposed on entries but ignored by flat parsing. |
+| `malformed-tar-entry` | `error` | A tar member has an empty name, invalid size field, or truncated content. |
+| `meta-missing` | `warning` | An entry has asset bytes but no `asset.meta` or `metaData`. |
+| `non-standard-guid` | `info` | A record prefix is not 32 hexadecimal characters. |
+| `oversized-entry-name` | `warning` | The decoded pathname is longer than 200 characters. |
+| `zero-byte-asset` | `warning` | An `asset` member exists but has zero bytes. |
+
+## Creating Packages
+
+```ts
+import { createUnityPackage, tryCreateUnityPackage } from 'unitypackage-core';
+
+const bytes = createUnityPackage([
+  {
+    guid: '0123456789abcdef0123456789abcdef',
+    pathname: 'Assets/Scripts/Player.cs',
+    asset: new TextEncoder().encode('public class Player {}'),
+    meta: new TextEncoder().encode('fileFormatVersion: 2\n'),
+  },
+]);
+```
+
+Creation input:
+
+```ts
+interface CreateUnityPackageEntry {
+  guid: string;
+  pathname: string;
+  meta: Uint8Array;
+  asset?: Uint8Array;
+}
+
+interface CreateUnityPackageOptions {
+  gzipLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+}
+```
+
+`createUnityPackage(entries, options?)` validates input, writes a tar archive,
+gzips it, and returns `.unitypackage` bytes.
+
+Writer behavior:
+
+- Requires at least one entry.
+- Requires a non-empty `meta` payload for every entry.
+- Allows folder-like entries by omitting `asset`.
+- Allows GUIDs that are exactly 32 hexadecimal characters, case-insensitive.
+- Rejects duplicate GUIDs.
+- Rejects pathnames longer than 200 characters.
+- Rejects tar member names that exceed the 100-byte ustar name field.
+- Sorts entries by GUID before writing.
+- Fixes gzip `mtime` to epoch zero.
+- Produces byte-identical output for identical logical input, independent of
+  input entry order.
+
+`tryCreateUnityPackage(entries, options?)` is the non-throwing variant:
+
+```ts
+const result = tryCreateUnityPackage(entries);
+
+if (result.bytes === null) {
+  for (const diagnostic of result.diagnostics) {
+    console.error(diagnostic.code, diagnostic.message);
+  }
+} else {
+  upload(result.bytes);
+}
+```
+
+It collects all validation diagnostics before returning.
+
+`createUnityPackage` wraps `tryCreateUnityPackage` and throws an `Error` with
+the first diagnostic message when validation fails.
+
+## Create Diagnostics
+
+```ts
+interface CreateUnityPackageDiagnostic {
+  code: CreateUnityPackageDiagnosticCode;
+  message: string;
+  severity: UnityPackageDiagnosticSeverity;
+  guid?: string;
+  path?: string;
+}
+```
+
+All create diagnostics currently have `error` severity.
+
+| Code | Meaning |
+| --- | --- |
+| `duplicate-guid` | Two entries share the same GUID string. |
+| `empty-entries` | The entry array is empty. |
+| `invalid-guid` | A GUID is not exactly 32 hexadecimal characters. |
+| `missing-meta` | `meta` is absent or zero-length. |
+| `oversized-pathname` | A pathname exceeds 200 characters, or a tar member name exceeds 100 bytes. |
+
+## Size Estimation
+
+```ts
+import { estimateUnityPackageSize } from 'unitypackage-core';
+
 const { tarBytes, entryCount } = estimateUnityPackageSize(entries);
 ```
 
-Each entry contributes up to three tar members (`pathname`, `asset.meta`, and
-optionally `asset`). The returned `tarBytes` matches the length of the
-uncompressed tar stream produced by `createUnityPackage` for the same input.
+`estimateUnityPackageSize(entries)` returns the uncompressed tar byte size and
+tar member count that `createUnityPackage` would produce for the same entries:
 
-## GUID utilities
+- Each entry always contributes `pathname` and `asset.meta`.
+- Entries with `asset` also contribute `asset`.
+- Two final zero blocks are included in `tarBytes`.
+- Gzip size is not estimated.
+
+## GUID Helpers
 
 ```ts
-import { isValidGuid, generateGuid, guidFromPath } from 'unitypackage-core';
+import { generateGuid, guidFromPath, isValidGuid } from 'unitypackage-core';
 ```
 
-`isValidGuid(value)` returns `true` when `value` is exactly 32 lowercase
-hexadecimal characters (`^[0-9a-f]{32}$`). Unity Editor exports use lowercase
-32-hex GUIDs; the parser preserves whatever prefix appears in the archive as
-`guid` without normalizing case.
-
-`generateGuid()` returns a cryptographically random 32-character lowercase hex
-string using `globalThis.crypto.getRandomValues`. Browser-safe; no
-`node:crypto` import.
-
-`guidFromPath(pathname)` derives a deterministic GUID from a pathname using
-MD5 of the UTF-16LE-encoded bytes -- the same algorithm as the CLI's internal
-`createGuid` helper. Two calls with the same input always return identical
-output. The return value is lowercase 32-hex.
-
-## Path safety helpers
+`isValidGuid(value)` returns `true` only for exactly 32 lowercase hexadecimal
+characters:
 
 ```ts
-import { validatePathname } from 'unitypackage-core';
+isValidGuid('0123456789abcdef0123456789abcdef'); // true
+isValidGuid('0123456789ABCDEF0123456789ABCDEF'); // false
 ```
 
-`validatePathname(pathname, options?)` checks a pathname against the
-extraction-security rules from the format spec. Returns a structured result;
-never throws.
+`generateGuid()` returns a random 32-character lowercase hexadecimal GUID using
+`globalThis.crypto.getRandomValues`.
+
+`guidFromPath(pathname)` returns a deterministic lowercase 32-hex GUID derived
+from MD5 of the pathname encoded as UTF-16LE. The same pathname always produces
+the same GUID.
 
 ```ts
-const result = validatePathname('Assets/Scripts/Foo.cs');
+const guid = guidFromPath('Assets/Scripts/Player.cs');
+```
+
+## Pathname Helpers
+
+```ts
+import {
+  assetPathForMetaSidecar,
+  detectPathnameCollisions,
+  isMetaSidecarPath,
+  metaSidecarPathForAsset,
+  validatePathname,
+} from 'unitypackage-core';
+```
+
+Meta sidecar helpers operate directly on path strings and do not normalize or
+validate input:
+
+```ts
+isMetaSidecarPath('Assets/Texture.png.meta');       // true
+assetPathForMetaSidecar('Assets/Texture.png.meta'); // 'Assets/Texture.png'
+assetPathForMetaSidecar('Assets/Texture.png');      // null
+metaSidecarPathForAsset('Assets/Texture.png');      // 'Assets/Texture.png.meta'
+```
+
+`validatePathname(pathname, options?)` checks extraction-safety rules and never
+throws:
+
+```ts
+const ok = validatePathname('Assets/Scripts/Foo.cs');
 // { ok: true }
 
-const bad = validatePathname('../etc/passwd');
+const bad = validatePathname('../secrets.txt');
 // { ok: false, reason: 'parent-traversal' }
 ```
 
 Rejection reasons:
 
-| Reason | Condition |
-|--------|-----------|
-| `empty` | Pathname is an empty string. |
-| `absolute` | Pathname starts with `/`. |
-| `drive-or-unc` | Pathname starts with a Windows drive letter (`C:`). |
+| Reason | Meaning |
+| --- | --- |
+| `empty` | The pathname is empty. |
+| `absolute` | The pathname starts with `/`. |
+| `drive-or-unc` | The pathname starts with a Windows drive prefix like `C:` or a forward-slash UNC-like `//` prefix. |
 | `parent-traversal` | Any `/`-delimited segment is exactly `..`. |
-| `backslash` | Pathname contains a backslash (`\`). |
-| `control-character` | Any character has codepoint < `0x20`. `detail` names the offending index and codepoint. |
-| `oversized-tar-entry` | When `options.guid` is supplied: `<guid>/asset.meta` exceeds 100 UTF-8 bytes (ustar header limit). `detail` is the actual byte length as a decimal string. |
+| `backslash` | The pathname contains `\`. |
+| `control-character` | A character has code point below `0x20`; `detail` includes the index and code point. |
+| `oversized-tar-entry` | With `options.guid`, `<guid>/asset.meta` exceeds the 100-byte ustar name limit. |
 
-When `options.guid` is omitted, the `oversized-tar-entry` check is skipped.
-The 100-byte limit check matches the internal check in `tryCreateUnityPackage`
-for the same `guid` input.
+`detectPathnameCollisions(entries)` groups parsed entries by lower-cased
+pathname and returns only groups with more than one entry:
 
-## Meta sidecar selection
+```ts
+const collisions = detectPathnameCollisions([
+  { guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', pathname: 'Assets/Foo.cs' },
+  { guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', pathname: 'Assets/FOO.CS' },
+]);
+
+// [
+//   {
+//     pathname: 'Assets/Foo.cs',
+//     caseFolded: 'assets/foo.cs',
+//     guids: ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+//     exactDuplicates: false,
+//   },
+// ]
+```
+
+Collision detection includes both file entries and folder-like entries. It is a
+reporting helper only; callers decide whether a given collision is fatal.
+
+## Meta Generation
 
 ```ts
 import {
-  assetPathForMetaSidecar,
-  isMetaSidecarPath,
-  metaSidecarPathForAsset,
-  resolveMetaSidecarSelection,
+  createMinimalFolderMeta,
+  createMinimalMeta,
+  createMinimalMetaFor,
+  detectMetaImporterType,
 } from 'unitypackage-core';
 ```
 
-Unity `.meta` sidecars carry GUIDs and importer settings. Keeping a selected
-asset with its existing sidecar preserves references and import behavior when
-the files are used again.
-
-The path helpers work directly on package pathnames:
-
-- `isMetaSidecarPath(pathname)` returns `true` for pathnames ending in
-  `.meta`.
-- `assetPathForMetaSidecar(pathname)` removes the `.meta` suffix, or returns
-  `null` when the pathname is not a sidecar.
-- `metaSidecarPathForAsset(pathname)` appends `.meta`.
-
-`resolveMetaSidecarSelection(records, selectedIds)` expands selected asset IDs
-with matching existing meta record IDs:
+`createMinimalMeta(guid)` returns a minimal `DefaultImporter` `.meta` YAML
+string. It validates with `isValidGuid`, so the GUID must be lowercase 32-hex.
 
 ```ts
-const records = [
-  {
-    id: 'asset-1',
-    guid: '006f7fc78b046e2408cecc07a80417b5',
-    pathname: 'Assets/Texture.png',
-    kind: 'asset',
-  },
-  {
-    id: 'meta-1',
-    guid: '006f7fc78b046e2408cecc07a80417b5',
-    pathname: 'Assets/Texture.png.meta',
-    kind: 'meta',
-  },
-] as const;
+const metaText = createMinimalMeta('0123456789abcdef0123456789abcdef');
+const metaBytes = new TextEncoder().encode(metaText);
+```
 
-const selection = resolveMetaSidecarSelection(records, ['asset-1']);
+`detectMetaImporterType(pathname, isDir?)` returns:
+
+```ts
+type MetaImporterType =
+  | 'DefaultImporter'
+  | 'DefaultImporterFolder'
+  | 'TextScriptImporter'
+  | 'MonoImporter';
+```
+
+Importer detection rules:
+
+| Condition | Result |
+| --- | --- |
+| `isDir === true` | `DefaultImporterFolder` |
+| `.cs` extension | `MonoImporter` |
+| `.json`, `.bytes`, `.csv`, `.pb`, `.txt`, `.xml`, `.proto`, `.md`, `.asmdef` | `TextScriptImporter` |
+| Basename `LICENSE` with no extension | `TextScriptImporter` |
+| `.yaml` or `.yml` | `DefaultImporter` |
+| No extension, except `LICENSE` | `DefaultImporterFolder` |
+| Any other extension | `DefaultImporter` |
+
+`createMinimalMetaFor(guid, pathname, isDir?)` generates minimal `.meta` YAML
+using `detectMetaImporterType`.
+
+`createMinimalFolderMeta(guid)` generates folder metadata with
+`folderAsset: yes`.
+
+These helpers emit YAML text only. They do not parse existing YAML, merge
+importer settings, or infer Unity asset semantics beyond the rules above.
+
+## Sidecar Selection
+
+```ts
+import { resolveMetaSidecarSelection } from 'unitypackage-core';
+```
+
+Sidecar selection expands selected asset IDs with matching existing meta record
+IDs:
+
+```ts
+const result = resolveMetaSidecarSelection(records, ['asset-1']);
+
 // {
 //   ids: ['asset-1', 'meta-1'],
 //   explicitIds: ['asset-1'],
@@ -196,72 +500,209 @@ const selection = resolveMetaSidecarSelection(records, ['asset-1']);
 // }
 ```
 
-Selected asset records are the only sidecar sources. Selected meta records stay
-selected but do not expand anything; preview records are ignored for expansion.
-For each selected asset, the resolver looks for a meta record with the same
-GUID and `pathname === metaSidecarPathForAsset(asset.pathname)` first, then
-falls back to the first meta record with that exact pathname. Explicit selected
-IDs keep caller order, and implicit meta IDs are appended in selected asset
-order without duplicates.
-
-The resolver only selects sidecars that already exist in `records`. It does
-not generate missing `.meta` files. Callers still own UI hiding, ZIP creation,
-filesystem writes, and `--no-meta` style opt-outs.
-
-## Streaming parse
+Input records:
 
 ```ts
-import { parseUnityPackageStream } from 'unitypackage-core';
-```
+type SidecarSelectableKind = 'asset' | 'meta' | 'preview';
 
-`parseUnityPackageStream(bytes, options?)` is a synchronous `Generator` that yields
-entries and diagnostics as each GUID group completes. Gzip decompression
-remains synchronous (fflate); streaming applies at the tar layer.
-
-Each yielded item carries a `_kind` discriminator:
-
-```ts
-for (const item of parseUnityPackageStream(bytes)) {
-  if (item._kind === 'entry') {
-    // item is UnityPackageEntry & { _kind: 'entry' }
-  } else {
-    // item is UnityPackageParseDiagnostic & { _kind: 'diagnostic' }
-  }
+interface SidecarSelectableRecord {
+  id: string;
+  guid: string;
+  pathname: string;
+  kind: SidecarSelectableKind;
 }
 ```
 
-Options (`StreamParseOptions`) extend `ParseUnityPackageOptions` with:
+Resolution behavior:
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `onProgress` | `(ev: StreamParseProgressEvent) => void` | Called after each completed entry, rate-limited to ~62 events/second (~16 ms minimum interval). `ev.bytesTotal` is the full decompressed tar length (known after synchronous gzip decompression). |
-| `maxOutputBytes` | `number` | Bomb guard: throw `DecompressionBombError` when total decompressed entry bytes exceed this limit. Default: 4 GiB. |
-| `maxEntries` | `number` | Bomb guard: throw `DecompressionBombError` when the entry count exceeds this limit. Default: 250 000. |
+- Explicit selected IDs are deduplicated and kept first.
+- Only selected `asset` records cause expansion.
+- Selected `meta` records remain selected but do not expand anything.
+- Selected `preview` records are ignored for expansion.
+- The resolver first looks for a meta record with the same GUID and pathname
+  equal to `${asset.pathname}.meta`.
+- If no same-GUID meta exists, it falls back to the first meta record with the
+  matching pathname.
+- Missing sidecars are reported in `missingMetaForAssetIds`.
+- The helper only selects existing records. It never creates `.meta` bytes.
 
-`parseUnityPackageEntries` remains the buffered alternative and returns
-`{ entries, diagnostics }` after consuming the full archive.
-
-## Minimal meta generator
-
-```ts
-import { createMinimalMeta } from 'unitypackage-core';
-```
-
-`createMinimalMeta(guid)` returns a Unity-compatible minimal `.meta` YAML
-string using the `DefaultImporter` shape. The caller is responsible for
-encoding the returned text to UTF-8 bytes when persisting.
+## Package Summaries
 
 ```ts
-const meta = createMinimalMeta('006f7fc78b046e2408cecc07a80417b5');
-// fileFormatVersion: 2
-// guid: 006f7fc78b046e2408cecc07a80417b5
-// DefaultImporter:
-//   externalObjects: {}
-//   userData:
-//   assetBundleName:
-//   assetBundleVariant:
+import { summarizePackage } from 'unitypackage-core';
+
+const summary = summarizePackage(entries, diagnostics);
 ```
 
-Throws when `isValidGuid(guid)` is false; the error message names the
-offending value. Does not parse YAML; emits a literal template string.
-Browser-safe; no `node:*` imports.
+`summarizePackage(entries, diagnostics?)` returns:
+
+```ts
+interface UnityPackageSummary {
+  entryCount: number;
+  fileCount: number;
+  folderCount: number;
+  previewCount: number;
+  uniqueGuidCount: number;
+  duplicateGuidCount: number;
+  totalAssetBytes: number;
+  totalMetaBytes: number;
+  totalPreviewBytes: number;
+  byExtension: {
+    extension: string;
+    count: number;
+    assetBytes: number;
+  }[];
+  diagnosticsBySeverity: Record<UnityPackageDiagnosticSeverity, number>;
+}
+```
+
+Summary rules:
+
+- Entries with `asset !== undefined` count as files.
+- Entries without `asset` count as folders.
+- Extensions are lower-cased and do not include the leading dot.
+- Extensionless pathnames use `''`.
+- `byExtension` is sorted by count descending, then extension ascending.
+- `diagnosticsBySeverity` is zeroed when diagnostics are omitted.
+
+## Typical Workflows
+
+### Inspect a Package
+
+```ts
+import {
+  detectPathnameCollisions,
+  parseUnityPackageEntries,
+  summarizePackage,
+} from 'unitypackage-core';
+
+const { entries, diagnostics } = parseUnityPackageEntries(bytes);
+const summary = summarizePackage(entries, diagnostics);
+const collisions = detectPathnameCollisions(entries);
+
+console.log(summary.entryCount, diagnostics.length, collisions.length);
+```
+
+### Repack Selected Entries
+
+```ts
+import {
+  createUnityPackage,
+  parseUnityPackageEntries,
+} from 'unitypackage-core';
+
+const { entries } = parseUnityPackageEntries(sourceBytes);
+
+const selected = entries
+  .filter(entry => entry.pathname.startsWith('Assets/Shaders/'))
+  .map(entry => {
+    if (entry.meta === undefined) {
+      throw new Error(`Missing meta for ${entry.pathname}`);
+    }
+
+    return {
+      guid: entry.guid,
+      pathname: entry.pathname,
+      asset: entry.asset,
+      meta: entry.meta,
+    };
+  });
+
+const packageBytes = createUnityPackage(selected);
+```
+
+### Create a New Entry from Raw Bytes
+
+```ts
+import {
+  createMinimalMetaFor,
+  createUnityPackage,
+  generateGuid,
+} from 'unitypackage-core';
+
+const encoder = new TextEncoder();
+const guid = generateGuid();
+const pathname = 'Assets/Data/config.json';
+
+const bytes = createUnityPackage([
+  {
+    guid,
+    pathname,
+    asset: encoder.encode('{"enabled":true}\n'),
+    meta: encoder.encode(createMinimalMetaFor(guid, pathname)),
+  },
+]);
+```
+
+## API Surface
+
+Runtime exports:
+
+- `DEFAULT_MAX_ENTRIES`
+- `DEFAULT_MAX_OUTPUT_BYTES`
+- `DecompressionBombError`
+- `assetPathForMetaSidecar`
+- `createMinimalFolderMeta`
+- `createMinimalMeta`
+- `createMinimalMetaFor`
+- `createUnityPackage`
+- `detectMetaImporterType`
+- `detectPathnameCollisions`
+- `estimateUnityPackageSize`
+- `generateGuid`
+- `guidFromPath`
+- `isMetaSidecarPath`
+- `isValidGuid`
+- `metaSidecarPathForAsset`
+- `parseUnityPackage`
+- `parseUnityPackageEntries`
+- `parseUnityPackageStream`
+- `resolveMetaSidecarSelection`
+- `summarizePackage`
+- `tryCreateUnityPackage`
+- `validatePathname`
+
+Type exports:
+
+- `CreateUnityPackageDiagnostic`
+- `CreateUnityPackageDiagnosticCode`
+- `CreateUnityPackageEntry`
+- `CreateUnityPackageOptions`
+- `ExtractedFileContent`
+- `MetaImporterType`
+- `ParseUnityPackageOptions`
+- `PathnameCollision`
+- `PathnameRejectionReason`
+- `PathnameValidationResult`
+- `ResolveMetaSidecarsResult`
+- `SidecarSelectableKind`
+- `SidecarSelectableRecord`
+- `StreamParseItemKind`
+- `StreamParseOptions`
+- `StreamParseProgressEvent`
+- `StreamedDiagnostic`
+- `StreamedEntry`
+- `UnityPackageDiagnosticSeverity`
+- `UnityPackageEntriesResult`
+- `UnityPackageEntry`
+- `UnityPackageParseDiagnostic`
+- `UnityPackageParseDiagnosticCode`
+- `UnityPackageSummary`
+
+`UnityPackageEntriesResult` is deprecated. Prefer the current
+`{ entries, diagnostics }` return shape from `parseUnityPackageEntries`.
+
+## Scope Boundaries
+
+This package intentionally does not:
+
+- Validate Unity YAML schemas.
+- Resolve Unity asset references.
+- Read or write local files.
+- Preserve every non-standard tar header field.
+- Stream gzip decompression incrementally.
+- Create missing sidecar records during selection.
+- Expose public subpath imports.
+
+Use the CLI package when you need filesystem commands such as inspect, extract,
+verify, doctor, or diff.
