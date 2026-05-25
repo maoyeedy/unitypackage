@@ -55,7 +55,7 @@ node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackag
 
 E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/mcp` for this project.
 
-- Config: `apps/web/playwright.config.ts` (Chromium + Firefox, port 4173 — `vite preview` default, not the dev-server 5173).
+- Config: `apps/web/playwright.config.ts` (Chromium + Firefox, `vite preview` on port 4173, `strictPort: true` in `vite.config.ts`). Requires `bun run build` before the first run. Reuses a running preview server when `reuseExistingServer` is true. Uses 4173 (not the dev-server 5173) to avoid port collisions with manual dev sessions and to test the built PWA + pre-compiled workers.
 - Tests: `apps/web/tests/`. Run: `cd apps/web && bunx playwright test`.
 - Debug: `cd apps/web && bunx playwright test --debug`.
 - Report: `cd apps/web && bunx playwright show-report`.
