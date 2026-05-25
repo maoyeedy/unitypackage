@@ -52,6 +52,12 @@ body {
   overflow: hidden;
 }
 
+body.range-selecting,
+body.range-selecting * {
+  cursor: cell !important;
+  user-select: none !important;
+}
+
 button,
 input {
   font: inherit;
@@ -351,12 +357,22 @@ button:disabled {
   border-radius: 0;
   background: transparent;
   color: var(--text);
+  cursor: pointer;
   text-align: left;
+  user-select: none;
 }
 
 .tree-row:hover,
 .file-row.active {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.file-row.selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.file-row.selected.active {
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
 }
 
 .folder-row {
@@ -447,6 +463,29 @@ button:disabled {
   justify-content: center;
 }
 
+.selection-toggle {
+  position: relative;
+  flex: 0 0 30px;
+}
+
+.selection-toggle.selection-partial::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.selecting-range {
+  cursor: cell;
+  user-select: none;
+}
+
+.selecting-range .file-row {
+  cursor: cell;
+}
+
 .extension-list {
   padding: 10px;
 }
@@ -462,8 +501,16 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 9px 10px;
   background: var(--panel-2);
+}
+
+.extension-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
 }
 
 .extension-group h3 {

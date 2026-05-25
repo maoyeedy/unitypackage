@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -30,11 +30,17 @@ import {
   buildExtensionGroups,
   buildTreeRows,
   formatBytes,
+  getExtensionFileRecordIds,
+  getFolderRecordIds,
+  getRangeRecordIds,
+  getSelectionState,
+  getTreeFileRecordIds,
   validatePackDraft,
   type ExtensionGroup,
   type GroupingMode,
   type PackageFileRecord,
   type PreviewKind,
+  type SelectionState,
   type TreeRow,
   type WorkspaceMode,
 } from './packageModel';
@@ -51,6 +57,20 @@ interface AppErrorBoundaryState {
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 const textPreviewByteLimit = 20000;
+const dragSelectionThresholdPx = 4;
+const dragAutoScrollEdgePx = 32;
+const dragAutoScrollStepPx = 18;
+
+type SelectionMode = 'add' | 'remove';
+
+interface DragSelectionState {
+  pointerId: number;
+  startClientY: number;
+  startRecordId: string;
+  baseSelectedIds: Set<string>;
+  mode: SelectionMode;
+  active: boolean;
+}
 
 function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
@@ -185,6 +205,8 @@ function AppContent() {
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
   const extensionGroups = useMemo(() => buildExtensionGroups(filteredRecords), [filteredRecords]);
   const treeRows = useMemo(() => buildTreeRows(filteredRecords, collapsedFolders), [filteredRecords, collapsedFolders]);
+  const treeFileRecordIds = useMemo(() => getTreeFileRecordIds(treeRows), [treeRows]);
+  const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
   const packValidation = useMemo(() => validatePackDraft(stagedRecords), [stagedRecords]);
 
   const handlePackageFile = async (file: File) => {
@@ -232,13 +254,36 @@ function AppContent() {
     }
   };
 
-  const toggleSelected = useCallback((recordId: string) => {
+  const toggleRecordSelection = useCallback((recordId: string) => {
     setSelectedRecordIds(previous => {
       const next = new Set(previous);
       if (next.has(recordId)) next.delete(recordId);
       else next.add(recordId);
       return next;
     });
+  }, []);
+
+  const applyRecordSelection = useCallback((recordIds: readonly string[], selected: boolean, baseSelectedIds?: ReadonlySet<string>) => {
+    setSelectedRecordIds(previous => {
+      const next = new Set(baseSelectedIds ?? previous);
+      for (const id of recordIds) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const replaceRecordSelection = useCallback((nextSelectedIds: Set<string>) => {
+    setSelectedRecordIds(new Set(nextSelectedIds));
+  }, []);
+
+  const selectScope = useCallback((recordIds: readonly string[], state: SelectionState) => {
+    applyRecordSelection(recordIds, state !== 'all');
+  }, [applyRecordSelection]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedRecordIds(new Set());
   }, []);
 
   const toggleFolder = useCallback((path: string) => {
@@ -330,9 +375,16 @@ function AppContent() {
               <div className="panel-toolbar">
                 <div>
                   <h2>Extract</h2>
-                  <p>{filteredRecords.length.toString()} visible records</p>
+                  <p>
+                    {filteredRecords.length.toString()} visible records
+                    {selectedRecordIds.size > 0 ? `, ${selectedRecordIds.size.toString()} selected` : ''}
+                  </p>
                 </div>
                 <div className="button-row">
+                  <button type="button" disabled={selectedRecordIds.size === 0} onClick={clearSelection}>
+                    <RefreshCw aria-hidden="true" size={16} />
+                    <span>Clear selection</span>
+                  </button>
                   <button type="button" disabled={selectedRecordIds.size === 0} onClick={stageSelection}>
                     <PackagePlus aria-hidden="true" size={16} />
                     <span>Stage for pack</span>
@@ -356,12 +408,16 @@ function AppContent() {
                 records={filteredRecords}
                 treeRows={treeRows}
                 extensionGroups={extensionGroups}
+                treeFileRecordIds={treeFileRecordIds}
+                extensionFileRecordIds={extensionFileRecordIds}
                 selectedIds={selectedRecordIds}
                 activeId={activeRecord?.id ?? null}
                 collapsedFolders={collapsedFolders}
                 onToggleFolder={toggleFolder}
                 onActivate={setActiveRecordId}
-                onToggleSelected={toggleSelected}
+                onToggleSelected={toggleRecordSelection}
+                onScopeSelect={selectScope}
+                onReplaceSelection={replaceRecordSelection}
               />
             </>
           ) : (
@@ -516,23 +572,31 @@ function Explorer({
   records,
   treeRows,
   extensionGroups,
+  treeFileRecordIds,
+  extensionFileRecordIds,
   selectedIds,
   activeId,
   collapsedFolders,
   onToggleFolder,
   onActivate,
   onToggleSelected,
+  onScopeSelect,
+  onReplaceSelection,
 }: {
   groupingMode: GroupingMode;
   records: PackageFileRecord[];
   treeRows: TreeRow[];
   extensionGroups: ExtensionGroup[];
+  treeFileRecordIds: string[];
+  extensionFileRecordIds: string[];
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
   collapsedFolders: ReadonlySet<string>;
   onToggleFolder: (path: string) => void;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
+  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
+  onReplaceSelection: (selectedIds: Set<string>) => void;
 }) {
   if (records.length === 0) {
     return (
@@ -547,42 +611,63 @@ function Explorer({
   return groupingMode === 'tree' ? (
     <VirtualTree
       rows={treeRows}
+      records={records}
+      orderedRecordIds={treeFileRecordIds}
       selectedIds={selectedIds}
       activeId={activeId}
       collapsedFolders={collapsedFolders}
       onToggleFolder={onToggleFolder}
       onActivate={onActivate}
       onToggleSelected={onToggleSelected}
+      onScopeSelect={onScopeSelect}
+      onReplaceSelection={onReplaceSelection}
     />
   ) : (
     <ExtensionList
       groups={extensionGroups}
+      orderedRecordIds={extensionFileRecordIds}
       selectedIds={selectedIds}
       activeId={activeId}
       onActivate={onActivate}
       onToggleSelected={onToggleSelected}
+      onScopeSelect={onScopeSelect}
+      onReplaceSelection={onReplaceSelection}
     />
   );
 }
 
 function VirtualTree({
   rows,
+  records,
+  orderedRecordIds,
   selectedIds,
   activeId,
   collapsedFolders,
   onToggleFolder,
   onActivate,
   onToggleSelected,
+  onScopeSelect,
+  onReplaceSelection,
 }: {
   rows: TreeRow[];
+  records: PackageFileRecord[];
+  orderedRecordIds: string[];
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
   collapsedFolders: ReadonlySet<string>;
   onToggleFolder: (path: string) => void;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
+  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
+  onReplaceSelection: (selectedIds: Set<string>) => void;
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const dragSelection = useRowSweepSelection({
+    orderedRecordIds,
+    selectedIds,
+    scrollRef: parentRef,
+    onReplaceSelection,
+  });
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -591,7 +676,12 @@ function VirtualTree({
   });
 
   return (
-    <div ref={parentRef} className="explorer-viewport" role="tree" aria-label="Package file tree">
+    <div
+      ref={parentRef}
+      className={`explorer-viewport${dragSelection.isDragging ? ' selecting-range' : ''}`}
+      role="tree"
+      aria-label="Package file tree"
+    >
       <div className="virtual-spacer" style={{ height: `${virtualizer.getTotalSize()}px` }}>
         {virtualizer.getVirtualItems().map(virtualRow => {
           const row = rows[virtualRow.index];
@@ -602,21 +692,35 @@ function VirtualTree({
 
           if (row.type === 'folder') {
             const collapsed = collapsedFolders.has(row.path);
+            const folderRecordIds = getFolderRecordIds(records, row.path);
+            const selectionState = getSelectionState(folderRecordIds, selectedIds);
             return (
-              <button
+              <div
                 key={row.id}
-                type="button"
                 className="tree-row folder-row"
                 style={{ ...style, paddingLeft: `${12 + row.depth * 18}px` }}
                 onClick={() => { onToggleFolder(row.path); }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onToggleFolder(row.path);
+                  }
+                }}
                 role="treeitem"
+                tabIndex={0}
                 aria-expanded={!collapsed}
               >
+                <SelectionToggle
+                  state={selectionState}
+                  disabled={folderRecordIds.length === 0}
+                  label={`${selectionState === 'all' ? 'Deselect' : 'Select'} ${row.name}`}
+                  onSelect={() => { onScopeSelect(folderRecordIds, selectionState); }}
+                />
                 {collapsed ? <ChevronRight aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
                 {collapsed ? <Folder aria-hidden="true" size={17} /> : <FolderOpen aria-hidden="true" size={17} />}
                 <span>{row.name}</span>
                 <small>{row.fileCount.toString()}</small>
-              </button>
+              </div>
             );
           }
 
@@ -630,6 +734,8 @@ function VirtualTree({
               style={style}
               onActivate={onActivate}
               onToggleSelected={onToggleSelected}
+              onPointerDown={dragSelection.onPointerDown}
+              shouldSuppressClick={dragSelection.shouldSuppressClick}
             />
           );
         })}
@@ -640,23 +746,48 @@ function VirtualTree({
 
 function ExtensionList({
   groups,
+  orderedRecordIds,
   selectedIds,
   activeId,
   onActivate,
   onToggleSelected,
+  onScopeSelect,
+  onReplaceSelection,
 }: {
   groups: ExtensionGroup[];
+  orderedRecordIds: string[];
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
+  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
+  onReplaceSelection: (selectedIds: Set<string>) => void;
 }) {
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const dragSelection = useRowSweepSelection({
+    orderedRecordIds,
+    selectedIds,
+    scrollRef: parentRef,
+    onReplaceSelection,
+  });
+
   return (
-    <div className="extension-list">
+    <div ref={parentRef} className={`extension-list${dragSelection.isDragging ? ' selecting-range' : ''}`}>
       {groups.map(group => (
         <section className="extension-group" key={group.extension}>
           <header>
-            <h3>{group.extension}</h3>
+            <div className="extension-title">
+              <SelectionToggle
+                state={getSelectionState(group.records.map(record => record.id), selectedIds)}
+                disabled={group.records.length === 0}
+                label={`${getSelectionState(group.records.map(record => record.id), selectedIds) === 'all' ? 'Deselect' : 'Select'} ${group.extension}`}
+                onSelect={() => {
+                  const recordIds = group.records.map(record => record.id);
+                  onScopeSelect(recordIds, getSelectionState(recordIds, selectedIds));
+                }}
+              />
+              <h3>{group.extension}</h3>
+            </div>
             <span>{group.records.length.toString()} files, {formatBytes(group.totalBytes)}</span>
           </header>
           {group.records.map(record => (
@@ -668,12 +799,175 @@ function ExtensionList({
               depth={0}
               onActivate={onActivate}
               onToggleSelected={onToggleSelected}
+              onPointerDown={dragSelection.onPointerDown}
+              shouldSuppressClick={dragSelection.shouldSuppressClick}
             />
           ))}
         </section>
       ))}
     </div>
   );
+}
+
+function SelectionToggle({
+  state,
+  label,
+  disabled = false,
+  onSelect,
+}: {
+  state: SelectionState;
+  label: string;
+  disabled?: boolean;
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const ariaChecked = state === 'partial' ? 'mixed' : state === 'all';
+
+  return (
+    <button
+      type="button"
+      className={`icon-button selection-toggle selection-${state}`}
+      role="checkbox"
+      aria-checked={ariaChecked}
+      aria-label={label}
+      disabled={disabled}
+      onPointerDown={(event) => { event.stopPropagation(); }}
+      onKeyDown={(event) => { event.stopPropagation(); }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect(event);
+      }}
+    >
+      {state === 'all' ? <CheckSquare aria-hidden="true" size={16} /> : <Square aria-hidden="true" size={16} />}
+    </button>
+  );
+}
+
+function useRowSweepSelection({
+  orderedRecordIds,
+  selectedIds,
+  scrollRef,
+  onReplaceSelection,
+}: {
+  orderedRecordIds: string[];
+  selectedIds: ReadonlySet<string>;
+  scrollRef: { current: HTMLElement | null };
+  onReplaceSelection: (selectedIds: Set<string>) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const suppressClickRef = useRef(false);
+
+  const shouldSuppressClick = useCallback(() => suppressClickRef.current, []);
+
+  useEffect(() => {
+    if (!isDragging) return undefined;
+
+    document.body.classList.add('range-selecting');
+    return () => {
+      document.body.classList.remove('range-selecting');
+    };
+  }, [isDragging]);
+
+  const onPointerDown = useCallback((recordId: string, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || orderedRecordIds.length === 0) return;
+    event.preventDefault();
+    event.currentTarget.focus();
+
+    const drag: DragSelectionState = {
+      pointerId: event.pointerId,
+      startClientY: event.clientY,
+      startRecordId: recordId,
+      baseSelectedIds: new Set(selectedIds),
+      mode: selectedIds.has(recordId) ? 'remove' : 'add',
+      active: false,
+    };
+
+    const applyRange = (targetRecordId: string) => {
+      const rangeIds = getRangeRecordIds(orderedRecordIds, drag.startRecordId, targetRecordId);
+      const next = new Set(drag.baseSelectedIds);
+      for (const id of rangeIds) {
+        if (drag.mode === 'add') next.add(id);
+        else next.delete(id);
+      }
+      onReplaceSelection(next);
+    };
+
+    const scrollNearEdge = (clientY: number) => {
+      const scrollElement = scrollRef.current;
+      if (!scrollElement) return;
+
+      const bounds = scrollElement.getBoundingClientRect();
+      if (clientY < bounds.top + dragAutoScrollEdgePx) {
+        scrollElement.scrollTop -= dragAutoScrollStepPx;
+      } else if (clientY > bounds.bottom - dragAutoScrollEdgePx) {
+        scrollElement.scrollTop += dragAutoScrollStepPx;
+      }
+    };
+
+    const getRecordIdAtPoint = (clientX: number, clientY: number) => {
+      const scrollElement = scrollRef.current;
+      if (!scrollElement) return null;
+
+      const bounds = scrollElement.getBoundingClientRect();
+      if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) {
+        return null;
+      }
+
+      const element = document.elementFromPoint(clientX, clientY);
+      if (!(element instanceof HTMLElement)) return null;
+      const row = element.closest<HTMLElement>('[data-record-id]');
+      if (!row || !scrollElement.contains(row)) return null;
+      return row.dataset.recordId ?? null;
+    };
+
+    const onPointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== drag.pointerId) return;
+
+      const targetRecordId = getRecordIdAtPoint(pointerEvent.clientX, pointerEvent.clientY);
+      if (!drag.active && Math.abs(pointerEvent.clientY - drag.startClientY) < dragSelectionThresholdPx) return;
+      if (!targetRecordId) return;
+
+      scrollNearEdge(pointerEvent.clientY);
+      drag.active = true;
+      setIsDragging(true);
+      pointerEvent.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      applyRange(targetRecordId);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+    };
+
+    const onPointerUp = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== drag.pointerId) return;
+      cleanup();
+      if (drag.active) {
+        suppressClickRef.current = true;
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+      setIsDragging(false);
+    };
+
+    const onPointerCancel = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== drag.pointerId) return;
+      cleanup();
+      setIsDragging(false);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+  }, [onReplaceSelection, orderedRecordIds, scrollRef, selectedIds]);
+
+  return {
+    isDragging,
+    onPointerDown,
+    shouldSuppressClick,
+  };
 }
 
 function FileRow({
@@ -684,6 +978,8 @@ function FileRow({
   style,
   onActivate,
   onToggleSelected,
+  onPointerDown,
+  shouldSuppressClick,
 }: {
   record: PackageFileRecord;
   active: boolean;
@@ -692,34 +988,50 @@ function FileRow({
   style?: CSSProperties;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
+  onPointerDown: (recordId: string, event: ReactPointerEvent<HTMLElement>) => void;
+  shouldSuppressClick: () => boolean;
 }) {
   const { Icon, tone, label } = getFileIconDescriptor(record);
 
   return (
     <div
-      className={`tree-row file-row${active ? ' active' : ''}`}
+      className={`tree-row file-row${active ? ' active' : ''}${selected ? ' selected' : ''}`}
       style={{ ...style, paddingLeft: `${12 + depth * 18}px` }}
       role="treeitem"
+      aria-selected={selected}
       tabIndex={0}
-      onClick={() => { onActivate(record.id); }}
+      data-record-id={record.id}
+      onPointerDown={(event) => { onPointerDown(record.id, event); }}
+      onClick={(event) => {
+        if (shouldSuppressClick()) {
+          event.preventDefault();
+          return;
+        }
+
+        if (event.ctrlKey || event.metaKey) {
+          onToggleSelected(record.id);
+        }
+
+        onActivate(record.id);
+      }}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === 'Enter') {
           event.preventDefault();
           onActivate(record.id);
+          return;
+        }
+
+        if (event.key === ' ') {
+          event.preventDefault();
+          onToggleSelected(record.id);
         }
       }}
     >
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={selected ? `Deselect ${record.fileName}` : `Select ${record.fileName}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleSelected(record.id);
-        }}
-      >
-        {selected ? <CheckSquare aria-hidden="true" size={16} /> : <Square aria-hidden="true" size={16} />}
-      </button>
+      <SelectionToggle
+        state={selected ? 'all' : 'none'}
+        label={selected ? `Deselect ${record.fileName}` : `Select ${record.fileName}`}
+        onSelect={() => { onToggleSelected(record.id); }}
+      />
       <span className={`file-kind-icon file-kind-${tone}`} title={label}>
         <Icon aria-hidden="true" size={17} strokeWidth={1.9} />
       </span>

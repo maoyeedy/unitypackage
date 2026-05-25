@@ -8,8 +8,13 @@ import {
   buildExtensionGroups,
   buildTreeRows,
   entriesToRecords,
+  getExtensionFileRecordIds,
+  getFolderRecordIds,
   getPreviewKind,
+  getRangeRecordIds,
+  getSelectionState,
   getSyntaxLanguage,
+  getTreeFileRecordIds,
   validatePackDraft,
 } from './packageModel';
 
@@ -126,6 +131,84 @@ describe('package model helpers', () => {
 
     expect(groups.map(group => group.extension)).toEqual(['cs', 'meta', 'prefab']);
     expect(groups.find(group => group.extension === 'meta')?.totalBytes).toBe(4);
+  });
+
+  it('builds selection orders for tree, extension, folder, and ranges', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Scripts/Player.cs',
+        asset: encoder.encode('class Player {}'),
+        meta: encoder.encode('guid: a'),
+      },
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: 'Assets/Textures/Icon.png',
+        asset: encoder.encode('png'),
+      },
+      {
+        guid: 'cccccccccccccccccccccccccccccccc',
+        pathname: 'Packages/Tool/package.json',
+        asset: encoder.encode('{}'),
+      },
+    ], []);
+
+    const treeRows = buildTreeRows(records);
+    const extensionGroups = buildExtensionGroups(records);
+    const treeIds = getTreeFileRecordIds(treeRows);
+    const extensionIds = getExtensionFileRecordIds(extensionGroups);
+    const scriptIds = getFolderRecordIds(records, 'Assets/Scripts');
+    const assetsIds = getFolderRecordIds(records, 'Assets');
+
+    expect(treeIds.map(id => records.find(record => record.id === id)?.virtualPath)).toEqual([
+      'Assets/Scripts/Player.cs',
+      'Assets/Scripts/Player.cs.meta',
+      'Assets/Textures/Icon.png',
+      'Packages/Tool/package.json',
+    ]);
+    expect(extensionIds.map(id => records.find(record => record.id === id)?.virtualPath)).toEqual([
+      'Assets/Scripts/Player.cs',
+      'Packages/Tool/package.json',
+      'Assets/Scripts/Player.cs.meta',
+      'Assets/Textures/Icon.png',
+    ]);
+    expect(scriptIds.map(id => records.find(record => record.id === id)?.virtualPath)).toEqual([
+      'Assets/Scripts/Player.cs',
+      'Assets/Scripts/Player.cs.meta',
+    ]);
+    expect(assetsIds).toHaveLength(3);
+    expect(getRangeRecordIds(treeIds, treeIds[0] ?? null, treeIds[2] ?? '')).toEqual(treeIds.slice(0, 3));
+    expect(getRangeRecordIds(treeIds, 'missing', treeIds[2] ?? '')).toEqual([treeIds[2]]);
+  });
+
+  it('reports selection state for group controls', () => {
+    const ids = ['a', 'b', 'c'];
+
+    expect(getSelectionState(ids, new Set())).toBe('none');
+    expect(getSelectionState(ids, new Set(['a']))).toBe('partial');
+    expect(getSelectionState(ids, new Set(ids))).toBe('all');
+    expect(getSelectionState([], new Set(ids))).toBe('none');
+  });
+
+  it('uses collapsed tree visibility for range order but filtered records for folder scope', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Scripts/Player.cs',
+        asset: encoder.encode('class Player {}'),
+      },
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: 'Assets/Textures/Icon.png',
+        asset: encoder.encode('png'),
+      },
+    ], []);
+
+    const collapsedRows = buildTreeRows(records, new Set(['Assets']));
+    const folderIds = getFolderRecordIds(records, 'Assets');
+
+    expect(getTreeFileRecordIds(collapsedRows)).toEqual([]);
+    expect(folderIds).toHaveLength(2);
   });
 
   it('detects native preview kinds', () => {

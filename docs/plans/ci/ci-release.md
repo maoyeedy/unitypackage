@@ -12,7 +12,7 @@ metadata completeness.
 |----|-------|------|---------------|------------|-------|----------|
 | P1 | CI, publish, and Pages workflows | Add GitHub Actions for matrix CI, tag publishing, and web deployment. | P2 | - | `.github/workflows/*.yml`, `docs/reference/publishing.md`, `package.json` | worker |
 | P2 | Dependency and version automation | Add Dependabot and Changesets configuration for the monorepo. | P1 | - | `.github/dependabot.yml`, `.changeset/config.json`, `package.json`, `bun.lock`, `docs/reference/publishing.md` | worker |
-| P3 | Playwright smoke | Add a browser smoke test that loads the web app, drops a generated package, and asserts the workspace tree and preview pane render. | - | P1, P2 | `apps/web/**/*`, `fixtures/**/*`, `package.json`, `bun.lock` | worker |
+| P3 | Playwright smoke | Add a browser smoke test that loads the web app, drops a generated package, and asserts the workspace tree, batch selection, and preview pane render. | - | P1, P2 | `apps/web/**/*`, `fixtures/**/*`, `package.json`, `bun.lock` | worker |
 | P4 | Package metadata and release verification | Ensure CLI package includes a license and run the release dry-run gate. | - | P3 | `packages/cli/LICENSE`, `packages/cli/package.json`, `docs/reference/publishing.md` | worker |
 
 ### P1 - CI, publish, and Pages workflows
@@ -52,6 +52,7 @@ Exit criteria
 - Playwright smoke test loads `apps/web`.
 - The test drops `fixtures/generated/minimal.unitypackage` or creates the fixture as part of setup.
 - The test asserts the default tree view renders and selecting a record updates the preview/metadata pane.
+- The test asserts batch selection basics: checkbox selection, folder select-all scoped to visible filtered records, extension select-all, and drag-sweep selection staying inside the middle explorer pane.
 - The test is wired into CI or an explicit package/root script.
 - Run: bun run check
 ```

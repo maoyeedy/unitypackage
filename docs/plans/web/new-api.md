@@ -10,8 +10,10 @@ modern workspace UI created in `docs/plans/web/modern-interface-rewrite.md`.
 The web app is now an English-only PWA-style React workspace. It parses packages
 in a worker into entry-aware `PackageFileRecord` values, shows a tree by
 default, can group by extension, previews selected records on the right, and has
-a Pack mode shell. This plan should wire the disabled Pack export path to the
-new core creation API instead of rebuilding the interface.
+a Pack mode shell. Extract selection supports file checkboxes, drag-sweep range
+selection inside the middle explorer pane, folder select-all, and extension
+select-all. This plan should wire the disabled Pack export path to the new core
+creation API instead of rebuilding the interface.
 
 ## Phases
 
@@ -83,6 +85,7 @@ Exit criteria
 - Web users can stage extracted asset records and download a new `.unitypackage`.
 - The browser flow uses `createUnityPackage` or the final worker-safe creation API from `packages/core`.
 - Pack mode replaces the current disabled export state with an enabled export button when validation passes.
+- Staging continues to consume the existing Extract selection set; do not add a second pack-specific selection model.
 - Empty selections, missing metadata, duplicate GUIDs, unsupported preview records, and creation failures render clear UI states.
 - Existing ZIP/download behavior remains available in Extract mode.
 - Web tests cover pack validation and the enabled export worker path.
@@ -100,5 +103,5 @@ bun run check
 
 Manual smoke:
 - Use the web app Pack mode to export a staged selection and verify the generated package with `node packages/cli/dist/bin.js verify`.
-- Confirm Extract mode still shows the tree by default, extension grouping, native previews, metadata, and ZIP downloads.
+- Confirm Extract mode still shows the tree by default, extension grouping, batch selection, native previews, metadata, and ZIP downloads.
 - Compare two packages created from identical input and confirm deterministic output behavior.

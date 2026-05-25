@@ -23,9 +23,13 @@ associations, and shows derived metadata such as GUID, package path, kind, MIME
 guess, byte size, paired meta/preview state, duplicates, and related parser
 diagnostics.
 
-Extract mode supports ZIP downloads for all files or selected records. Pack mode
-is prepared as a staging shell, but `.unitypackage` export stays disabled until
-`docs/plans/web/new-api.md` wires the final browser package creation API.
+Extract mode supports ZIP downloads for all files or selected records. Tree and
+extension views support checkbox selection, drag-sweep selection within the
+middle explorer pane, folder select-all, extension select-all, and clear
+selection. Search filters scope folder and extension select-all to the visible
+records. Pack mode is prepared as a staging shell, but `.unitypackage` export
+stays disabled until `docs/plans/web/new-api.md` wires the final browser package
+creation API.
 
 ```sh
 bun run dev:web

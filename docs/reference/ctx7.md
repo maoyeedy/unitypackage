@@ -28,3 +28,8 @@ Workspace deps (`unitypackage-core`) are internal — no Ctx7 ID.
 | typescript-eslint | `/typescript-eslint/typescript-eslint` |
 | vite | `/vitejs/vite` |
 | vite-plugin-pwa | `/vite-pwa/vite-plugin-pwa` |
+
+## Notes
+
+- Use `/tanstack/virtual` for web explorer virtualization questions, including `useVirtualizer`, `getVirtualItems()`, `getTotalSize()`, and virtual row `index/start/size` behavior used by `apps/web/src/App.tsx`.
+- Use `/facebook/react` for React event and hook behavior in the web app; keep browser pointer selection details grounded in current React DOM docs when changing drag selection.

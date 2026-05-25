@@ -59,6 +59,8 @@ export interface PackValidation {
   createEntryCount: number;
 }
 
+export type SelectionState = 'none' | 'partial' | 'all';
+
 const yamlExtensions = new Set([
   'anim',
   'asset',
@@ -220,6 +222,47 @@ export function buildExtensionGroups(records: PackageFileRecord[]): ExtensionGro
       totalBytes: groupRecords.reduce((sum, record) => sum + record.byteLength, 0),
     }))
     .sort((a, b) => a.extension.localeCompare(b.extension));
+}
+
+export function getTreeFileRecordIds(rows: TreeRow[]): string[] {
+  return rows.flatMap(row => row.type === 'file' ? [row.record.id] : []);
+}
+
+export function getExtensionFileRecordIds(groups: ExtensionGroup[]): string[] {
+  return groups.flatMap(group => group.records.map(record => record.id));
+}
+
+export function getFolderRecordIds(records: PackageFileRecord[], folderPath: string): string[] {
+  const prefix = `${folderPath.replace(/\/+$/, '')}/`;
+  return records
+    .filter(record => record.virtualPath.startsWith(prefix))
+    .sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))
+    .map(record => record.id);
+}
+
+export function getRangeRecordIds(orderedIds: readonly string[], anchorId: string | null, targetId: string): string[] {
+  const targetIndex = orderedIds.indexOf(targetId);
+  if (targetIndex === -1) return [];
+
+  const anchorIndex = anchorId === null ? -1 : orderedIds.indexOf(anchorId);
+  if (anchorIndex === -1) return [targetId];
+
+  const startIndex = Math.min(anchorIndex, targetIndex);
+  const endIndex = Math.max(anchorIndex, targetIndex);
+  return orderedIds.slice(startIndex, endIndex + 1);
+}
+
+export function getSelectionState(recordIds: readonly string[], selectedIds: ReadonlySet<string>): SelectionState {
+  if (recordIds.length === 0) return 'none';
+
+  let selectedCount = 0;
+  for (const recordId of recordIds) {
+    if (selectedIds.has(recordId)) selectedCount += 1;
+  }
+
+  if (selectedCount === 0) return 'none';
+  if (selectedCount === recordIds.length) return 'all';
+  return 'partial';
 }
 
 export function getPreviewKind(path: string, bytes?: Uint8Array): PreviewKind {
