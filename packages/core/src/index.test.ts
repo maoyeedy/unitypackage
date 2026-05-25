@@ -240,6 +240,12 @@ describe('parseUnityPackage', () => {
         path: `${guid}/pathname`,
         guid,
       },
+      {
+        code: 'meta-missing',
+        message: 'Entry has a pathname and asset but no asset.meta or metaData file.',
+        path: `${guid}/asset.meta`,
+        guid,
+      },
     ]);
   });
 
@@ -275,6 +281,107 @@ describe('parseUnityPackage', () => {
   });
 });
 
+describe('parseUnityPackageEntries diagnostics', () => {
+  it('emits duplicate-guid when the same GUID prefix appears twice', () => {
+    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    // Build a tar with two pathname entries for the same GUID (second is the duplicate)
+    const tarEntries: Uint8Array[] = [];
+    tarEntries.push(createTarEntry(`${guid}/pathname`, encoder.encode('Assets/First.cs')));
+    tarEntries.push(createTarEntry(`${guid}/asset`, encoder.encode('first')));
+    tarEntries.push(createTarEntry(`${guid}/asset.meta`, encoder.encode('first meta')));
+    tarEntries.push(createTarEntry(`${guid}/pathname`, encoder.encode('Assets/Second.cs')));
+    tarEntries.push(new Uint8Array(1024));
+    const dupData = gzipSync(concatUint8Arrays(tarEntries));
+
+    const parsedEntries = parseUnityPackageEntries(dupData);
+    const dupDiag = parsedEntries.diagnostics.filter(d => d.code === 'duplicate-guid');
+    expect(dupDiag).toHaveLength(1);
+    expect(dupDiag[0].guid).toBe(guid);
+    expect(dupDiag[0].path).toBe(`${guid}/pathname`);
+    // Only first occurrence added to result
+    expect(parsedEntries).toHaveLength(1);
+    expect(parsedEntries[0].pathname).toBe('Assets/First.cs');
+  });
+
+  it('emits asset-missing when entry has meta but no asset file', () => {
+    const guid = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/MetaOnly.cs',
+      [`${guid}/asset.meta`]: 'guid: bbbb',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const diag = parsedEntries.diagnostics.filter(d => d.code === 'asset-missing');
+    expect(diag).toHaveLength(1);
+    expect(diag[0].guid).toBe(guid);
+    expect(diag[0].path).toBe(`${guid}/asset`);
+  });
+
+  it('emits meta-missing when entry has asset but no meta file', () => {
+    const guid = 'cccccccccccccccccccccccccccccccc';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/NoMeta.cs',
+      [`${guid}/asset`]: 'some content',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const diag = parsedEntries.diagnostics.filter(d => d.code === 'meta-missing');
+    expect(diag).toHaveLength(1);
+    expect(diag[0].guid).toBe(guid);
+    expect(diag[0].path).toBe(`${guid}/asset.meta`);
+  });
+
+  it('does not emit asset-missing or meta-missing for folder entries (asset-only with meta, no asset file)', () => {
+    // Folder entries have meta but no asset -- asset-missing should fire
+    // But folder entry with neither asset nor meta should fire neither
+    const guid = 'dddddddddddddddddddddddddddddddd';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/Folder',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const codes = parsedEntries.diagnostics.map(d => d.code);
+    expect(codes).not.toContain('asset-missing');
+    expect(codes).not.toContain('meta-missing');
+  });
+
+  it('emits zero-byte-asset when asset file is present but empty', () => {
+    const guid = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: 'Assets/Empty.cs',
+      [`${guid}/asset`]: '',
+      [`${guid}/asset.meta`]: 'guid: eeee',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const diag = parsedEntries.diagnostics.filter(d => d.code === 'zero-byte-asset');
+    expect(diag).toHaveLength(1);
+    expect(diag[0].guid).toBe(guid);
+    expect(diag[0].path).toBe(`${guid}/asset`);
+  });
+
+  it('emits oversized-entry-name when pathname exceeds 200 characters', () => {
+    const guid = 'ffffffffffffffffffffffffffffffff';
+    const longPathname = 'Assets/' + 'A'.repeat(195);
+    expect(longPathname.length).toBeGreaterThan(200);
+    const data = createLegacyUnityPackage({
+      [`${guid}/pathname`]: longPathname,
+      [`${guid}/asset`]: 'content',
+      [`${guid}/asset.meta`]: 'guid: ffff',
+    });
+
+    const parsedEntries = parseUnityPackageEntries(data);
+    const diag = parsedEntries.diagnostics.filter(d => d.code === 'oversized-entry-name');
+    expect(diag).toHaveLength(1);
+    expect(diag[0].guid).toBe(guid);
+    expect(diag[0].path).toBe(`${guid}/pathname`);
+    expect(diag[0].message).toContain(`${longPathname.length}`);
+    // Entry is still added despite diagnostic
+    expect(parsedEntries).toHaveLength(1);
+    expect(parsedEntries[0].pathname).toBe(longPathname);
+  });
+});
+
 describe('createUnityPackage', () => {
   it('throws for duplicate GUID entries', () => {
     const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -295,6 +402,23 @@ describe('createUnityPackage', () => {
         },
       ], { gzipLevel: 1 }),
     ).toThrow(`Duplicate GUID in package entries: ${guid}`);
+  });
+
+  it('throws for pathname exceeding 200 characters', () => {
+    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const longPathname = 'Assets/' + 'X'.repeat(195);
+    expect(longPathname.length).toBeGreaterThan(200);
+
+    expect(() =>
+      createUnityPackage([
+        {
+          guid,
+          pathname: longPathname,
+          asset: encoder.encode('data'),
+          meta: encoder.encode('meta'),
+        },
+      ], { gzipLevel: 1 }),
+    ).toThrow(/Pathname exceeds 200 characters/);
   });
 
   it('enforces the ustar 100-byte entry name limit', () => {

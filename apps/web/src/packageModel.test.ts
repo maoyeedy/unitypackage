@@ -273,6 +273,167 @@ describe('package model helpers', () => {
     expect(getSyntaxLanguage('Assets/Unknown.txt')).toBe('text');
   });
 
+  it('routes duplicate-guid diagnostic to the asset record', () => {
+    const entries: UnityPackageEntry[] = [
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/A.prefab',
+        asset: encoder.encode('prefab'),
+        meta: encoder.encode('meta'),
+      },
+    ];
+    const diagnostics: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'duplicate-guid',
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        path: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pathname',
+        message: 'GUID appears more than once in the archive.',
+      },
+    ];
+
+    const records = entriesToRecords(entries, diagnostics);
+    const assetRecord = records.find(r => r.virtualPath === 'Assets/A.prefab');
+    const metaRecord = records.find(r => r.virtualPath === 'Assets/A.prefab.meta');
+
+    expect(assetRecord?.diagnostics).toHaveLength(1);
+    expect(assetRecord?.diagnostics[0]?.code).toBe('duplicate-guid');
+    expect(metaRecord?.diagnostics).toHaveLength(0);
+  });
+
+  it('routes asset-missing diagnostic to the meta record', () => {
+    const entries: UnityPackageEntry[] = [
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: 'Assets/B.cs',
+        asset: undefined,
+        meta: encoder.encode('meta'),
+      },
+    ];
+    const diagnostics: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'asset-missing',
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        path: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/asset',
+        message: 'Entry has a pathname and meta but no asset file.',
+      },
+    ];
+
+    const records = entriesToRecords(entries, diagnostics);
+    // No asset record exists; only meta record is created
+    const metaRecord = records.find(r => r.virtualPath === 'Assets/B.cs.meta');
+
+    expect(records).toHaveLength(1);
+    expect(metaRecord?.diagnostics).toHaveLength(1);
+    expect(metaRecord?.diagnostics[0]?.code).toBe('asset-missing');
+  });
+
+  it('routes meta-missing diagnostic to the asset record', () => {
+    const entries: UnityPackageEntry[] = [
+      {
+        guid: 'cccccccccccccccccccccccccccccccc',
+        pathname: 'Assets/C.png',
+        asset: encoder.encode('png'),
+        meta: undefined,
+      },
+    ];
+    const diagnostics: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'meta-missing',
+        guid: 'cccccccccccccccccccccccccccccccc',
+        path: 'cccccccccccccccccccccccccccccccc/asset.meta',
+        message: 'Entry has a pathname and asset but no asset.meta or metaData file.',
+      },
+    ];
+
+    const records = entriesToRecords(entries, diagnostics);
+    // No meta record exists; only asset record is created
+    const assetRecord = records.find(r => r.virtualPath === 'Assets/C.png');
+
+    expect(records).toHaveLength(1);
+    expect(assetRecord?.diagnostics).toHaveLength(1);
+    expect(assetRecord?.diagnostics[0]?.code).toBe('meta-missing');
+  });
+
+  it('routes zero-byte-asset diagnostic to the asset record', () => {
+    const entries: UnityPackageEntry[] = [
+      {
+        guid: 'dddddddddddddddddddddddddddddddd',
+        pathname: 'Assets/D.bytes',
+        asset: new Uint8Array(0),
+        meta: encoder.encode('meta'),
+      },
+    ];
+    const diagnostics: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'zero-byte-asset',
+        guid: 'dddddddddddddddddddddddddddddddd',
+        path: 'dddddddddddddddddddddddddddddddd/asset',
+        message: 'Asset file is present but has zero bytes.',
+      },
+    ];
+
+    const records = entriesToRecords(entries, diagnostics);
+    const assetRecord = records.find(r => r.virtualPath === 'Assets/D.bytes');
+    const metaRecord = records.find(r => r.virtualPath === 'Assets/D.bytes.meta');
+
+    expect(assetRecord?.diagnostics).toHaveLength(1);
+    expect(assetRecord?.diagnostics[0]?.code).toBe('zero-byte-asset');
+    expect(metaRecord?.diagnostics).toHaveLength(0);
+  });
+
+  it('routes oversized-entry-name diagnostic to asset when asset exists, meta otherwise', () => {
+    const longName = 'A'.repeat(201);
+    const entriesWithAsset: UnityPackageEntry[] = [
+      {
+        guid: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        pathname: `Assets/${longName}.cs`,
+        asset: encoder.encode('code'),
+        meta: encoder.encode('meta'),
+      },
+    ];
+    const diagWithAsset: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'oversized-entry-name',
+        guid: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        path: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/pathname',
+        message: `Pathname exceeds 200 characters (${longName.length + 13}).`,
+      },
+    ];
+
+    const recordsWithAsset = entriesToRecords(entriesWithAsset, diagWithAsset);
+    const assetRecord = recordsWithAsset.find(r => !r.virtualPath.endsWith('.meta'));
+    const metaRecord = recordsWithAsset.find(r => r.virtualPath.endsWith('.meta'));
+
+    expect(assetRecord?.diagnostics).toHaveLength(1);
+    expect(assetRecord?.diagnostics[0]?.code).toBe('oversized-entry-name');
+    expect(metaRecord?.diagnostics).toHaveLength(0);
+
+    // Fallback: no asset present, only meta
+    const entriesMetaOnly: UnityPackageEntry[] = [
+      {
+        guid: 'ffffffffffffffffffffffffffffffff',
+        pathname: `Assets/${longName}.cs`,
+        asset: undefined,
+        meta: encoder.encode('meta'),
+      },
+    ];
+    const diagMetaOnly: UnityPackageParseDiagnostic[] = [
+      {
+        code: 'oversized-entry-name',
+        guid: 'ffffffffffffffffffffffffffffffff',
+        path: 'ffffffffffffffffffffffffffffffff/pathname',
+        message: `Pathname exceeds 200 characters (${longName.length + 13}).`,
+      },
+    ];
+
+    const recordsMetaOnly = entriesToRecords(entriesMetaOnly, diagMetaOnly);
+    const metaOnlyRecord = recordsMetaOnly.find(r => r.virtualPath.endsWith('.meta'));
+
+    expect(recordsMetaOnly).toHaveLength(1);
+    expect(metaOnlyRecord?.diagnostics).toHaveLength(1);
+    expect(metaOnlyRecord?.diagnostics[0]?.code).toBe('oversized-entry-name');
+  });
+
   it('keeps pack export blocked until the creation API plan lands', () => {
     const records = entriesToRecords([
       {

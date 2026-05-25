@@ -413,6 +413,26 @@ function getRecordDiagnostics(
       return false; // preview is surfaced as its own record; not ignored in entry-aware parsing
     }
 
+    // duplicate-guid: route to 'asset' (primary representative of the entry)
+    if (diagnostic.code === 'duplicate-guid') {
+      return component === 'asset';
+    }
+
+    // asset-missing: asset record does not exist; attach to 'meta' (the only present component)
+    if (diagnostic.code === 'asset-missing') {
+      return component === 'meta';
+    }
+
+    // meta-missing: meta record does not exist; attach to 'asset' (the only present component)
+    if (diagnostic.code === 'meta-missing') {
+      return component === 'asset';
+    }
+
+    // oversized-entry-name: prefer 'asset', fall back to 'meta' when asset is absent
+    if (diagnostic.code === 'oversized-entry-name') {
+      return entry.asset !== undefined ? component === 'asset' : component === 'meta';
+    }
+
     if (diagnostic.path?.endsWith('/preview.png')) {
       return component === 'preview';
     }

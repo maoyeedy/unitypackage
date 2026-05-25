@@ -625,6 +625,109 @@ describe('verify', () => {
     expect((await verify(malformedPackage)).findings.some(f => f.code === 'PARSER_MALFORMED_TAR_ENTRY')).toBe(true);
   });
 
+  it('reports PARSER_DUPLICATE_GUID when the same GUID appears twice', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'dup-guid.unitypackage');
+    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: 'Assets/First.cs',
+        [`${guid}/asset.meta`]: `guid: ${guid}`,
+        // A second pathname entry for the same GUID triggers duplicate-guid
+        // buildRawPackage keeps last-wins for Record keys, so we need a raw approach.
+        // Use a different suffix to force two tar entries with the same pathname key.
+      }),
+    );
+
+    // buildRawPackage deduplicates Record keys; construct manually via createTarEntry.
+    const entry1 = createTarEntry(`${guid}/pathname`, encoder.encode('Assets/First.cs'));
+    const entry2 = createTarEntry(`${guid}/pathname`, encoder.encode('Assets/Duplicate.cs'));
+    const meta = createTarEntry(`${guid}/asset.meta`, encoder.encode(`guid: ${guid}`));
+    const tarBytes = new Uint8Array(entry1.length + entry2.length + meta.length + 1024);
+    tarBytes.set(entry1, 0);
+    tarBytes.set(entry2, entry1.length);
+    tarBytes.set(meta, entry1.length + entry2.length);
+    const dupGuidPackage = path.join(dir, 'dup-guid2.unitypackage');
+    await writeFile(dupGuidPackage, gzipSync(tarBytes));
+
+    const result = await verify(dupGuidPackage);
+    expect(result.findings.some(f => f.code === 'PARSER_DUPLICATE_GUID')).toBe(true);
+  });
+
+  it('reports PARSER_ASSET_MISSING when entry has meta but no asset file', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'asset-missing.unitypackage');
+    const guid = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: 'Assets/NoAsset.cs',
+        [`${guid}/asset.meta`]: `guid: ${guid}`,
+        // no asset entry -- triggers asset-missing
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.findings.some(f => f.code === 'PARSER_ASSET_MISSING')).toBe(true);
+  });
+
+  it('reports PARSER_META_MISSING when entry has asset but no meta file', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'meta-missing.unitypackage');
+    const guid = 'cccccccccccccccccccccccccccccccc';
+
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: 'Assets/NoMeta.cs',
+        [`${guid}/asset`]: 'public class NoMeta {}',
+        // no asset.meta entry -- triggers meta-missing
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.findings.some(f => f.code === 'PARSER_META_MISSING')).toBe(true);
+  });
+
+  it('reports PARSER_ZERO_BYTE_ASSET when the asset file has zero bytes', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'zero-byte.unitypackage');
+    const guid = 'dddddddddddddddddddddddddddddddd';
+
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: 'Assets/Empty.cs',
+        [`${guid}/asset`]: '',
+        [`${guid}/asset.meta`]: `guid: ${guid}`,
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.findings.some(f => f.code === 'PARSER_ZERO_BYTE_ASSET')).toBe(true);
+  });
+
+  it('reports PARSER_OVERSIZED_ENTRY_NAME when pathname exceeds 200 characters', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'oversized.unitypackage');
+    const guid = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const longPathname = 'Assets/' + 'A'.repeat(200);
+
+    await writeFile(
+      packagePath,
+      buildRawPackage({
+        [`${guid}/pathname`]: longPathname,
+        [`${guid}/asset.meta`]: `guid: ${guid}`,
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.findings.some(f => f.code === 'PARSER_OVERSIZED_ENTRY_NAME')).toBe(true);
+  });
+
   it('fails in strict mode when warnings are present', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'warning.unitypackage');

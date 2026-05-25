@@ -22,10 +22,15 @@ export interface CreateUnityPackageOptions {
 }
 
 export type UnityPackageParseDiagnosticCode =
+  | 'asset-missing'
+  | 'duplicate-guid'
   | 'empty-pathname'
   | 'ignored-preview'
   | 'malformed-tar-entry'
-  | 'non-standard-guid';
+  | 'meta-missing'
+  | 'non-standard-guid'
+  | 'oversized-entry-name'
+  | 'zero-byte-asset';
 
 export interface UnityPackageParseDiagnostic {
   code: UnityPackageParseDiagnosticCode;
@@ -81,6 +86,10 @@ export function createUnityPackage(entries: CreateUnityPackageEntry[], options: 
     }
     guids.add(entry.guid);
 
+    if (entry.pathname.length > 200) {
+      throw new Error(`Pathname exceeds 200 characters (${entry.pathname.length}): ${entry.pathname}`);
+    }
+
     tarEntries.push(createTarEntry(`${entry.guid}/pathname`, textEncoder.encode(entry.pathname)));
     tarEntries.push(createTarEntry(`${entry.guid}/asset.meta`, entry.meta));
 
@@ -128,7 +137,17 @@ function parseTar(data: Uint8Array, diagnostics: UnityPackageParseDiagnostic[]):
     offset += BLOCK_SIZE;
 
     if (offset + size <= data.length && !name.endsWith('/')) {
-      files[name] = data.slice(offset, offset + size);
+      if (name.endsWith('/pathname') && name in files) {
+        const guid = name.slice(0, -'/pathname'.length);
+        diagnostics.push({
+          code: 'duplicate-guid',
+          message: 'GUID appears more than once in the archive.',
+          path: name,
+          guid,
+        });
+      } else {
+        files[name] = data.slice(offset, offset + size);
+      }
     } else if (offset + size > data.length) {
       diagnostics.push({
         code: 'malformed-tar-entry',
@@ -156,6 +175,7 @@ function mapUnityEntries(files: Record<string, Uint8Array>, diagnostics: UnityPa
     if (filename !== 'pathname') continue;
 
     try {
+
       const pathname = textDecoder.decode(content).split('\n')[0].trim();
       if (!pathname) {
         diagnostics.push({
@@ -176,6 +196,15 @@ function mapUnityEntries(files: Record<string, Uint8Array>, diagnostics: UnityPa
         });
       }
 
+      if (pathname.length > 200) {
+        diagnostics.push({
+          code: 'oversized-entry-name',
+          message: `Pathname exceeds 200 characters (${pathname.length}).`,
+          path,
+          guid,
+        });
+      }
+
       const asset = files[`${guid}/asset`];
       const meta = files[`${guid}/asset.meta`] ?? files[`${guid}/metaData`];
       const preview = files[`${guid}/preview.png`];
@@ -185,6 +214,33 @@ function mapUnityEntries(files: Record<string, Uint8Array>, diagnostics: UnityPa
           code: 'ignored-preview',
           message: 'preview.png is exposed on entries and ignored by flat parsing.',
           path: `${guid}/preview.png`,
+          guid,
+        });
+      }
+
+      if (asset === undefined) {
+        if (meta !== undefined) {
+          diagnostics.push({
+            code: 'asset-missing',
+            message: 'Entry has a pathname and meta but no asset file.',
+            path: `${guid}/asset`,
+            guid,
+          });
+        }
+      } else if (asset.byteLength === 0) {
+        diagnostics.push({
+          code: 'zero-byte-asset',
+          message: 'Asset file is present but has zero bytes.',
+          path: `${guid}/asset`,
+          guid,
+        });
+      }
+
+      if (meta === undefined && asset !== undefined) {
+        diagnostics.push({
+          code: 'meta-missing',
+          message: 'Entry has a pathname and asset but no asset.meta or metaData file.',
+          path: `${guid}/asset.meta`,
           guid,
         });
       }
