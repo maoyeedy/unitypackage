@@ -9,6 +9,9 @@
 | yaml | `/eemeli/yaml` |
 | react | `/facebook/react` |
 | react-dom | *(part of `/facebook/react`)* |
+| @tanstack/react-virtual | `/tanstack/virtual` |
+| lucide-react | `/lucide-icons/lucide` |
+| workbox-window | *(part of vite-plugin-pwa docs; no separate ID recorded)* |
 | chalk | `/chalk/chalk` |
 
 Workspace deps (`unitypackage-core`) are internal — no Ctx7 ID.
@@ -23,3 +26,4 @@ Workspace deps (`unitypackage-core`) are internal — no Ctx7 ID.
 | eslint | `/eslint/eslint` |
 | typescript-eslint | `/typescript-eslint/typescript-eslint` |
 | vite | `/vitejs/vite` |
+| vite-plugin-pwa | `/vite-pwa/vite-plugin-pwa` |

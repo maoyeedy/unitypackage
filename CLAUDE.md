@@ -4,7 +4,7 @@
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | published, browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | published, ships JS, runtime Node ≥24 |
-| `apps/web` | `@unitypackage-tools/web` | private, Vite 6 + React 19 |
+| `apps/web` | `@unitypackage-tools/web` | private, Vite 6 + React 19 PWA workspace |
 | `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders + real editor-exported `.unitypackage` |
 | `scripts` | — | `copy-web-assets.ts`, `fixtures-build.ts` |
 
@@ -19,6 +19,7 @@ bun run lint:fix                  # eslint --fix all
 bun run pack:dry                  # npm pack --dry-run
 bun run --filter unitypackage-core test
 bun run --filter unitypackage-tools test
+bun run --filter @unitypackage-tools/web test
 bun run --filter @unitypackage-tools/web build
 ```
 
@@ -50,7 +51,10 @@ node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackag
 ## Architecture Rules
 
 - **`packages/core` browser-safe**: no `node:*`, `fs`, `path`, `crypto`, `os`, `yaml`, HTTP. Only dep: `fflate`.
-- CLI must use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage` (flat alias). `apps/web` uses `parseUnityPackage` intentionally (deferred, see todo.md Phase 1).
+- CLI must use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage` (flat alias). `apps/web` also uses entry-aware parsing through its parse worker and derives `PackageFileRecord` values in `apps/web/src/packageModel.ts`.
+- `apps/web` is English-only. Do not reintroduce translation files, language selectors, or `language` URL state.
+- Web Pack mode is currently a shell: keep `.unitypackage` export disabled until `docs/plans/web/new-api.md` wires the final browser creation API. ZIP downloads remain Extract-mode behavior.
+- Web PWA setup uses `vite-plugin-pwa`, `virtual:pwa-register`, and `workbox-window`; keep service worker registration in the app entrypoint.
 - Never hand-edit `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
 
 ## Pitfalls
@@ -63,6 +67,7 @@ node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackag
 - **`packages/core/tsconfig.json` omits `moduleResolution`** intentionally: TS 5.9 forbids `module:CommonJS` + `moduleResolution:Node16`. Don't add it.
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
 - **`apps/web` typecheck is `tsc -b`** (not `--noEmit`). `--noEmit` skips project reference resolution.
+- **`apps/web` tests are Vitest unit tests**: use `bun run --filter @unitypackage-tools/web test` for model/helper coverage.
 - **ESLint type-aware rules exclude `*.test.ts`** in `packages/cli` — they lack `@types/node` in tsconfig scope.
 - **`build:cli` order**: `node scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
 - **100-byte tar entry name limit**: entry format `<guid>/pathname`, `<guid>/asset.meta`, `<guid>/asset`. GUID is 32 chars — remaining budget tight.

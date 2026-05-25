@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Unity package workspace icon">
+  <rect width="512" height="512" rx="96" fill="#111827"/>
+  <path d="M128 164l128-72 128 72v148l-128 72-128-72V164z" fill="#f8fafc"/>
+  <path d="M256 122l86 48-86 48-86-48 86-48z" fill="#38bdf8"/>
+  <path d="M158 197l78 44v96l-78-44v-96z" fill="#22c55e"/>
+  <path d="M354 197v96l-78 44v-96l78-44z" fill="#f97316"/>
+  <path d="M190 392h132v30H190v-30z" fill="#f8fafc"/>
+</svg>
