@@ -177,21 +177,25 @@ function AppContent() {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [maintainStructure, setMaintainStructure] = useState(true);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [packageName, setPackageName] = useState<string | null>(null);
   const [status, setStatus] = useState('Open a .unitypackage to inspect its contents.');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const filteredRecords = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return records;
-    return records.filter(record => {
-      return (
-        record.virtualPath.toLowerCase().includes(normalizedQuery) ||
-        record.guid.toLowerCase().includes(normalizedQuery)
-      );
-    });
-  }, [query, records]);
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
+    if (!normalizedQuery || !/[a-z0-9]/i.test(normalizedQuery)) return records;
+    return records.filter(record =>
+      record.fileName.toLowerCase().includes(normalizedQuery) ||
+      record.guid.toLowerCase().includes(normalizedQuery)
+    );
+  }, [debouncedQuery, records]);
 
   const activeRecord = useMemo(() => {
     return records.find(record => record.id === activeRecordId) ?? filteredRecords[0] ?? null;
@@ -339,7 +343,7 @@ function AppContent() {
             <input
               type="search"
               value={query}
-              placeholder="Filter path or GUID"
+              placeholder="Filter name or GUID"
               onChange={event => {
                 setQuery(event.target.value);
               }}
