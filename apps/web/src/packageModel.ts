@@ -410,7 +410,7 @@ function getRecordDiagnostics(
     }
 
     if (diagnostic.code === 'ignored-preview') {
-      return component === 'preview';
+      return false; // preview is surfaced as its own record; not ignored in entry-aware parsing
     }
 
     if (diagnostic.path?.endsWith('/preview.png')) {

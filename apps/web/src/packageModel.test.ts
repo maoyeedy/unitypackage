@@ -54,7 +54,7 @@ describe('package model helpers', () => {
     expect(records).toHaveLength(5);
     expect(records.filter(record => getRecordCategory(record) === 'asset')).toHaveLength(2);
     expect(records.every(record => record.duplicatePathCount === 2)).toBe(true);
-    expect(records.find(record => record.isUnityPreview)?.diagnostics[0]?.code).toBe('ignored-preview');
+    expect(records.find(record => record.isUnityPreview)?.diagnostics).toEqual([]);
     expect(records.find(record => getRecordCategory(record) === 'asset' && record.guid.startsWith('b'))?.diagnostics).toEqual([]);
   });
 
