@@ -9,11 +9,12 @@ const postResponse = (response: DownloadZipResponse, transfer?: Transferable[]) 
 
 self.onmessage = ({ data }: MessageEvent<DownloadZipRequest>) => {
   const filesToZip: Record<string, Uint8Array> = {};
+  const ids = data.recordIds ? new Set(data.recordIds) : null;
 
-  for (const [path, content] of Object.entries(data.files)) {
-    if (data.excludeMeta && path.endsWith('.meta')) continue;
-    const filePath = data.maintainStructure ? path : path.split('/').pop() ?? path;
-    filesToZip[filePath] = content;
+  for (const record of data.records) {
+    if (ids && !ids.has(record.id)) continue;
+    const filePath = data.maintainStructure ? record.virtualPath : record.fileName;
+    filesToZip[filePath] = record.content;
   }
 
   if (Object.keys(filesToZip).length === 0) {

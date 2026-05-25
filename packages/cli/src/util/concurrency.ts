@@ -1,6 +1,6 @@
 export function createLimiter(concurrency: number): <T>(task: () => Promise<T>) => Promise<T> {
   let active = 0;
-  const queue: Array<() => void> = [];
+  const queue: (() => void)[] = [];
 
   const runNext = (): void => {
     active--;

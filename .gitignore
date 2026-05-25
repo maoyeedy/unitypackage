@@ -141,6 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+apps/web/dev-dist/
 
 # Monorepo build outputs
 **/dist/
@@ -157,5 +158,16 @@ fixtures/generated/
 # Bun
 node_modules.bun
 package-json.lock
+
+# Playwright artifacts
+.playwright-mcp/
+**/playwright-report/
+**/test-results/
+**/blob-report/
+**/playwright/.cache/
+**/.local-browsers/
+
+# Authentication storage
+**/playwright/.auth/
 
 # Repo-specific
