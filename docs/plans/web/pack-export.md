@@ -11,16 +11,15 @@ Staging from Extract works (records flow into `stagedRecordIds`), but nothing
 downstream consumes them.
 
 This plan turns Pack mode into a real browser-side `.unitypackage` author
-tool. It does three things in order:
+tool. Core creation support is already available: deterministic output,
+`estimateUnityPackageSize`, `tryCreateUnityPackage`, typed minimal meta
+generation, and browser-safe validation helpers are exported from
+`unitypackage-core`. The remaining work is web integration:
 
-1. Add the missing core capabilities the browser flow needs: deterministic
-   output, pre-allocation size estimation, and structured creation
-   diagnostics. `packages/core` stays browser-safe (only `fflate`; no `node:*`,
-   `fs`, `path`, `crypto`, `os`, `yaml`, HTTP).
-2. Wire a new `createPackage.worker.ts` into `apps/web` so the Export button
+1. Wire a new `createPackage.worker.ts` into `apps/web` so the Export button
    enables when validation passes and produces a downloadable `.unitypackage`
    off the main thread.
-3. Enrich the pack workflow: compression-level control, output filename,
+2. Enrich the pack workflow: compression-level control, output filename,
    estimated size, per-record validation rows, raw OS-file drag-drop import
    with auto-generated meta sidecars, and draft persistence.
 
@@ -37,6 +36,9 @@ Constraints that must be preserved:
   budget for `pathname` content is tight.
 - Existing `createUnityPackage(entries, options)` API shape must remain
   callable for current consumers; new diagnostics surface is additive.
+- Use core helpers for all shared format logic: `tryCreateUnityPackage`,
+  `estimateUnityPackageSize`, `createMinimalMetaFor`,
+  `createMinimalFolderMeta`, `generateGuid`, and `validatePathname`.
 
 Soft prerequisite: extract enrichment ships first. Pack mode benefits from
 the richer staging UX but this plan is executable against the current code
@@ -44,16 +46,16 @@ if extract enrichment slips.
 
 ## Phases
 
-| ID | Title | Goal | Parallel with | Depends on | Files | Subagent |
-|----|-------|------|---------------|------------|-------|----------|
-| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
-| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/index.ts`, `packages/core/src/index.test.ts`, `packages/core/README.md` | worker |
-| P3 | Pack worker and enabled export | Add `createPackage.worker.ts`, wire it into `App.tsx`, and enable the Export button when `validatePackDraft` succeeds. | - | P1, P2 | `apps/web/src/createPackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
+| ID | Title | Goal | Parallel with | Depends on | Files | Subagent | Status |
+|----|-------|------|---------------|------------|-------|----------|--------|
+| P1 | Deterministic and sized creation | Stable GUID ordering, deterministic tar headers, and an `estimateUnityPackageSize` API. | P2 | - | `packages/core/src/create.ts`, `packages/core/src/tar.ts`, `packages/core/src/create.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
+| P2 | Structured creation diagnostics | Replace ad-hoc throws with a `CreateUnityPackageDiagnostic` surface; keep a throwing overload for legacy callers. | P1 | - | `packages/core/src/create.ts`, `packages/core/src/create.test.ts`, `packages/core/README.md` | worker | DONE 2026-05-25 |
+| P3 | Pack worker and enabled export | Add `createPackage.worker.ts`, wire it into `App.tsx`, and enable the Export button when `validatePackDraft` succeeds. | - | core runtime | `apps/web/src/createPackage.worker.ts`, `apps/web/src/workerTypes.ts`, `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P4 | Pack UX enrichment | Compression level, output filename, size estimate, per-record validation rows, success state, and inline creation diagnostics. | P5 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts` | worker |
 | P5 | Raw file import and meta authoring | Drag-drop OS files into Pack mode, pair `<file>` + `<file>.meta`, auto-generate minimal meta for loose assets, fresh non-colliding GUIDs, inline `pathname` edit with byte-budget validation. | P4 | P3 | `apps/web/src/App.tsx`, `apps/web/src/App.css`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/pack.spec.ts` | worker |
 | P6 | Draft persistence and round-trip smoke | Persist pack draft (staged IDs + per-entry overrides) across reload and add an export -> re-parse round-trip spec. | - | P4, P5 | `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, `apps/web/src/packageModel.test.ts`, `apps/web/tests/pack.spec.ts` | worker |
 
-### P1 - Deterministic and sized creation
+### P1 - Deterministic and sized creation -- DONE 2026-05-25
 
 Make `createUnityPackage` reproducible and addable to a size-aware UI without
 allocating the full output.
@@ -77,13 +79,13 @@ Exit criteria
 - `createUnityPackage` emits entries sorted by GUID; two calls with the same input produce byte-equal output.
 - Tar headers use deterministic timestamps, mode, uid/gid, and uname/gname.
 - `estimateUnityPackageSize(entries)` is exported from `packages/core` and matches the actual tar byte length produced by `createUnityPackage` for the same input.
-- New tests in `packages/core/src/index.test.ts` cover: byte-equality across two identical calls, GUID-order independence (shuffled input yields the same bytes), and estimate-vs-actual byte equality for both asset and asset-less entries.
+- New tests in `packages/core/src/create.test.ts` cover: byte-equality across two identical calls, GUID-order independence (shuffled input yields the same bytes), and estimate-vs-actual byte equality for both asset and asset-less entries.
 - `packages/core/README.md` documents deterministic ordering and `estimateUnityPackageSize`.
 - Run: bun run --filter unitypackage-core test
 - Run: bun run --filter unitypackage-core build
 ```
 
-### P2 - Structured creation diagnostics
+### P2 - Structured creation diagnostics -- DONE 2026-05-25
 
 Replace the ad-hoc `throw new Error('Duplicate GUID ...')` flow with a
 structured surface that mirrors `UnityPackageParseDiagnostic`.
@@ -161,6 +163,10 @@ Wire the core creation API into a worker and turn on the Export button.
 - In `packageModel.ts`:
   - Remove the hard-coded "Unitypackage export is disabled until ..."
     message from `validatePackDraft`.
+  - Build pack candidates by pairing asset records with same-GUID meta records
+    from the full `records` set, not only from `stagedRecordIds`.
+  - Use `validatePathname(pathname, { guid })` for pathname safety and tar
+    entry budget checks before the worker runs.
   - Return `status: 'ready'` when `messages.length === 0` and there is at
     least one stageable asset; `'blocked'` otherwise.
   - Continue covering: empty selection, no asset records, missing meta
@@ -231,33 +237,37 @@ Exit criteria
 Let users build a package from local files, not just from staged
 Extract records.
 
+> **Core runtime note -- current:**
+> Generated metas must use `createMinimalMetaFor(guid, pathname, isDir?)`
+> so `.cs`, `.json`, `.txt`, `LICENSE`, `.yaml`, and folder entries receive
+> the correct importer block. Use `createMinimalFolderMeta(guid)` for explicit
+> folder entries. Do not use legacy `createMinimalMeta(guid)` for loose file
+> import except in tests that intentionally verify old DefaultImporter output.
+> Example:
+> ```ts
+> import { createMinimalMetaFor, generateGuid } from 'unitypackage-core';
+> const meta = new TextEncoder().encode(createMinimalMetaFor(freshGuid, pathname));
+> ```
+
 - Drag-drop target on `PackPanel`'s staged list area. Accept `DataTransfer`
   files; if a folder is dropped, walk it via `webkitGetAsEntry` /
   `FileSystemDirectoryHandle` where available, otherwise accept top-level
   files only.
 - Sidecar pairing: for each pair where one file is `<X>` and another is
   `<X>.meta`, stage a single asset entry with both. For loose `<X>` with
-  no sidecar, auto-generate a minimal Unity meta YAML:
-  ```text
-  fileFormatVersion: 2
-  guid: <fresh 32-hex>
-  DefaultImporter:
-    externalObjects: {}
-    userData:
-    assetBundleName:
-    assetBundleVariant:
-  ```
-  Document that this is a minimal fallback and may not match Unity's
-  type-specific importer defaults.
-- GUID generation: produce fresh 32-hex GUIDs via
-  `crypto.getRandomValues(new Uint8Array(16))` and hex-encode. Reject
-  any GUID that collides with already-staged entries; retry up to 4
+  no sidecar, auto-generate a minimal Unity meta YAML using
+  `createMinimalMetaFor(guid, pathname)` from `unitypackage-core` (see note
+  above). Document that this is a minimal fallback and preserves core's
+  extension-to-importer mapping, not Unity's full importer defaults.
+- GUID generation: produce fresh 32-hex GUIDs via `generateGuid()` from
+  `unitypackage-core` (which uses `globalThis.crypto.getRandomValues`).
+  Reject any GUID that collides with already-staged entries; retry up to 4
   times before surfacing an error.
 - Pathname editing: each raw-imported record gets an inline editable
   `pathname` (default: the dropped file's relative path with backslashes
-  normalized to `/`). Validate on every change against the 100-byte tar
-  entry name budget: reject when `<guid>/<pathname>.meta` exceeds 100
-  bytes (UTF-8). Surface the `oversized-pathname` validation row from P4.
+  normalized to `/`). Validate on every change with
+  `validatePathname(pathname, { guid })` and surface the
+  `oversized-pathname` validation row from P4 when relevant.
 - Storage: raw-imported records live in a separate `importedRecords`
   state alongside `stagedRecordIds`; they are merged into the worker
   request payload. They are not added to the parsed `records` set.
@@ -265,7 +275,7 @@ Extract records.
 Exit criteria
 ```text
 - Dropping a `<file>` + `<file>.meta` pair stages one entry with both halves.
-- Dropping a loose `<file>` stages an entry with an auto-generated minimal meta YAML and a fresh non-colliding 32-hex GUID.
+- Dropping a loose `<file>` stages an entry with `createMinimalMetaFor` output and a fresh non-colliding 32-hex GUID.
 - Inline `pathname` editing rejects values that would exceed the 100-byte tar entry name budget; the offending record renders `oversized-pathname` until corrected.
 - New `packageModel.test.ts` cases cover: pair detection, loose-file meta generation shape, GUID collision retry, and pathname byte-budget validation.
 - A new `apps/web/tests/pack.spec.ts` Playwright spec drags a fixture file into Pack mode, edits its pathname, and exports successfully.

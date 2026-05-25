@@ -4,7 +4,7 @@ Tools for inspecting, extracting, verifying, diffing, and packing Unity
 `.unitypackage` archives.
 
 This monorepo contains:
-- `packages/core`: browser-safe parser and package creation library.
+- `packages/core`: browser-safe parser and package creation library. Public imports stay on the package root (`unitypackage-core`); runtime source is split by domain under `packages/core/src`.
 - `packages/cli`: Node CLI for extract, inspect, verify, pack, diff, and doctor workflows.
 - `apps/web`: English-only React/Vite PWA workspace for local browser inspection and extraction.
 - `fixtures`: generated and editor-exported packages used by tests and smoke checks.

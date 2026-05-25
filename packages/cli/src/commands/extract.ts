@@ -34,7 +34,7 @@ function hasTraversalSegment(rawPath: string): boolean {
 export async function extract(packagePath: string, outputDir?: string, opts: ExtractOptions = {}): Promise<void> {
   const outDir = path.resolve(outputDir ?? process.cwd());
   const raw = await readFile(packagePath);
-  const entries = parseUnityPackageEntries(new Uint8Array(raw));
+  const { entries } = parseUnityPackageEntries(new Uint8Array(raw));
 
   const tasks: WriteTask[] = [];
   let skippedTraversal = 0;
