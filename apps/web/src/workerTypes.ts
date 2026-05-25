@@ -1,8 +1,10 @@
-import type { UnityPackageParseDiagnostic } from 'unitypackage-core';
+import type { UnityPackageAnalysisFinding, UnityPackageParseDiagnostic } from 'unitypackage-core';
 import type { PackageFileRecord } from './packageModel';
 
+export type { UnityPackageAnalysisFinding };
+
 export type ParsePackageResponse =
-  | { type: 'success'; records: PackageFileRecord[]; diagnostics: UnityPackageParseDiagnostic[] }
+  | { type: 'success'; records: PackageFileRecord[]; diagnostics: UnityPackageParseDiagnostic[]; analysis: UnityPackageAnalysisFinding[] }
   | { type: 'error'; message: string };
 
 export interface DownloadZipRequest {

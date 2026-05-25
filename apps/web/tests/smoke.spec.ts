@@ -41,3 +41,15 @@ test('preview panel shows file content and metadata after clicking a record', as
   await expect(preview.getByText('[2.0.0]')).toBeVisible();
   await expect(preview.getByText('af5e6a19cb4edd345ac8100ccb3a44b7')).toBeVisible();
 });
+
+test('meta rows are not visible in tree when Include .meta with assets is off', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Open package').setInputFiles(fixturePath);
+  await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+  const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
+  await expect(metaCheckbox).not.toBeChecked();
+  const tree = page.getByRole('tree', { name: 'Package file tree' });
+  // With setting off, no treeitem label should end with .meta
+  const metaItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.meta/ });
+  await expect(metaItems.first()).not.toBeVisible();
+});

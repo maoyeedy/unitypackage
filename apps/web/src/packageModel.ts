@@ -1,15 +1,22 @@
 import {
+  detectMetaImporterType,
   entriesToComponentRecords,
   getMimeTypeForPath,
   getPreviewKindForPath,
   getSyntaxLanguageForPath,
+  readDeclaredMetaImporter,
+  readMetaGuid,
+  type MetaImporterType,
   type PreviewKind,
+  type SidecarSelectableRecord,
   type SyntaxLanguage,
+  type UnityPackageAnalysisFinding,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
 } from 'unitypackage-core';
 
-export type { PreviewKind, SyntaxLanguage } from 'unitypackage-core';
+export type { MetaImporterType, PreviewKind, SidecarSelectableRecord, SyntaxLanguage, UnityPackageAnalysisFinding, ResolveMetaSidecarsResult } from 'unitypackage-core';
+export { resolveMetaSidecarSelection } from 'unitypackage-core';
 
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
@@ -36,12 +43,27 @@ export interface PackageFileRecord {
   previewKind: PreviewKind;
   syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
+  findings: UnityPackageAnalysisFinding[];
 }
 
 export function getRecordCategory(record: PackageFileRecord): RecordCategory {
   if (record.isUnityPreview) return 'preview';
   if (record.extension === 'meta') return 'meta';
   return 'asset';
+}
+
+/**
+ * Adapts a PackageFileRecord[] to the shape resolveMetaSidecarSelection expects.
+ * Uses getRecordCategory(record) for the 'kind' field.
+ * This is the only place that produces SidecarSelectableRecord from PackageFileRecord.
+ */
+export function toSidecarSelectableRecords(records: PackageFileRecord[]): SidecarSelectableRecord[] {
+  return records.map(record => ({
+    id: record.id,
+    guid: record.guid,
+    pathname: record.virtualPath,
+    kind: getRecordCategory(record),
+  }));
 }
 
 export interface TreeFolderRow {
@@ -101,7 +123,65 @@ export function entriesToRecords(
     previewKind: record.previewKind,
     syntaxLanguage: record.syntaxLanguage,
     diagnostics: record.diagnostics,
+    findings: [],
   }));
+}
+
+/**
+ * Attaches analysis findings to matching records in-place.
+ *
+ * Routing priority:
+ * 1. guid match: attach to all records with the same GUID.
+ * 2. pathname match: attach to all records whose `pathname` equals the finding
+ *    `pathname` (when guid is absent).
+ * 3. path match: attach to the record whose `id` ends with the finding `path`
+ *    suffix (e.g. `<guid>/asset.meta` points at the meta record).
+ *
+ * A finding without any of guid, pathname, or path is appended to all records
+ * so it is always visible.
+ */
+export function routeAnalysisFindings(
+  records: PackageFileRecord[],
+  findings: UnityPackageAnalysisFinding[],
+): void {
+  for (const record of records) {
+    record.findings = [];
+  }
+
+  for (const finding of findings) {
+    let matched = false;
+
+    if (finding.guid !== undefined) {
+      for (const record of records) {
+        if (record.guid === finding.guid) {
+          record.findings.push(finding);
+          matched = true;
+        }
+      }
+    } else if (finding.pathname !== undefined) {
+      for (const record of records) {
+        if (record.pathname === finding.pathname) {
+          record.findings.push(finding);
+          matched = true;
+        }
+      }
+    }
+
+    if (!matched && finding.path !== undefined) {
+      for (const record of records) {
+        if (record.id.endsWith(`/${finding.path}`) || record.id === finding.path) {
+          record.findings.push(finding);
+          matched = true;
+        }
+      }
+    }
+
+    if (!matched) {
+      for (const record of records) {
+        record.findings.push(finding);
+      }
+    }
+  }
 }
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {
@@ -234,6 +314,87 @@ export function formatBytes(bytes: number): string {
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, index);
   return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+/**
+ * Returns the Unity importer type expected for the record's pathname, as
+ * determined by `detectMetaImporterType` from `unitypackage-core`.
+ *
+ * For meta records (extension === 'meta'), strips the trailing `.meta` before
+ * passing the pathname to the detector so the importer type reflects the
+ * underlying asset, not the sidecar.
+ *
+ * Preview records (isUnityPreview) are folder-like synthetic entries; they
+ * are detected against their raw pathname.
+ */
+export function getExpectedImporterTypeForRecord(record: PackageFileRecord): MetaImporterType {
+  let pathname = record.pathname;
+  if (record.extension === 'meta' && pathname.endsWith('.meta')) {
+    pathname = pathname.slice(0, -5);
+  }
+  return detectMetaImporterType(pathname);
+}
+
+/**
+ * Finds the meta sibling record for the given record among `records`.
+ *
+ * Returns the record whose `extension === 'meta'` and whose `guid` matches the
+ * given record's guid. Returns `undefined` if no such sibling exists.
+ */
+export function getSiblingMetaRecord(
+  records: PackageFileRecord[],
+  record: PackageFileRecord,
+): PackageFileRecord | undefined {
+  return records.find(
+    candidate => candidate.guid === record.guid && candidate.extension === 'meta',
+  );
+}
+
+export interface DeclaredMetaInfo {
+  guid: string | undefined;
+  importer: string | undefined;
+}
+
+/**
+ * Reads the declared GUID and importer name from the record's meta sidecar.
+ *
+ * Uses the record's own content when it is a meta record; otherwise falls back
+ * to the content of its sibling meta record from `records`.
+ *
+ * Returns `{ guid: undefined, importer: undefined }` when no meta bytes are
+ * available.
+ */
+export function getDeclaredMetaInfoForRecord(
+  records: PackageFileRecord[],
+  record: PackageFileRecord,
+): DeclaredMetaInfo {
+  let metaBytes: Uint8Array | undefined;
+
+  if (record.extension === 'meta') {
+    metaBytes = record.content;
+  } else {
+    const sibling = getSiblingMetaRecord(records, record);
+    if (sibling) {
+      metaBytes = sibling.content;
+    }
+  }
+
+  if (!metaBytes) {
+    return { guid: undefined, importer: undefined };
+  }
+
+  const rawGuid = readMetaGuid(metaBytes);
+  const declared = readDeclaredMetaImporter(metaBytes);
+
+  let importerName: string | undefined;
+  if (declared !== null) {
+    importerName = declared.kind === 'known' ? declared.type : declared.name;
+  }
+
+  return {
+    guid: rawGuid ?? undefined,
+    importer: importerName,
+  };
 }
 
 export function validatePackDraft(records: PackageFileRecord[]): PackValidation {

@@ -30,11 +30,17 @@ import {
   buildExtensionGroups,
   buildTreeRows,
   formatBytes,
+  getDeclaredMetaInfoForRecord,
+  getExpectedImporterTypeForRecord,
   getExtensionFileRecordIds,
   getFolderRecordIds,
+  getRecordCategory,
   getRangeRecordIds,
   getSelectionState,
   getTreeFileRecordIds,
+  resolveMetaSidecarSelection,
+  routeAnalysisFindings,
+  toSidecarSelectableRecords,
   validatePackDraft,
   type ExtensionGroup,
   type GroupingMode,
@@ -42,6 +48,7 @@ import {
   type PreviewKind,
   type SelectionState,
   type TreeRow,
+  type UnityPackageAnalysisFinding,
   type WorkspaceMode,
 } from './packageModel';
 import { highlightCode, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
@@ -49,6 +56,7 @@ import { highlightCode, type HighlightedCode, type HighlightedToken, type Syntax
 interface ParseResult {
   records: PackageFileRecord[];
   diagnostics: UnityPackageParseDiagnostic[];
+  analysis: UnityPackageAnalysisFinding[];
 }
 
 interface AppErrorBoundaryState {
@@ -81,7 +89,7 @@ function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
     worker.onmessage = ({ data }: MessageEvent<ParsePackageResponse>) => {
       worker.terminate();
       if (data.type === 'success') {
-        resolve({ records: data.records, diagnostics: data.diagnostics });
+        resolve({ records: data.records, diagnostics: data.diagnostics, analysis: data.analysis });
         return;
       }
 
@@ -171,11 +179,14 @@ function AppContent() {
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('tree');
   const [records, setRecords] = useState<PackageFileRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<UnityPackageParseDiagnostic[]>([]);
+  const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
   const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(new Set());
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [maintainStructure, setMaintainStructure] = useState(true);
+  const [includeMetaSidecars, setIncludeMetaSidecars] = useState(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [packageName, setPackageName] = useState<string | null>(null);
@@ -197,6 +208,11 @@ function AppContent() {
     );
   }, [debouncedQuery, records]);
 
+  const visibleRecords = useMemo(() => {
+    if (includeMetaSidecars) return filteredRecords;
+    return filteredRecords.filter(record => record.extension !== 'meta');
+  }, [filteredRecords, includeMetaSidecars]);
+
   const activeRecord = useMemo(() => {
     return records.find(record => record.id === activeRecordId) ?? filteredRecords[0] ?? null;
   }, [activeRecordId, filteredRecords, records]);
@@ -206,8 +222,8 @@ function AppContent() {
   }, [records, stagedRecordIds]);
 
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
-  const extensionGroups = useMemo(() => buildExtensionGroups(filteredRecords), [filteredRecords]);
-  const treeRows = useMemo(() => buildTreeRows(filteredRecords, collapsedFolders), [filteredRecords, collapsedFolders]);
+  const extensionGroups = useMemo(() => buildExtensionGroups(visibleRecords), [visibleRecords]);
+  const treeRows = useMemo(() => buildTreeRows(visibleRecords, collapsedFolders), [visibleRecords, collapsedFolders]);
   const treeFileRecordIds = useMemo(() => getTreeFileRecordIds(treeRows), [treeRows]);
   const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
   const packValidation = useMemo(() => validatePackDraft(stagedRecords), [stagedRecords]);
@@ -219,6 +235,8 @@ function AppContent() {
     setStatus(`Parsing ${file.name}`);
     setRecords([]);
     setDiagnostics([]);
+    setAnalysis([]);
+    setIsDiagnosticsOpen(false);
     setSelectedRecordIds(new Set());
     setStagedRecordIds(new Set());
     setActiveRecordId(null);
@@ -228,8 +246,10 @@ function AppContent() {
       const startedAt = performance.now();
       const result = await parsePackageInWorker(await file.arrayBuffer());
       const elapsed = Math.round(performance.now() - startedAt);
+      routeAnalysisFindings(result.records, result.analysis);
       setRecords(result.records);
       setDiagnostics(result.diagnostics);
+      setAnalysis(result.analysis);
       setActiveRecordId(result.records[0]?.id ?? null);
       setStatus(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms.`);
     } catch (caught) {
@@ -297,6 +317,40 @@ function AppContent() {
       return next;
     });
   }, []);
+
+  // When meta sidecars are hidden, remove hidden meta IDs from selection and
+  // re-home the active record if it points at a now-hidden meta row.
+  useEffect(() => {
+    if (includeMetaSidecars) return;
+
+    const hiddenMetaIds = new Set(
+      records.filter(record => record.extension === 'meta').map(record => record.id),
+    );
+    if (hiddenMetaIds.size === 0) return;
+
+    setSelectedRecordIds(previous => {
+      const hasHidden = [...previous].some(id => hiddenMetaIds.has(id));
+      if (!hasHidden) return previous;
+      const next = new Set(previous);
+      for (const id of hiddenMetaIds) next.delete(id);
+      return next;
+    });
+
+    setActiveRecordId(previous => {
+      if (previous === null || !hiddenMetaIds.has(previous)) return previous;
+      // Try to find the same-GUID asset record
+      const hiddenRecord = records.find(record => record.id === previous);
+      if (hiddenRecord) {
+        const sameGuidAsset = records.find(
+          record => record.guid === hiddenRecord.guid && record.extension !== 'meta' && !record.isUnityPreview,
+        );
+        if (sameGuidAsset) return sameGuidAsset.id;
+      }
+      // Fall back to the first visible (non-meta) record
+      const firstVisible = records.find(record => record.extension !== 'meta');
+      return firstVisible?.id ?? null;
+    });
+  }, [includeMetaSidecars, records]);
 
   const stageSelection = () => {
     setStagedRecordIds(previous => {
@@ -369,7 +423,17 @@ function AppContent() {
             />
             Preserve folders in ZIP downloads
           </label>
-          <Stats records={records} filteredCount={filteredRecords.length} totalBytes={totalBytes} diagnostics={diagnostics} />
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={includeMetaSidecars}
+              onChange={event => {
+                setIncludeMetaSidecars(event.target.checked);
+              }}
+            />
+            Include .meta with assets
+          </label>
+          <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} diagnostics={diagnostics} analysis={analysis} />
         </aside>
 
         <section className="main-panel" aria-label="Package explorer">
@@ -379,8 +443,8 @@ function AppContent() {
                 <div>
                   <h2>Extract</h2>
                   <p>
-                    {filteredRecords.length.toString()} visible records
-                    {selectedRecordIds.size > 0 ? `, ${selectedRecordIds.size.toString()} selected` : ''}
+                    {visibleRecords.length.toString()} visible records
+                    {selectedRecordIds.size > 0 ? `, ${[...selectedRecordIds].filter(id => visibleRecords.some(r => r.id === id)).length.toString()} selected` : ''}
                   </p>
                 </div>
                 <div className="button-row">
@@ -395,7 +459,23 @@ function AppContent() {
                   <button
                     type="button"
                     disabled={selectedRecordIds.size === 0}
-                    onClick={() => void handleDownload(records, 'selected_files.zip', [...selectedRecordIds])}
+                    onClick={() => {
+                      if (!includeMetaSidecars) {
+                        void handleDownload(records, 'selected_files.zip', [...selectedRecordIds]);
+                        return;
+                      }
+                      const result = resolveMetaSidecarSelection(
+                        toSidecarSelectableRecords(records),
+                        [...selectedRecordIds],
+                      );
+                      void handleDownload(records, 'selected_files.zip', result.ids).then(() => {
+                        if (result.missingMetaForAssetIds.length > 0) {
+                          setStatus(
+                            `ZIP created. ${result.missingMetaForAssetIds.length.toString()} asset(s) have no .meta sidecar in this package.`,
+                          );
+                        }
+                      });
+                    }}
                   >
                     <Download aria-hidden="true" size={16} />
                     <span>Selected ZIP</span>
@@ -408,7 +488,7 @@ function AppContent() {
               </div>
               <Explorer
                 groupingMode={groupingMode}
-                records={filteredRecords}
+                records={visibleRecords}
                 treeRows={treeRows}
                 extensionGroups={extensionGroups}
                 treeFileRecordIds={treeFileRecordIds}
@@ -442,10 +522,28 @@ function AppContent() {
         </section>
 
         <aside className="preview-panel" aria-label="Preview and metadata">
-          <PreviewPanel record={activeRecord} />
+          <PreviewPanel
+            record={activeRecord}
+            records={records}
+            includeMetaSidecars={includeMetaSidecars}
+            onDownloadZip={(zipRecords, fileName, recordIds) => void handleDownload(zipRecords, fileName, recordIds)}
+            onStatusWarning={setStatus}
+          />
         </aside>
       </section>
 
+      {isDiagnosticsOpen && (diagnostics.length > 0 || analysis.length > 0) ? (
+        <DiagnosticsDrawer
+          diagnostics={diagnostics}
+          analysis={analysis}
+          records={records}
+          onNavigate={(recordId) => {
+            setActiveRecordId(recordId);
+            setIsDiagnosticsOpen(false);
+          }}
+          onClose={() => { setIsDiagnosticsOpen(false); }}
+        />
+      ) : null}
       <footer className="statusbar" aria-live="polite">
         <span>{status}</span>
         {error ? (
@@ -454,11 +552,15 @@ function AppContent() {
             {error}
           </span>
         ) : null}
-        {diagnostics.length > 0 ? (
-          <span>
+        {(diagnostics.length > 0 || analysis.length > 0) ? (
+          <button
+            type="button"
+            className="status-diagnostics-toggle"
+            onClick={() => { setIsDiagnosticsOpen(open => !open); }}
+          >
             <Info aria-hidden="true" size={15} />
-            {diagnostics.length.toString()} diagnostics
-          </span>
+            {(diagnostics.length + analysis.length).toString()} findings
+          </button>
         ) : null}
       </footer>
     </main>
@@ -530,15 +632,21 @@ function Stats({
   filteredCount,
   totalBytes,
   diagnostics,
+  analysis,
 }: {
   records: PackageFileRecord[];
   filteredCount: number;
   totalBytes: number;
   diagnostics: UnityPackageParseDiagnostic[];
+  analysis: UnityPackageAnalysisFinding[];
 }) {
   const assetCount = records.filter(record => !record.isUnityPreview && record.extension !== 'meta').length;
   const metaCount = records.filter(record => record.extension === 'meta').length;
   const previewCount = records.filter(record => record.isUnityPreview).length;
+
+  const errorCount = (diagnostics.filter(d => d.severity === 'error').length + analysis.filter(f => f.severity === 'error').length);
+  const warnCount = (diagnostics.filter(d => d.severity === 'warning').length + analysis.filter(f => f.severity === 'warning').length);
+  const infoCount = (diagnostics.filter(d => d.severity === 'info').length + analysis.filter(f => f.severity === 'info').length);
 
   return (
     <dl className="stats-grid">
@@ -563,8 +671,16 @@ function Stats({
         <dd>{formatBytes(totalBytes)}</dd>
       </div>
       <div>
-        <dt>Diagnostics</dt>
-        <dd>{diagnostics.length.toString()}</dd>
+        <dt>Errors</dt>
+        <dd>{errorCount.toString()}</dd>
+      </div>
+      <div>
+        <dt>Warnings</dt>
+        <dd>{warnCount.toString()}</dd>
+      </div>
+      <div>
+        <dt>Info</dt>
+        <dd>{infoCount.toString()}</dd>
       </div>
     </dl>
   );
@@ -1044,7 +1160,19 @@ function FileRow({
   );
 }
 
-function PreviewPanel({ record }: { record: PackageFileRecord | null }) {
+function PreviewPanel({
+  record,
+  records,
+  includeMetaSidecars,
+  onDownloadZip,
+  onStatusWarning,
+}: {
+  record: PackageFileRecord | null;
+  records: PackageFileRecord[];
+  includeMetaSidecars: boolean;
+  onDownloadZip: (records: PackageFileRecord[], fileName: string, recordIds: string[]) => void;
+  onStatusWarning: (message: string) => void;
+}) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1072,6 +1200,26 @@ function PreviewPanel({ record }: { record: PackageFileRecord | null }) {
     );
   }
 
+  const handlePreviewDownload = () => {
+    if (includeMetaSidecars && getRecordCategory(record) === 'asset') {
+      const result = resolveMetaSidecarSelection(
+        toSidecarSelectableRecords(records),
+        [record.id],
+      );
+      if (result.missingMetaForAssetIds.length > 0) {
+        // No meta exists: download raw asset and warn
+        downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+        onStatusWarning(`Downloaded ${record.fileName}. No .meta sidecar found in this package.`);
+      } else {
+        // Meta exists: create a ZIP named after the asset file
+        const zipFileName = `${record.fileName}.zip`;
+        onDownloadZip(records, zipFileName, result.ids);
+      }
+      return;
+    }
+    downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+  };
+
   return (
     <div className="preview-content">
       <header className="preview-header">
@@ -1083,15 +1231,13 @@ function PreviewPanel({ record }: { record: PackageFileRecord | null }) {
           type="button"
           className="icon-button"
           aria-label={`Download ${record.fileName}`}
-          onClick={() => {
-            downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
-          }}
+          onClick={handlePreviewDownload}
         >
           <Download aria-hidden="true" size={18} />
         </button>
       </header>
       <PreviewBody record={record} blobUrl={blobUrl} />
-      <Metadata record={record} />
+      <Metadata record={record} records={records} />
     </div>
   );
 }
@@ -1252,8 +1398,11 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
   };
 }
 
-function Metadata({ record }: { record: PackageFileRecord }) {
-  const rows = [
+function Metadata({ record, records }: { record: PackageFileRecord; records: PackageFileRecord[] }) {
+  const expectedImporter = getExpectedImporterTypeForRecord(record);
+  const declaredMetaInfo = getDeclaredMetaInfoForRecord(records, record);
+
+  const rows: [string, string][] = [
     ['Path', record.virtualPath],
     ['GUID', record.guid],
     ['Extension', record.extension || 'None'],
@@ -1265,6 +1414,7 @@ function Metadata({ record }: { record: PackageFileRecord }) {
     ['Duplicate paths', record.duplicatePathCount.toString()],
     ['Preview support', previewLabel(record.previewKind)],
     ['Syntax language', record.previewKind === 'text' ? record.syntaxLanguage : 'None'],
+    ['Expected importer', expectedImporter],
   ];
 
   return (
@@ -1277,21 +1427,134 @@ function Metadata({ record }: { record: PackageFileRecord }) {
             <dd>{value}</dd>
           </div>
         ))}
+        {declaredMetaInfo.importer !== undefined ? (
+          <div key="Declared importer">
+            <dt>Declared importer</dt>
+            <dd>{declaredMetaInfo.importer}</dd>
+          </div>
+        ) : null}
+        {declaredMetaInfo.guid !== undefined ? (
+          <div key="Declared meta GUID">
+            <dt>Declared meta GUID</dt>
+            <dd>{declaredMetaInfo.guid}</dd>
+          </div>
+        ) : null}
       </dl>
-      {record.diagnostics.length > 0 ? (
+      {(record.diagnostics.length > 0 || record.findings.length > 0) ? (
         <div className="record-diagnostics">
           <h3>Related diagnostics</h3>
           <ul>
             {record.diagnostics.map((diagnostic, index) => (
-              <li key={`${diagnostic.code}-${index.toString()}`}>
-                <strong>{diagnostic.code}</strong>
+              <li key={`parser-${diagnostic.code}-${index.toString()}`}>
+                <strong>[{diagnostic.severity.toUpperCase()}] {diagnostic.code}</strong>
                 <span>{diagnostic.message}</span>
+              </li>
+            ))}
+            {record.findings.map((finding, index) => (
+              <li key={`analysis-${finding.code}-${index.toString()}`}>
+                <strong>[{finding.severity.toUpperCase()}] {finding.code}</strong>
+                <span>{finding.message}</span>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function severityLabel(severity: UnityPackageAnalysisFinding['severity']): string {
+  switch (severity) {
+    case 'error': return 'ERR';
+    case 'warning': return 'WRN';
+    case 'info': return 'INF';
+  }
+}
+
+function findBestMatchingRecord(
+  records: PackageFileRecord[],
+  finding: UnityPackageAnalysisFinding,
+): PackageFileRecord | undefined {
+  if (finding.guid !== undefined) {
+    const guid = finding.guid;
+    if (finding.path !== undefined) {
+      const path = finding.path;
+      const exact = records.find(r => r.guid === guid && (r.id.endsWith(`/${path}`) || r.id === path));
+      if (exact) return exact;
+    }
+    return records.find(r => r.guid === guid && !r.isUnityPreview && r.extension !== 'meta')
+      ?? records.find(r => r.guid === guid);
+  }
+  if (finding.pathname !== undefined) {
+    const pathname = finding.pathname;
+    return records.find(r => r.pathname === pathname);
+  }
+  return undefined;
+}
+
+function DiagnosticsDrawer({
+  diagnostics,
+  analysis,
+  records,
+  onNavigate,
+  onClose,
+}: {
+  diagnostics: UnityPackageParseDiagnostic[];
+  analysis: UnityPackageAnalysisFinding[];
+  records: PackageFileRecord[];
+  onNavigate: (recordId: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="diagnostics-drawer" aria-label="Diagnostics">
+      <div className="diagnostics-drawer-header">
+        <h2>Findings</h2>
+        <button type="button" className="icon-button" aria-label="Close diagnostics" onClick={onClose}>
+          <RefreshCw aria-hidden="true" size={16} />
+        </button>
+      </div>
+      <ul className="diagnostics-list">
+        {diagnostics.map((diagnostic, index) => (
+          <li key={`parser-${diagnostic.code}-${index.toString()}`} className={`diagnostic-row severity-${diagnostic.severity}`}>
+            <span className="diagnostic-badge">{severityLabel(diagnostic.severity)}</span>
+            <span className="diagnostic-code">{diagnostic.code}</span>
+            <span className="diagnostic-message">{diagnostic.message}</span>
+            {diagnostic.guid !== undefined && records.some(r => r.guid === diagnostic.guid) ? (
+              <button
+                type="button"
+                className="diagnostic-navigate"
+                onClick={() => {
+                  const record = records.find(r => r.guid === diagnostic.guid && !r.isUnityPreview && r.extension !== 'meta')
+                    ?? records.find(r => r.guid === diagnostic.guid);
+                  if (record) onNavigate(record.id);
+                }}
+              >
+                Go
+              </button>
+            ) : null}
+          </li>
+        ))}
+        {analysis.map((finding, index) => {
+          const target = findBestMatchingRecord(records, finding);
+          return (
+            <li key={`analysis-${finding.code}-${index.toString()}`} className={`diagnostic-row severity-${finding.severity}`}>
+              <span className="diagnostic-badge">{severityLabel(finding.severity)}</span>
+              <span className="diagnostic-code">{finding.code}</span>
+              <span className="diagnostic-message">{finding.message}</span>
+              {target !== undefined ? (
+                <button
+                  type="button"
+                  className="diagnostic-navigate"
+                  onClick={() => { onNavigate(target.id); }}
+                >
+                  Go
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
   );
 }
 
