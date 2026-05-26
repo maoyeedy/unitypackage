@@ -357,6 +357,7 @@ function HexPreview({ record }: { record: PackageFileRecord }) {
   const rowCount = Math.ceil(bytes.length / 16);
   const parentRef = useRef<HTMLDivElement | null>(null);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
@@ -516,6 +517,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
 
   const linesCount = highlightedCode ? highlightedCode.lines.length : 0;
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: linesCount,
     getScrollElement: () => parentRef.current,

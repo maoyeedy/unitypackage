@@ -184,6 +184,7 @@ function VirtualTree({
     scrollRef: viewportRef,
     onReplaceSelection,
   });
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
@@ -506,6 +507,7 @@ function ExtensionList({
     return flat;
   }, [groups]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,

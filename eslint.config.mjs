@@ -1,14 +1,19 @@
 import js from '@eslint/js';
+import { defineConfig, globalIgnores, includeIgnoreFile } from 'eslint/config';
+import { fileURLToPath } from 'node:url';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
-import reactRefresh from 'eslint-plugin-react-refresh';
+import { reactRefresh } from 'eslint-plugin-react-refresh';
 
-export default tseslint.config(
-  { ignores: ['**/dist/**', '**/dev-dist/**', '**/node_modules/**', '**/generated/**'] },
+const gitignorePath = fileURLToPath(new URL('.gitignore', import.meta.url));
 
-  // Base: non-type-aware rules for all TS/TSX files
+export default defineConfig(
+  includeIgnoreFile(gitignorePath),
+  globalIgnores(['**/dev-dist/**', '**/generated/**']),
+
   {
+    name: 'base-ts-rules',
     files: ['**/*.ts', '**/*.tsx'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     rules: {
@@ -18,8 +23,8 @@ export default tseslint.config(
     },
   },
 
-  // Type-aware upgrade: source files that have tsconfig coverage
   {
+    name: 'typed-linting',
     files: [
       'apps/web/src/**/*.{ts,tsx}',
       'apps/web/vite.config.ts',
@@ -42,23 +47,22 @@ export default tseslint.config(
     },
   },
 
-  // Node env for non-browser packages
   {
+    name: 'node-env',
     files: ['packages/**/*.ts', 'fixtures/**/*.ts', 'scripts/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
 
-  // Web app: browser globals + React rules
   {
+    ...reactRefresh.configs.vite(),
+    name: 'web-app',
     files: ['apps/web/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
     plugins: {
       'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
-      ...reactRefresh.configs.vite.rules,
+      ...reactHooks.configs['recommended-latest'].rules,
     },
   },
 );

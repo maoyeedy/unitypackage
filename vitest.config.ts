@@ -5,14 +5,14 @@ export default defineConfig({
     projects: [
       {
         test: {
-          name: 'core',
+          name: { label: 'core', color: 'cyan' },
           root: './packages/core',
           include: ['src/**/*.test.ts'],
         },
       },
       {
         test: {
-          name: 'cli',
+          name: { label: 'cli', color: 'yellow' },
           root: './packages/cli',
           include: ['src/**/*.test.ts'],
           testTimeout: 30_000,
@@ -20,7 +20,7 @@ export default defineConfig({
       },
       {
         test: {
-          name: 'web',
+          name: { label: 'web', color: 'green' },
           root: './apps/web',
           include: ['src/**/*.test.ts'],
         },

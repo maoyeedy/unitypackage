@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   preview: {
     port: 4173,
     strictPort: true,
@@ -15,6 +18,9 @@ export default defineConfig({
         enabled: true,
       },
       includeAssets: ['favicon.svg', 'unitypackage-icon.svg'],
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+      },
       manifest: {
         name: 'Unity Package Workspace',
         short_name: 'UnityPkg',
