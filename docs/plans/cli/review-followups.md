@@ -17,11 +17,10 @@ Five issues remain on the CLI side after the core fixes:
 3. `cli.ts` runs `parseGlobalParseOptions` before the command switch, so
    `web --max-entries -1` (and friends) fails on a flag the command does not
    use.
-4. `verify.ts` re-runs `gunzipSync` via `listTarFiles` after
-   `parsePackageBytes` already decompressed the archive, doubling peak
-   memory on large packages.
-5. `cli.ts` keeps a dead `flagBool(flags, 'h')` branch -- node `parseArgs`
+4. `cli.ts` keeps a dead `flagBool(flags, 'h')` branch -- node `parseArgs`
    maps `-h` to `flags.help` via `short: 'h'`, never `flags.h`.
+5. `web.ts` serves request paths without checking that the resolved file
+   stays inside the bundled web asset directory.
 
 ## Scope
 
@@ -29,7 +28,7 @@ In:
 - `pack.ts` sidecar-meta handling for non-conforming GUID lines.
 - `extract.ts` selection-mode error wording.
 - `cli.ts` global parse-option scoping and the dead `-h` branch.
-- `verify.ts` single-decompression refactor.
+- `web.ts` static asset path hardening.
 
 Out:
 - Any new CLI command or flag.
@@ -43,7 +42,7 @@ Out:
 | P1    | Warn instead of silently regen sidecar metas   | `commands/pack.ts`, `commands/pack.test.ts`        | core P2    |
 | P2    | Better extract error when --no-meta drops all  | `commands/extract.ts`, `commands/extract.test.ts`  | --         |
 | P3    | Scope global parse-option validation           | `cli.ts`, `commands.test.ts`                       | core P1    |
-| P4    | Verify: reuse parsed tar, drop second gunzip   | `commands/verify.ts`, `commands/verify.test.ts`    | core P1    |
+| P4    | Harden web static asset paths                  | `commands/web.ts`, `commands/web.test.ts`          | --         |
 | P5    | Drop dead `flagBool(flags, 'h')`               | `cli.ts`                                           | --         |
 
 Phases are independent; P1 and P3 lean on core fixes but do not require any
@@ -139,41 +138,22 @@ Exit criteria:
 - The existing `'parses global safety limits into shared parser options'`
   test still passes (it calls `parseGlobalParseOptions` directly).
 
-### P4 -- Verify: reuse parsed tar, drop second gunzip
+### P4 -- Harden web static asset paths
 
-Goal: `verify` decompresses the package exactly once.
+Goal: `web` must not serve files outside `packages/cli/assets/web`, even
+when a request contains `..` or encoded traversal segments.
 
 Files:
-- `packages/cli/src/commands/verify.ts`
-- `packages/cli/src/commands/verify.test.ts`
+- `packages/cli/src/commands/web.ts`
+- `packages/cli/src/commands/web.test.ts`
 
-Background: `parsePackageBytes(raw, opts.parseOptions)` already decompresses
-the archive and walks every tar member to build `entries` and diagnostics.
-`listTarFiles(new Uint8Array(raw))` then `gunzipSync`es the same bytes a
-second time to find `UNEXPECTED_FILE` entries (tar names like
-`<guid>/notes.txt`). With core P1 in place, the second decompression also
-bypasses the streaming bomb guard.
-
-Approach: instead of re-walking the tar in CLI code, surface the tar member
-names that the core parser already saw. Two options, pick whichever is
-cleaner:
-- Add an optional `onTarMember?: (name: string) => void` to
-  `ParseUnityPackageOptions` (core change -- coordinate with core plan; or
-  defer to a follow-up if the core plan is locked).
-- Or, more conservatively, add `diagnostics` with code
-  `'unexpected-guid-file'` to the parser for any non-pathname/asset/meta/
-  preview/metaData member.
-
-If neither core change is in scope right now, defer this phase to a
-follow-up and leave a TODO in verify.ts noting the redundant gunzip.
+Approach: decode and normalize request paths, resolve them against the asset
+root, and reject anything that is not inside the asset root before applying
+the SPA `index.html` fallback.
 
 Exit criteria:
-- `verify` invokes `gunzipSync` (or its streamed equivalent) at most once
-  per call. Confirm by spying on `node:zlib.gunzipSync` in a test.
-- The existing `'warns on unexpected files while allowing preview and
-  legacy metadata'` test still passes -- the `UNEXPECTED_FILE` finding for
-  `<guid>/notes.txt` is still emitted, and `preview.png`/`metaData` are
-  still not flagged.
+- `GET /../../README.md` does not return repository/package files.
+- Normal web app routes still fall back to `index.html`.
 - No new public CLI flag.
 
 ### P5 -- Drop dead `flagBool(flags, 'h')`
@@ -225,8 +205,6 @@ Ctrl+C after P3 lands -- it should error before P3.
 
 ## Cross-plan updates
 
-- This plan depends on `docs/plans/core/review-followups.md` P1 (bounded
-  gunzip) for P4 to fully close the second-decompression gap.
 - This plan depends on `docs/plans/core/review-followups.md` P2 (lowercase
   normalization at create) so P1 here does not need to re-lowercase
   user-supplied sidecar GUIDs.

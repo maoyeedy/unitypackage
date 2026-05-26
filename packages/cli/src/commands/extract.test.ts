@@ -349,6 +349,18 @@ describe('extract', () => {
     }
   });
 
+  it('reports when --no-meta drops every requested exact path', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildSingleScriptPackage());
+    await expect(extract(packagePath, outDir, {
+      paths: ['Assets/Scripts/MyScript.cs.meta'],
+      noMeta: true,
+    })).rejects.toThrow('extract --no-meta dropped every requested path');
+  });
+
   it('requires --path when --with-meta is enabled', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'fixture.unitypackage');

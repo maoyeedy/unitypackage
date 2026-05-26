@@ -46,6 +46,29 @@ describe('pack', () => {
     expect(entry?.meta).toEqual(sidecarBytes);
   });
 
+  it('warns before regenerating sidecar metas with no recognizable GUID', async () => {
+    const dir = await makeTempDir();
+    const sourceFile = path.join(dir, 'BrokenMeta.cs');
+    const packageFile = path.join(dir, 'out.unitypackage');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await writeFile(sourceFile, 'public class BrokenMeta {}');
+    await writeFile(sourceFile + '.meta', 'fileFormatVersion: 2\nguid: short\nMonoImporter:\n  custom: yes\n');
+
+    try {
+      await pack({ [sourceFile]: 'Assets/BrokenMeta.cs' }, packageFile);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        `WARNING: Sidecar .meta has no recognizable GUID; regenerating: ${sourceFile}.meta`,
+      );
+      const { entries } = parseUnityPackageEntries(await readFile(packageFile));
+      const entry = entries.find(candidate => candidate.pathname === 'Assets/BrokenMeta.cs');
+      expect(entry?.guid).toBe(guidFromPath('Assets/BrokenMeta.cs'));
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('generates importer-aware metas for scripts, text assets, binary assets, and folders', async () => {
     const dir = await makeTempDir();
     const sourceDir = path.join(dir, 'Generated');

@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { CliError, EXIT } from '../util/exit.js';
+import { isInside } from '../util/path.js';
 
 export interface WebOptions {
   port?: number;
@@ -23,11 +24,33 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain',
 };
 
-async function serveRequest(assetDir: string, url: string, res: ServerResponse): Promise<void> {
-  let urlPath = url.split('?')[0];
-  if (urlPath === '/') urlPath = '/index.html';
+function resolveAssetPath(assetDir: string, url: string): string | null {
+  const rawPath = url.split('?')[0] || '/';
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  if (decodedPath.split(/[\\/]+/).some(segment => segment === '..')) {
+    return null;
+  }
 
-  let filePath = path.join(assetDir, urlPath);
+  const normalizedPath = decodedPath === '/'
+    ? 'index.html'
+    : path.normalize(decodedPath).replace(/^[/\\]+/, '');
+  const filePath = path.resolve(assetDir, normalizedPath);
+  return isInside(assetDir, filePath) ? filePath : null;
+}
+
+async function serveRequest(assetDir: string, url: string, res: ServerResponse): Promise<void> {
+  let filePath = resolveAssetPath(assetDir, url);
+
+  if (filePath === null) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
 
   try {
     await stat(filePath);

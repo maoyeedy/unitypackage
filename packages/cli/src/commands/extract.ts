@@ -182,6 +182,13 @@ export async function extract(packagePath: string, outputDir?: string, opts: Ext
       ? [...selection.explicitRecords, ...selection.implicitMetaRecords]
       : selection.explicitRecords).filter(record => !opts.noMeta || record.component !== 'meta');
 
+    if (selection.explicitRecords.length > 0 && selectedRecords.length === 0) {
+      throw new CliError(
+        'extract --no-meta dropped every requested path; remove --no-meta or include non-meta paths.',
+        EXIT.ERROR,
+      );
+    }
+
     for (const requestedPath of requestedPaths) {
       if (!matchedPathnames.has(requestedPath)) {
         addWarning(`Requested path not found: ${requestedPath}`);

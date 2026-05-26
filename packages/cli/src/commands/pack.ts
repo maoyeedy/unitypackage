@@ -67,16 +67,21 @@ export interface PackResult {
 }
 
 async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Promise<T>) => Promise<T>): Promise<EntryMeta | null> {
+  const metaPath = assetPath + '.meta';
   const content = await limitRead(async () => {
     try {
-      return await readFile(assetPath + '.meta');
+      return await readFile(metaPath);
     } catch {
       return null;
     }
   });
   if (!content) return null;
   const guid = readMetaGuid(content);
-  return guid === null ? null : { guid, bytes: content, source: 'existing' };
+  if (guid === null) {
+    warn(`Sidecar .meta has no recognizable GUID; regenerating: ${metaPath}`);
+    return null;
+  }
+  return { guid, bytes: content, source: 'existing' };
 }
 
 function createGeneratedMeta(pathInPackage: string, isDirectory: boolean, randomGuids: boolean): EntryMeta {

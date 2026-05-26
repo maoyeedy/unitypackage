@@ -3,7 +3,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { cli, parseGlobalParseOptions } from './cli.js';
 import { buildSingleScriptPackage, makeTempDir } from './test-utils.js';
-import { EXIT } from './util/exit.js';
 import { createLimiter } from './util/concurrency.js';
 import { parseArgs } from './util/args.js';
 
@@ -73,44 +72,22 @@ describe('cli extract path options', () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'fixture.unitypackage');
     await writeFile(packagePath, buildSingleScriptPackage());
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-      throw new Error(`exit ${String(code)}`);
-    });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    try {
-      await expect(cli(['extract', packagePath, path.join(dir, 'out'), '--with-meta'])).rejects.toThrow(`exit ${EXIT.ERROR}`);
-      const stderr = errorSpy.mock.calls.map(call => call[0]).join('\n');
-      expect(stderr).toContain('extract --with-meta requires at least one --path selection.');
-    } finally {
-      exitSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
+    await expect(cli(['extract', packagePath, path.join(dir, 'out'), '--with-meta'])).rejects.toThrow(
+      'extract --with-meta requires at least one --path selection.',
+    );
   });
 
   it('rejects --filter combined with --path before reading package bytes', async () => {
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-      throw new Error(`exit ${String(code)}`);
-    });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    try {
-      await expect(cli([
-        'extract',
-        'missing.unitypackage',
-        'out',
-        '--filter',
-        '**/*.cs',
-        '--path',
-        'Assets/A.cs',
-      ])).rejects.toThrow(`exit ${EXIT.ERROR}`);
-      const stderr = errorSpy.mock.calls.map(call => call[0]).join('\n');
-      expect(stderr).toContain('extract --filter and --path cannot be combined.');
-      expect(stderr).not.toContain('Cannot read file');
-    } finally {
-      exitSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
+    await expect(cli([
+      'extract',
+      'missing.unitypackage',
+      'out',
+      '--filter',
+      '**/*.cs',
+      '--path',
+      'Assets/A.cs',
+    ])).rejects.toThrow('extract --filter and --path cannot be combined.');
   });
 });
 
@@ -134,59 +111,32 @@ describe('cli parse guard options', () => {
   });
 
   it('rejects invalid guard values before reading package bytes', async () => {
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-      throw new Error(`exit ${String(code)}`);
-    });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    try {
-      await expect(cli(['inspect', 'missing.unitypackage', '--max-entries', '1.5'])).rejects.toThrow(`exit ${EXIT.ERROR}`);
-      expect(errorSpy.mock.calls.map(call => call[0]).join('\n')).toContain('Invalid --max-entries: 1.5');
-      expect(errorSpy.mock.calls.map(call => call[0]).join('\n')).not.toContain('Cannot read file');
-    } finally {
-      exitSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
+    await expect(cli(['inspect', 'missing.unitypackage', '--max-entries', '1.5'])).rejects.toThrow(
+      'Invalid --max-entries: 1.5',
+    );
   });
 
-  it('maps byte guard failures to EXIT.BOMB and reports observed bytes', async () => {
+  it('propagates byte guard failures with observed bytes', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'fixture.unitypackage');
     await writeFile(packagePath, buildSingleScriptPackage());
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-      throw new Error(`exit ${String(code)}`);
-    });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    try {
-      await expect(cli(['inspect', packagePath, '--max-output-bytes', '1'])).rejects.toThrow(`exit ${EXIT.BOMB}`);
-      const stderr = errorSpy.mock.calls.map(call => call[0]).join('\n');
-      expect(stderr).toContain('kind=output-bytes');
-      expect(stderr).toContain('observed=');
-    } finally {
-      exitSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
+    await expect(cli(['inspect', packagePath, '--max-output-bytes', '1'])).rejects.toMatchObject({
+      name: 'DecompressionBombError',
+      kind: 'output-bytes',
+    });
   });
 
-  it('maps entry guard failures to EXIT.BOMB and reports observed entries', async () => {
+  it('propagates entry guard failures with observed entries', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'fixture.unitypackage');
     await writeFile(packagePath, buildSingleScriptPackage());
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-      throw new Error(`exit ${String(code)}`);
-    });
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    try {
-      await expect(cli(['verify', packagePath, '--max-entries', '0'])).rejects.toThrow(`exit ${EXIT.BOMB}`);
-      const stderr = errorSpy.mock.calls.map(call => call[0]).join('\n');
-      expect(stderr).toContain('kind=entry-count');
-      expect(stderr).toContain('observed=1');
-    } finally {
-      exitSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
+    await expect(cli(['verify', packagePath, '--max-entries', '0'])).rejects.toMatchObject({
+      name: 'DecompressionBombError',
+      kind: 'entry-count',
+      observed: 1,
+    });
   });
 
   it('applies the same entry guard plumbing to other parse-consuming commands', async () => {
@@ -199,18 +149,56 @@ describe('cli parse guard options', () => {
     ];
 
     for (const args of cases) {
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
-        throw new Error(`exit ${String(code)}`);
+      await expect(cli(args)).rejects.toMatchObject({
+        name: 'DecompressionBombError',
+        kind: 'entry-count',
       });
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    }
+  });
 
-      try {
-        await expect(cli(args)).rejects.toThrow(`exit ${EXIT.BOMB}`);
-        expect(errorSpy.mock.calls.map(call => call[0]).join('\n')).toContain('kind=entry-count');
-      } finally {
-        exitSpy.mockRestore();
-        errorSpy.mockRestore();
-      }
+  it('does not validate parse guard flags for non-parse commands', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      const running = cli(['web', '--port', '0', '--max-entries', '-1']);
+      await vi.waitFor(() => {
+        expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/^Web app running at http:\/\/localhost:\d+$/));
+      });
+      process.emit('SIGINT');
+      await running;
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    await expect(cli(['pack', 'out.unitypackage', '--max-output-bytes', 'abc'])).rejects.toThrow(
+      'pack requires --manifest <file.json> or pairs of <source-path> <path-in-package>.',
+    );
+  });
+
+  it('rejects command-specific flags on the wrong command', async () => {
+    await expect(cli(['web', '--strict'])).rejects.toThrow('Option --strict is not supported by web.');
+  });
+});
+
+describe('cli output mode', () => {
+  it('does not leak json mode between in-process invocations', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await writeFile(packagePath, buildSingleScriptPackage());
+      await cli(['inspect', packagePath, '--json']);
+      stdoutSpy.mockClear();
+
+      await cli(['inspect', packagePath]);
+
+      expect(stdoutSpy).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Package:'));
+    } finally {
+      stdoutSpy.mockRestore();
+      logSpy.mockRestore();
     }
   });
 });

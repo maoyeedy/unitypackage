@@ -7,58 +7,54 @@ import { verify } from './commands/verify.js';
 import { diff } from './commands/diff.js';
 import { web } from './commands/web.js';
 import { parseArgs, flagBool, flagStr, flagStrs } from './util/args.js';
-import { error, setJsonMode } from './util/logger.js';
-import { CliError, EXIT, mapCliError } from './util/exit.js';
+import { setJsonMode } from './util/logger.js';
+import { CliError, EXIT } from './util/exit.js';
 
 export async function cli(argv: string[]): Promise<void> {
   const { command, positional, flags } = parseArgs(argv);
 
-  if (!command || flagBool(flags, 'h') || flagBool(flags, 'help')) {
+  if (!command || flagBool(flags, 'help')) {
     printHelp();
     return;
   }
 
   const json = flagBool(flags, 'json');
-  if (json) setJsonMode(true);
-
+  setJsonMode(json);
   try {
-    const parseOptions = parseGlobalParseOptions(flags);
+    validateAllowedFlags(command, flags);
     switch (command) {
       case 'extract':
-        await runExtract(positional, flags, parseOptions);
+        await runExtract(positional, flags, parseGlobalParseOptions(flags));
         break;
       case 'pack':
         await runPack(positional, flags);
         break;
       case 'inspect':
-        await runInspect(positional, flags, json, parseOptions);
+        await runInspect(positional, flags, json, parseGlobalParseOptions(flags));
         break;
       case 'verify':
         await verify(requireArg(command, positional[0], '<package.unitypackage>'), {
           json,
           strict: flagBool(flags, 'strict'),
-          parseOptions,
+          parseOptions: parseGlobalParseOptions(flags),
         });
         break;
       case 'diff':
         await diff(
           requireArg(command, positional[0], '<before.unitypackage>'),
           requireArg(command, positional[1], '<after.unitypackage>'),
-          { json, parseOptions },
+          { json, parseOptions: parseGlobalParseOptions(flags) },
         );
         break;
       case 'web':
         await runWeb(flags);
         break;
       default:
-        error(`Unknown command: ${command}`);
         printHelp();
-        process.exit(EXIT.ERROR);
+        throw new CliError(`Unknown command: ${command}`, EXIT.ERROR);
     }
-  } catch (err) {
-    const mapped = mapCliError(err);
-    error(mapped.message);
-    process.exit(mapped.code);
+  } finally {
+    setJsonMode(false);
   }
 }
 
@@ -155,6 +151,39 @@ async function runWeb(flags: Record<string, string | boolean | string[]>): Promi
 function requireArg(command: string, value: string | undefined, placeholder: string): string {
   if (!value) throw new CliError(`${command} requires ${placeholder}`, EXIT.ERROR);
   return value;
+}
+
+const globalFlags = new Set(['help', 'max-output-bytes', 'max-entries']);
+const commandFlags: Record<string, Set<string>> = {
+  extract: new Set([
+    'filter',
+    'exclude',
+    'path',
+    'path-file',
+    'merge',
+    'force',
+    'skip-existing',
+    'no-meta',
+    'with-meta',
+    'dry-run',
+    'json',
+  ]),
+  pack: new Set(['manifest', 'gzip-level', 'random-guids', 'dry-run', 'json']),
+  inspect: new Set(['json', 'format', 'filter', 'exclude']),
+  verify: new Set(['json', 'strict']),
+  diff: new Set(['json']),
+  web: new Set(['port', 'host']),
+};
+
+function validateAllowedFlags(command: string, flags: Record<string, string | boolean | string[]>): void {
+  const allowed = commandFlags[command];
+  if (allowed === undefined) return;
+
+  for (const name of Object.keys(flags)) {
+    if (!globalFlags.has(name) && !allowed.has(name)) {
+      throw new CliError(`Option --${name} is not supported by ${command}.`, EXIT.ERROR);
+    }
+  }
 }
 
 export function parseGlobalParseOptions(flags: Record<string, string | boolean | string[]>): ParseUnityPackageOptions {
