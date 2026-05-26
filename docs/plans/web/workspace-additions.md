@@ -201,7 +201,7 @@ cd apps/web && bunx playwright test
 
 Manual smoke:
 
-- Open `fixtures/static/editor-packed.unitypackage`.
+- Open `fixtures/static/archives/Polytope_URP.unitypackage`.
 - Collapse and reopen both side panes; reload and confirm state persists.
 - Reopen a package from the recents menu.
 - Jump between an asset, its `.meta`, and its preview sibling from Details.

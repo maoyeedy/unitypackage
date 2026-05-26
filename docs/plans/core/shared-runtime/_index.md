@@ -70,11 +70,11 @@ Every phase:
 
 Plan-level smoke after all phases land:
 
-- Round-trip: parse `fixtures/static/editor-packed.unitypackage`, run
+- Round-trip: parse `fixtures/static/archives/Polytope_URP.unitypackage`, run
   `tryCreateUnityPackage` on the entries, parse the result, assert entry
   identity (guid + pathname + asset/meta/preview byte equality). Add this
   test under `packages/core/src/` so it gates future regressions.
 - Manual CLI smoke per `CLAUDE.md`:
-  - `bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json`
-  - `bun packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"`
+  - `bun packages/cli/dist/bin.js inspect "fixtures/static/archives/Polytope_URP.unitypackage" --json`
+  - `bun packages/cli/dist/bin.js verify  "fixtures/static/archives/Polytope_URP.unitypackage"`
   - `bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json`

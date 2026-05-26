@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/editor-packed.unitypackage');
+const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/archives/Polytope_URP.unitypackage');
 
 test.describe('pack mode', () => {
   test('Pack tab shows pack panel heading', async ({ page }) => {
@@ -48,10 +48,10 @@ test.describe('pack mode', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Pack', exact: true }).click();
 
-    const pngPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/texture_02.png');
+    const pngPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/texture.png');
     const fileBuffer = fs.readFileSync(pngPath);
     const base64Data = fileBuffer.toString('base64');
-    const fileName = 'texture_02.png';
+    const fileName = 'texture.png';
 
     await page.evaluate(async ({ base64, name }) => {
       const response = await fetch(`data:application/octet-stream;base64,${base64}`);
@@ -81,7 +81,7 @@ test.describe('pack mode', () => {
 
     const stagedInput = page.locator('.staged-pathname-input');
     await expect(stagedInput).toBeVisible();
-    await expect(stagedInput).toHaveValue('texture_02.png');
+    await expect(stagedInput).toHaveValue('texture.png');
 
     await stagedInput.fill('Assets/Textures/new_texture.png');
     await expect(stagedInput).toHaveValue('Assets/Textures/new_texture.png');

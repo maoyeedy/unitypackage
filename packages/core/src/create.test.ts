@@ -393,8 +393,8 @@ describe('estimateUnityPackageSize', () => {
     expect(entryCount).toBe(5);
   });
 
-  it('round-trips the editor-packed fixture preserving preview bytes exactly', () => {
-    const fixtureUrl = new URL('../../../fixtures/static/editor-packed.unitypackage', import.meta.url);
+  it('round-trips the Polytope_URP fixture preserving preview bytes exactly', () => {
+    const fixtureUrl = new URL('../../../fixtures/static/archives/Polytope_URP.unitypackage', import.meta.url);
     const fixtureBytes = readFileSync(fixtureUrl);
 
     // Parse the original package

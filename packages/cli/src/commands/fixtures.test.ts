@@ -32,31 +32,35 @@ describe('cli fixture integration', () => {
   });
 
   it('inspects the real editor-exported package with filters and component metadata', async () => {
-    const result = await withoutHumanOutput(() => inspect(staticFixture('editor-packed.unitypackage'), {
+    const result = await withoutHumanOutput(() => inspect(staticFixture('archives/Polytope_URP.unitypackage'), {
       filter: '**/*.shader',
     }));
 
-    expect(result.summary.entries).toBe(1);
-    expect(result.entries).toEqual([
-      expect.objectContaining({
-        pathname: 'Assets/FronkonGames/Artistic/OneBit/Resources/Shaders/ArtisticOneBit_URP.shader',
-        hasAsset: true,
-        hasMeta: true,
-      }),
-    ]);
-    expect(result.components).toEqual([
-      expect.objectContaining({
-        component: 'asset',
-        extension: 'shader',
-        previewKind: 'text',
-        syntaxLanguage: 'shaderlab',
-      }),
-      expect.objectContaining({
-        component: 'meta',
-        extension: 'meta',
-        syntaxLanguage: 'yaml',
-      }),
-    ]);
+    expect(result.summary.entries).toBe(12);
+    expect(result.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          pathname: expect.stringMatching(/\.shader$/),
+          hasAsset: true,
+          hasMeta: true,
+        }),
+      ]),
+    );
+    expect(result.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          component: 'asset',
+          extension: 'shader',
+          previewKind: 'text',
+          syntaxLanguage: 'shaderlab',
+        }),
+        expect.objectContaining({
+          component: 'meta',
+          extension: 'meta',
+          syntaxLanguage: 'yaml',
+        }),
+      ]),
+    );
   });
 
   it('verifies generated fixtures across valid and malformed package cases', async () => {
@@ -135,21 +139,69 @@ describe('cli fixture integration', () => {
   it('packs static fixture assets while preserving adjacent meta bytes exactly', async () => {
     const dir = await makeTempDir();
     const outputFile = path.join(dir, 'texture.unitypackage');
-    const sourceFile = path.join(dir, 'texture_02.png');
+    const sourceFile = path.join(dir, 'texture.png');
     const sourceMeta = sourceFile + '.meta';
 
     await mkdir(dir, { recursive: true });
-    await writeFile(sourceFile, await readFile(staticFixture('texture_02.png')));
-    await writeFile(sourceMeta, await readFile(staticFixture('texture_02.png.meta')));
+    await writeFile(sourceFile, await readFile(staticFixture('texture.png')));
+    await writeFile(sourceMeta, await readFile(staticFixture('texture.png.meta')));
 
-    await withoutHumanOutput(() => pack({ [sourceFile]: 'Assets/Textures/texture_02.png' }, outputFile));
+    await withoutHumanOutput(() => pack({ [sourceFile]: 'Assets/Textures/texture.png' }, outputFile));
 
     const { entries } = parseUnityPackageEntries(await readFile(outputFile));
-    const entry = entries.find(candidate => candidate.pathname === 'Assets/Textures/texture_02.png');
-    const expectedMeta = await readFile(staticFixture('texture_02.png.meta'));
+    const entry = entries.find(candidate => candidate.pathname === 'Assets/Textures/texture.png');
+    const expectedMeta = await readFile(staticFixture('texture.png.meta'));
     expect(entry?.guid).toBe(readMetaGuid(expectedMeta));
     expect(Array.from(entry?.meta ?? [])).toEqual(Array.from(expectedMeta));
     expect(Array.from(entry?.asset?.slice(0, 4) ?? [])).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+
+  it.each([
+    { src: 'texture.jpg', dest: 'Assets/Textures/texture.jpg', header: [0xff, 0xd8, 0xff, 0xe0] },
+    { src: 'audio.wav', dest: 'Assets/Audio/audio.wav', header: [0x52, 0x49, 0x46, 0x46] },
+    { src: 'document.txt', dest: 'Assets/Docs/document.txt', header: [0x53, 0x55, 0x50, 0x45] },
+  ])('packs $src with correct binary header and meta round-trip', async ({ src, dest, header }) => {
+    const dir = await makeTempDir();
+    const outputFile = path.join(dir, 'pkg.unitypackage');
+    const sourceFile = path.join(dir, src);
+    const sourceMeta = sourceFile + '.meta';
+
+    await mkdir(dir, { recursive: true });
+    await writeFile(sourceFile, await readFile(staticFixture(src)));
+    await writeFile(sourceMeta, await readFile(staticFixture(src + '.meta')));
+
+    await withoutHumanOutput(() => pack({ [sourceFile]: dest }, outputFile));
+
+    const { entries } = parseUnityPackageEntries(await readFile(outputFile));
+    const entry = entries.find(candidate => candidate.pathname === dest);
+    const expectedMeta = await readFile(staticFixture(src + '.meta'));
+    expect(entry?.guid).toBe(readMetaGuid(expectedMeta));
+    expect(Array.from(entry?.meta ?? [])).toEqual(Array.from(expectedMeta));
+    expect(Array.from(entry?.asset?.slice(0, 4) ?? [])).toEqual(header);
+  });
+
+  it('verifies the real editor-exported package reports ok despite directory warnings', async () => {
+    const result = await readVerifyJson(staticFixture('archives/Polytope_URP.unitypackage'));
+    expect(result.ok).toBe(true);
+    expect(result.findings.filter(f => f.level === 'error')).toEqual([]);
+  });
+
+  it('extracts shader files from the real archive with filter glob', async () => {
+    const outDir = path.join(await makeTempDir(), 'out');
+    const result = await withoutHumanOutput(() => extract(
+      staticFixture('archives/Polytope_URP.unitypackage'),
+      outDir,
+      { filter: '**/*.shader' },
+    ));
+    expect(result.summary.written).toBe(24);
+  });
+
+  it('inspects the real archive unfiltered to assert total entry count', async () => {
+    const result = await withoutHumanOutput(() => inspect(
+      staticFixture('archives/Polytope_URP.unitypackage'),
+      { json: false },
+    ));
+    expect(result.summary.entries).toBe(170);
   });
 });
 

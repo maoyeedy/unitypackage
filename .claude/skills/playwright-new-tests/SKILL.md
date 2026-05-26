@@ -37,7 +37,7 @@ import path from 'node:path';
 
 const fixturePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../../fixtures/static/editor-packed.unitypackage'
+  '../../../fixtures/static/archives/Polytope_URP.unitypackage'
 );
 ```
 `__dirname` is not available — test files are ESM.

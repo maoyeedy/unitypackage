@@ -162,7 +162,7 @@ Behavior changes:
 
 Exit criteria:
 
-- Opening `fixtures/static/editor-packed.unitypackage` shows assets and
+- Opening `fixtures/static/archives/Polytope_URP.unitypackage` shows assets and
   allowed sidecars without synthetic `.preview.png` rows by default.
 - Users can opt in to preview rows and see them in both tree and extension
   grouping.
@@ -256,7 +256,7 @@ cd apps/web && bunx playwright test
 
 Manual smoke:
 
-- Open `fixtures/static/editor-packed.unitypackage`.
+- Open `fixtures/static/archives/Polytope_URP.unitypackage`.
 - Confirm the initial screen is focused on Extract navigation, not stats.
 - Confirm search finds `Changelog.md` by name and by part of its path.
 - Confirm preview records are hidden by default and can be shown with the new

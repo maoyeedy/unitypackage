@@ -194,9 +194,9 @@ Built-CLI manual smoke (run via Bun, not Node -- see CLAUDE.md Pitfalls):
 
 ```
 bun run build
-bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
-bun packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
-bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/extract-test --path Assets/example.meta --no-meta
+bun packages/cli/dist/bin.js inspect "fixtures/static/archives/Polytope_URP.unitypackage" --json
+bun packages/cli/dist/bin.js verify  "fixtures/static/archives/Polytope_URP.unitypackage"
+bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unitypackage" /tmp/extract-test --path Assets/example.meta --no-meta
 bun packages/cli/dist/bin.js web --port 0 --max-entries -1
 ```
 

@@ -45,7 +45,7 @@ bun run --filter @unitypackage-tools/web typecheck
 After `bun run build`, common manual checks are:
 
 ```sh
-bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
-bun packages/cli/dist/bin.js verify "fixtures/static/editor-packed.unitypackage"
+bun packages/cli/dist/bin.js inspect "fixtures/static/archives/Polytope_URP.unitypackage" --json
+bun packages/cli/dist/bin.js verify "fixtures/static/archives/Polytope_URP.unitypackage"
 bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
 ```

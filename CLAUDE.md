@@ -5,7 +5,7 @@
 | `packages/core` | `unitypackage-core` | published, browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | published, ships JS, runtime Node ≥24 |
 | `apps/web` | `@unitypackage-tools/web` | private, Vite 6 + React 19 PWA workspace |
-| `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders + real editor-exported `.unitypackage` |
+| `fixtures` | `@unitypackage-tools/fixtures` | private, synth builders (`generated/`) + loose assets + archived `.unitypackage` (`static/`) |
 | `scripts` | — | `copy-web-assets.ts`, `fixtures-build.ts` |
 
 ## Commands
@@ -27,12 +27,12 @@ bunx eslint apps/web/src
 
 Manual smoke (after `build`):
 ```
-bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
-bun packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
+bun packages/cli/dist/bin.js inspect "fixtures/static/archives/Polytope_URP.unitypackage" --json
+bun packages/cli/dist/bin.js verify  "fixtures/static/archives/Polytope_URP.unitypackage"
 node scripts/fixtures-build.ts
 bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
-bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"
-bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge
+bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"
+bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge
 ```
 
 ## Node versions
@@ -81,6 +81,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **CLI JSON modes keep stdout parseable**: route progress, warnings, and summaries through stderr/logger helpers.
 - **`verify` is format-scoped**: do not add Unity YAML schema validation unless a later plan explicitly asks for it.
 - **Generated fixtures currently include** `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, and `truncated`; use `minimal` vs `nested` for diff smoke, not `multi-entry`.
+- **`fixtures/static/` covers major file types**: `.unity` / `.prefab` / `.mat` / `.asset` / `.terrainlayer` (Unity YAML assets), `.fbx` (binary), `.png` / `.jpg` / `.tga` (image), `.wav` (audio), `.cginc` / `.shader` / `.cs` (code), `.txt` (doc), `.meta`. Archive: `archives/Polytope_URP.unitypackage`.
 - **`packages/core/tsconfig.json` omits `moduleResolution`** intentionally: TS 5.9 forbids `module:CommonJS` + `moduleResolution:Node16`. Don't add it.
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
 - **`packages/core` test helpers**: avoid non-test helper files under `packages/core/src`; `tsconfig.json` includes all non-`*.test.ts` source files in the published build.
@@ -94,7 +95,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **`sanitize-filename` removed**: inlined as `sanitizeFilename()` in `packages/cli/src/util/path.ts` via simple regex (Node ≥22).
 - **E2E tests are ESM**: `__dirname` is unavailable in `apps/web/tests/*.spec.ts`; use `path.dirname(fileURLToPath(import.meta.url))` for fixture paths.
 - **`getByRole` name matching is substring by default**: `getByRole('button', { name: 'Pack' })` also matches "Stage for pack". Add `exact: true` whenever the button label appears inside another button's label.
-- **E2E fixture path**: `fixtures/static/editor-packed.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/editor-packed.unitypackage')`.
+- **E2E fixture path**: `fixtures/static/archives/Polytope_URP.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
 - **`PARSER_IGNORED_PREVIEW` is silently skipped in `verify`**: the core emits it for every `preview.png` in a GUID directory (normal Unity Editor output), but `packages/cli/src/commands/verify.ts` filters it out before adding to `findings` — intentional, not an oversight.
 
 ## Do Not Edit

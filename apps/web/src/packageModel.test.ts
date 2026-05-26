@@ -52,8 +52,8 @@ import {
 import type { UnityPackageAnalysisFinding } from './packageModel';
 
 const encoder = new TextEncoder();
-const fixturePng = new URL('../../../fixtures/static/texture_02.png', import.meta.url);
-const fixturePngMeta = new URL('../../../fixtures/static/texture_02.png.meta', import.meta.url);
+const fixturePng = new URL('../../../fixtures/static/texture.png', import.meta.url);
+const fixturePngMeta = new URL('../../../fixtures/static/texture.png.meta', import.meta.url);
 
 describe('package model helpers', () => {
   it('creates records with derived metadata and duplicate path counts', () => {

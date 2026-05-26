@@ -12,7 +12,7 @@ import {
   writeMetaGuid,
 } from './index';
 
-const textureMeta = new URL('../../../fixtures/static/texture_02.png.meta', import.meta.url);
+const textureMeta = new URL('../../../fixtures/static/texture.png.meta', import.meta.url);
 
 describe('createMinimalMeta', () => {
   const validGuid = '0123456789abcdef0123456789abcdef';
