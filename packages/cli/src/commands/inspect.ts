@@ -1,8 +1,12 @@
 import crypto from 'node:crypto';
 import {
+  entriesToComponentRecords,
+  matchGlob,
   summarizePackage,
   parseUnityPackageEntries,
   type ParseUnityPackageOptions,
+  type UnityPackageComponentRecord,
+  type UnityPackageEntryComponent,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
   type UnityPackageSummary,
@@ -19,17 +23,40 @@ export interface InspectEntry {
   hasMeta: boolean;
 }
 
+export interface InspectComponent {
+  id: string;
+  guid: string;
+  pathname: string;
+  virtualPath: string;
+  component: UnityPackageEntryComponent;
+  byteLength: number;
+  extension: string;
+  mimeType: string;
+  previewKind: string;
+  syntaxLanguage: string;
+  diagnostics: UnityPackageParseDiagnostic[];
+  hasAsset: boolean;
+  hasMeta: boolean;
+  hasPreview: boolean;
+  assetSize?: number;
+  metaSize?: number;
+  previewSize?: number;
+  duplicatePathCount: number;
+}
+
 export interface InspectResult {
   schemaVersion: 0;
   package: { path: string; size: number; sha256: string };
   summary: InspectSummary;
   entries: InspectEntry[];
+  components: InspectComponent[];
 }
 
 export interface InspectOptions {
   json?: boolean;
   format?: 'list' | 'tree';
   filter?: string;
+  exclude?: string;
   parseOptions?: ParseUnityPackageOptions;
 }
 
@@ -50,6 +77,12 @@ function matchesExtension(pathname: string, ext: string): boolean {
   return pathname.toLowerCase().endsWith(normalized);
 }
 
+function matchesInspectFilter(pathname: string, filter: string): boolean {
+  return /[*?[\]{}]/.test(filter) || filter.includes('/')
+    ? matchGlob(filter, pathname)
+    : matchesExtension(pathname, filter);
+}
+
 function summarize(entries: UnityPackageEntry[], diagnostics?: UnityPackageParseDiagnostic[]): InspectSummary {
   const coreSummary = summarizePackage(entries, diagnostics);
   return {
@@ -58,6 +91,29 @@ function summarize(entries: UnityPackageEntry[], diagnostics?: UnityPackageParse
     withAsset: coreSummary.fileCount,
     withMeta: entries.filter(e => e.meta !== undefined).length,
     folders: coreSummary.folderCount,
+  };
+}
+
+function toInspectComponent(record: UnityPackageComponentRecord): InspectComponent {
+  return {
+    id: record.id,
+    guid: record.guid,
+    pathname: record.pathname,
+    virtualPath: record.virtualPath,
+    component: record.component,
+    byteLength: record.byteLength,
+    extension: record.extension,
+    mimeType: record.mimeType,
+    previewKind: record.previewKind,
+    syntaxLanguage: record.syntaxLanguage,
+    diagnostics: record.diagnostics,
+    hasAsset: record.hasAsset,
+    hasMeta: record.hasMeta,
+    hasPreview: record.hasPreview,
+    ...(record.assetSize !== undefined && { assetSize: record.assetSize }),
+    ...(record.metaSize !== undefined && { metaSize: record.metaSize }),
+    ...(record.previewSize !== undefined && { previewSize: record.previewSize }),
+    duplicatePathCount: record.duplicatePathCount,
   };
 }
 
@@ -107,12 +163,15 @@ export async function inspect(packagePath: string, opts: InspectOptions = {}): P
     assetSize: e.asset?.byteLength ?? 0,
     hasMeta: e.meta !== undefined,
   }));
-  const filteredEntries = opts.filter
-    ? inspectEntries.filter(e => matchesExtension(e.pathname, opts.filter ?? ''))
-    : inspectEntries;
-  const filteredPackageEntries = opts.filter
-    ? entries.filter(e => matchesExtension(e.pathname, opts.filter ?? ''))
-    : entries;
+  const filterEntry = (pathname: string): boolean => {
+    if (opts.filter !== undefined && !matchesInspectFilter(pathname, opts.filter)) return false;
+    if (opts.exclude !== undefined && matchGlob(opts.exclude, pathname)) return false;
+    return true;
+  };
+  const filteredEntries = inspectEntries.filter(e => filterEntry(e.pathname));
+  const filteredPackageEntries = entries.filter(e => filterEntry(e.pathname));
+  const filteredComponents = entriesToComponentRecords(filteredPackageEntries, diagnostics)
+    .map(toInspectComponent);
   const summary = opts.filter
     ? summarize(filteredPackageEntries)
     : summarize(filteredPackageEntries, diagnostics);
@@ -122,6 +181,7 @@ export async function inspect(packagePath: string, opts: InspectOptions = {}): P
     package: { path: packagePath, size: raw.length, sha256 },
     summary,
     entries: filteredEntries,
+    components: filteredComponents,
   };
 
   if (opts.json) {

@@ -2,6 +2,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   createMinimalMetaFor,
+  estimateUnityPackageSize,
   generateGuid,
   guidFromPath,
   readMetaGuid,
@@ -14,11 +15,14 @@ import { safeGetStats } from '../util/fs.js';
 import { createLimiter, mapConcurrent } from '../util/concurrency.js';
 import { info, progress, warn } from '../util/logger.js';
 import { EXIT, CliError } from '../util/exit.js';
+import { writeJsonResult } from '../util/output.js';
 
 export interface PackOptions {
   manifestPath?: string;
   gzipLevel?: number;
   randomGuids?: boolean;
+  dryRun?: boolean;
+  json?: boolean;
 }
 
 const packConcurrency = 16;
@@ -28,6 +32,38 @@ const textEncoder = new TextEncoder();
 interface EntryMeta {
   guid: string;
   bytes: Uint8Array;
+  source: 'existing' | 'generated-deterministic' | 'generated-random';
+}
+
+interface CollectedPackageEntry {
+  entry: CreateUnityPackageEntry;
+  plan: PackPlanEntry;
+}
+
+export interface PackPlanEntry {
+  sourcePath: string;
+  pathname: string;
+  guid: string;
+  hasAsset: boolean;
+  assetBytes: number;
+  metaBytes: number;
+  metaSource: EntryMeta['source'];
+}
+
+export interface PackResult {
+  schemaVersion: 0;
+  outputFile: string;
+  dryRun: boolean;
+  summary: {
+    entries: number;
+    tarBytes: number;
+    tarMembers: number;
+    diagnostics: number;
+    missingSources: number;
+  };
+  entries: PackPlanEntry[];
+  diagnostics: CreateUnityPackageDiagnostic[];
+  missingSources: string[];
 }
 
 async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Promise<T>) => Promise<T>): Promise<EntryMeta | null> {
@@ -40,7 +76,7 @@ async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Pro
   });
   if (!content) return null;
   const guid = readMetaGuid(content);
-  return guid === null ? null : { guid, bytes: content };
+  return guid === null ? null : { guid, bytes: content, source: 'existing' };
 }
 
 function createGeneratedMeta(pathInPackage: string, isDirectory: boolean, randomGuids: boolean): EntryMeta {
@@ -48,6 +84,7 @@ function createGeneratedMeta(pathInPackage: string, isDirectory: boolean, random
   return {
     guid,
     bytes: textEncoder.encode(createMinimalMetaFor(guid, pathInPackage, isDirectory)),
+    source: randomGuids ? 'generated-random' : 'generated-deterministic',
   };
 }
 
@@ -58,7 +95,7 @@ async function createPackageEntry(
   limitRead: <T>(task: () => Promise<T>) => Promise<T>,
   onEntry: () => void,
   randomGuids: boolean,
-): Promise<CreateUnityPackageEntry> {
+): Promise<CollectedPackageEntry> {
   const meta = (await getExistingMeta(sourcePath, limitRead)) ?? createGeneratedMeta(pathInPackage, isDirectory, randomGuids);
 
   const entry: CreateUnityPackageEntry = {
@@ -72,7 +109,22 @@ async function createPackageEntry(
   }
 
   onEntry();
-  return entry;
+  return {
+    entry,
+    plan: toPackPlanEntry(entry, sourcePath, meta.source),
+  };
+}
+
+function toPackPlanEntry(entry: CreateUnityPackageEntry, sourcePath: string, metaSource: EntryMeta['source']): PackPlanEntry {
+  return {
+    sourcePath,
+    pathname: entry.pathname,
+    guid: entry.guid,
+    hasAsset: entry.asset !== undefined,
+    assetBytes: entry.asset?.byteLength ?? 0,
+    metaBytes: entry.meta.byteLength,
+    metaSource,
+  };
 }
 
 async function collectDirectoryEntries(
@@ -81,7 +133,7 @@ async function collectDirectoryEntries(
   limitRead: <T>(task: () => Promise<T>) => Promise<T>,
   onEntry: () => void,
   randomGuids: boolean,
-): Promise<CreateUnityPackageEntry[]> {
+): Promise<CollectedPackageEntry[]> {
   const dirEntries = await readdir(sourceDir, { withFileTypes: true });
 
   const entries = await mapConcurrent(dirEntries, packConcurrency, async entry => {
@@ -108,7 +160,7 @@ async function collectDirectoryEntries(
   return entries.flat();
 }
 
-export async function pack(filesToPack: Record<string, string>, outputFile: string, opts: PackOptions = {}): Promise<void> {
+export async function pack(filesToPack: Record<string, string>, outputFile: string, opts: PackOptions = {}): Promise<PackResult> {
   const startTime = performance.now();
   const gzipLevel = validateGzipLevel(opts.gzipLevel);
   const randomGuids = opts.randomGuids === true;
@@ -128,6 +180,7 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
     }
   };
 
+  const missingSources: string[] = [];
   const processedEntries = await mapConcurrent(Object.entries(sanitized), packConcurrency, async ([sourcePath, pathInPackage]) => {
     const absoluteSourcePath = path.resolve(sourcePath);
 
@@ -144,6 +197,7 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
 
     if (!stats) {
       console.error(`Error: Source path not found: ${sourcePath}`);
+      missingSources.push(sourcePath);
       return [];
     }
 
@@ -159,22 +213,62 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
     return entries;
   });
 
-  const packageEntries = processedEntries.flat();
+  const collectedEntries = processedEntries.flat();
+  const packageEntries = collectedEntries.map(collected => collected.entry);
+  const planEntries = collectedEntries.map(collected => collected.plan);
   if (packageEntries.length > progressThreshold) {
     progress(`Pack progress: writing ${packageEntries.length} entries`);
   }
+  const estimate = estimateUnityPackageSize(packageEntries);
   const result = tryCreateUnityPackage(packageEntries, { gzipLevel });
+  const packResult = createPackResult(outputFile, opts.dryRun === true, estimate, planEntries, result.diagnostics, missingSources);
   if (result.bytes === null) {
     for (const diagnostic of result.diagnostics) {
       console.error(formatCreateDiagnostic(diagnostic));
     }
+    if (opts.json) writeJsonResult(packResult);
     throw new CliError('Package validation failed.', EXIT.ERROR);
   }
-  const data = result.bytes;
-  await writeFile(outputFile, data);
+
+  if (!opts.dryRun) {
+    const data = result.bytes;
+    await writeFile(outputFile, data);
+  }
 
   const elapsed = (performance.now() - startTime).toFixed(2);
-  info(`Package created at ${outputFile} (${elapsed}ms)`);
+  if (opts.json) {
+    writeJsonResult(packResult);
+  } else {
+    info(opts.dryRun
+      ? `Package plan OK for ${outputFile} (${elapsed}ms)`
+      : `Package created at ${outputFile} (${elapsed}ms)`);
+  }
+  return packResult;
+}
+
+function createPackResult(
+  outputFile: string,
+  dryRun: boolean,
+  estimate: { tarBytes: number; entryCount: number },
+  entries: PackPlanEntry[],
+  diagnostics: CreateUnityPackageDiagnostic[],
+  missingSources: string[],
+): PackResult {
+  return {
+    schemaVersion: 0,
+    outputFile,
+    dryRun,
+    summary: {
+      entries: entries.length,
+      tarBytes: estimate.tarBytes,
+      tarMembers: estimate.entryCount,
+      diagnostics: diagnostics.length,
+      missingSources: missingSources.length,
+    },
+    entries,
+    diagnostics,
+    missingSources,
+  };
 }
 
 function formatCreateDiagnostic(diagnostic: CreateUnityPackageDiagnostic): string {

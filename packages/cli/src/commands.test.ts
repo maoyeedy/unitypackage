@@ -16,8 +16,11 @@ describe('cli help', () => {
       const help = logSpy.mock.calls.map(call => call[0]).join('\n');
       expect(help).toContain('extract <package.unitypackage> [output-dir]');
       expect(help).toContain('--filter <glob>    Match full package pathnames');
+      expect(help).toContain('--exclude <glob>   Exclude full package pathnames');
       expect(help).toContain('--path <pathname>  Extract one exact package pathname; repeatable');
+      expect(help).toContain('--path-file <file> Read exact package pathnames');
       expect(help).toContain('--with-meta        Include sidecars for exact --path asset selections');
+      expect(help).toContain('--dry-run          Plan extraction without writing files');
       expect(help).toContain('inspect <package.unitypackage>');
       expect(help).toContain('--json             Write inspect result as JSON');
       expect(help).toContain('verify <package.unitypackage>');
@@ -47,6 +50,23 @@ describe('cli extract path options', () => {
     const parsed = parseArgs(['extract', 'fixture.unitypackage', 'out', '--path', 'Assets/A.cs', '--with-meta']);
 
     expect(parsed.flags['with-meta']).toBe(true);
+  });
+
+  it('parses --path-file, --exclude, and --dry-run', () => {
+    const parsed = parseArgs([
+      'extract',
+      'fixture.unitypackage',
+      'out',
+      '--path-file',
+      'paths.txt',
+      '--exclude',
+      'Assets/Ignore/**',
+      '--dry-run',
+    ]);
+
+    expect(parsed.flags['path-file']).toBe('paths.txt');
+    expect(parsed.flags.exclude).toBe('Assets/Ignore/**');
+    expect(parsed.flags['dry-run']).toBe(true);
   });
 
   it('rejects --with-meta without --path after reading package bytes', async () => {

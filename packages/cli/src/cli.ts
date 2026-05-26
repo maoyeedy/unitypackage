@@ -71,7 +71,8 @@ async function runExtract(
   if (!packagePath) throw new CliError('extract requires <package.unitypackage>', EXIT.ERROR);
   const filter = flagStr(flags, 'filter');
   const paths = flagStrs(flags, 'path');
-  if (filter !== undefined && paths.length > 0) {
+  const pathFile = flagStr(flags, 'path-file');
+  if (filter !== undefined && (paths.length > 0 || pathFile !== undefined)) {
     throw new CliError('extract --filter and --path cannot be combined.', EXIT.ERROR);
   }
   await extract(packagePath, outputDir, {
@@ -81,7 +82,11 @@ async function runExtract(
     noMeta: flagBool(flags, 'no-meta'),
     withMeta: flagBool(flags, 'with-meta'),
     filter,
+    exclude: flagStr(flags, 'exclude'),
     paths,
+    pathFile,
+    dryRun: flagBool(flags, 'dry-run'),
+    json: flagBool(flags, 'json'),
     parseOptions,
   });
 }
@@ -100,6 +105,7 @@ async function runInspect(
     json,
     format,
     filter: flagStr(flags, 'filter'),
+    exclude: flagStr(flags, 'exclude'),
     parseOptions,
   });
 }
@@ -132,6 +138,8 @@ async function runPack(positional: string[], flags: Record<string, string | bool
     ...(manifestPath !== undefined && { manifestPath: path.resolve(manifestPath) }),
     ...(gzipLevel !== undefined && { gzipLevel }),
     randomGuids: flagBool(flags, 'random-guids'),
+    dryRun: flagBool(flags, 'dry-run'),
+    json: flagBool(flags, 'json'),
   });
 }
 
@@ -179,22 +187,29 @@ Usage: unitypackage-tools <command> [options]
 Commands:
   extract <package.unitypackage> [output-dir]
     --filter <glob>    Match full package pathnames, e.g. **/*.shader
+    --exclude <glob>   Exclude full package pathnames
     --path <pathname>  Extract one exact package pathname; repeatable
+    --path-file <file> Read exact package pathnames from a line-delimited file
     --merge            Merge into an existing directory
     --force            Overwrite existing files
     --skip-existing    Skip files that already exist
     --no-meta          Do not write .meta files
     --with-meta        Include sidecars for exact --path asset selections
+    --dry-run          Plan extraction without writing files
+    --json             Write extract plan/result as JSON
 
   pack <output.unitypackage> [src dest]...
     --manifest <file>  Read JSON { "src": "dst" } pairs
     --gzip-level <0-9> Set gzip compression level
     --random-guids     Generate non-reproducible GUIDs for missing .meta files
+    --dry-run          Validate and plan package creation without writing
+    --json             Write pack plan/result as JSON
 
   inspect <package.unitypackage>
     --json             Write inspect result as JSON
     --format <format>  Output format: list or tree
-    --filter <ext>     Show only entries with extension
+    --filter <filter>  Show only entries matching extension or glob
+    --exclude <glob>   Exclude full package pathnames
 
   verify <package.unitypackage>
     --json             Write verify result as JSON

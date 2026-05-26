@@ -156,6 +156,87 @@ describe('extract', () => {
     await expect(readFile(path.join(outDir, 'Assets/Textures/Icon.png'))).rejects.toThrow();
   });
 
+  it('excludes pathnames matching --exclude', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildScriptAndTexturePackage());
+    const result = await extract(packagePath, outDir, { exclude: 'Assets/Textures/**' });
+
+    expect(result.summary.planned).toBe(2);
+    const asset = await readFile(path.join(outDir, 'Assets/Scripts/MyScript.cs'));
+    expect(decoder.decode(asset)).toBe('public class MyScript {}');
+    await expect(readFile(path.join(outDir, 'Assets/Textures/Icon.png'))).rejects.toThrow();
+  });
+
+  it('plans extraction without writing when --dry-run is enabled', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildSingleScriptPackage());
+    const result = await extract(packagePath, outDir, { dryRun: true });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.summary.planned).toBe(2);
+    expect(result.planned.map(item => [item.path, item.action])).toEqual([
+      ['Assets/Scripts/MyScript.cs', 'write'],
+      ['Assets/Scripts/MyScript.cs.meta', 'write'],
+    ]);
+    await expect(readFile(path.join(outDir, 'Assets/Scripts/MyScript.cs'))).rejects.toThrow();
+  });
+
+  it('writes parseable json for dry-run extraction plans', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      await writeFile(packagePath, buildSingleScriptPackage());
+      await extract(packagePath, outDir, { dryRun: true, json: true });
+
+      const result = JSON.parse(stdoutSpy.mock.calls.map(call => call[0]).join('')) as {
+        dryRun: boolean;
+        summary: { planned: number };
+      };
+      expect(result.dryRun).toBe(true);
+      expect(result.summary.planned).toBe(2);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
+  it('reports dry-run conflicts without throwing', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildSingleScriptPackage());
+    await extract(packagePath, outDir);
+    const result = await extract(packagePath, outDir, { dryRun: true });
+
+    expect(result.summary.conflicts).toBe(2);
+    expect(result.planned.every(item => item.action === 'conflict')).toBe(true);
+  });
+
+  it('reads exact selections from --path-file', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    const pathFile = path.join(dir, 'paths.txt');
+    const outDir = path.join(dir, 'out');
+
+    await writeFile(packagePath, buildScriptAndTexturePackage());
+    await writeFile(pathFile, '\nAssets/Scripts/MyScript.cs\nAssets/Textures/Icon.png\n');
+    const result = await extract(packagePath, outDir, { pathFile });
+
+    expect(result.summary.planned).toBe(2);
+    await expect(readFile(path.join(outDir, 'Assets/Scripts/MyScript.cs.meta'))).rejects.toThrow();
+    const texture = await readFile(path.join(outDir, 'Assets/Textures/Icon.png'));
+    expect(decoder.decode(texture)).toBe('png');
+  });
+
   it('extracts repeated exact asset path selections without implicit meta sidecars', async () => {
     const dir = await makeTempDir();
     const packagePath = path.join(dir, 'fixture.unitypackage');

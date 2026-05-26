@@ -60,6 +60,21 @@ describe('inspect', () => {
       expect(result.summary.uniqueGuidCount).toBe(1);
       expect(result.summary.duplicateGuidCount).toBe(0);
       expect(result.summary.byExtension).toEqual([{ extension: 'cs', count: 1, assetBytes: 24 }]);
+      expect(result.components.map((component: { component: string; virtualPath: string }) => [
+        component.component,
+        component.virtualPath,
+      ])).toEqual([
+        ['asset', 'Assets/Scripts/MyScript.cs'],
+        ['meta', 'Assets/Scripts/MyScript.cs.meta'],
+        ['preview', 'Assets/Scripts/MyScript.cs.preview.png'],
+      ]);
+      expect(result.components[0]).toMatchObject({
+        byteLength: 24,
+        extension: 'cs',
+        mimeType: 'text/plain;charset=utf-8',
+        previewKind: 'text',
+        syntaxLanguage: 'csharp',
+      });
     } finally {
       stdoutSpy.mockRestore();
     }
@@ -101,6 +116,18 @@ describe('inspect', () => {
 
     expect(result.entries.map(e => e.pathname)).toEqual(['Assets/Scripts/MyScript.cs']);
     expect(result.summary.entries).toBe(1);
+  });
+
+  it('filters displayed entries by glob and exclude glob', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'fixture.unitypackage');
+    await writeFile(packagePath, buildScriptAndTexturePackage());
+
+    const scriptOnly = await inspect(packagePath, { filter: 'Assets/**/*.cs' });
+    const withoutScripts = await inspect(packagePath, { exclude: 'Assets/Scripts/**' });
+
+    expect(scriptOnly.entries.map(e => e.pathname)).toEqual(['Assets/Scripts/MyScript.cs']);
+    expect(withoutScripts.entries.map(e => e.pathname)).toEqual(['Assets/Textures/Icon.png']);
   });
 
   it('scopes json summary and entries to the filter', async () => {

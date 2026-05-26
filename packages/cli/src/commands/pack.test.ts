@@ -197,6 +197,64 @@ describe('pack', () => {
     expect(entries.some(e => e.pathname === 'Assets/ManifestScript.cs' && e.hasAsset)).toBe(true);
   });
 
+  it('plans package creation without writing when --dry-run is enabled', async () => {
+    const dir = await makeTempDir();
+    const sourceFile = path.join(dir, 'DryRun.cs');
+    const packageFile = path.join(dir, 'out.unitypackage');
+
+    await writeFile(sourceFile, 'public class DryRun {}');
+
+    const result = await pack({ [sourceFile]: 'Assets/DryRun.cs' }, packageFile, { dryRun: true });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.summary.entries).toBe(1);
+    expect(result.summary.tarBytes).toBeGreaterThan(0);
+    expect(result.entries[0]).toMatchObject({
+      sourcePath: sourceFile,
+      pathname: 'Assets/DryRun.cs',
+      hasAsset: true,
+      metaSource: 'generated-deterministic',
+    });
+    await expect(readFile(packageFile)).rejects.toThrow();
+  });
+
+  it('writes parseable json for dry-run package plans', async () => {
+    const dir = await makeTempDir();
+    const sourceFile = path.join(dir, 'DryRun.cs');
+    const packageFile = path.join(dir, 'out.unitypackage');
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    try {
+      await writeFile(sourceFile, 'public class DryRun {}');
+      await pack({ [sourceFile]: 'Assets/DryRun.cs' }, packageFile, { dryRun: true, json: true });
+
+      const result = JSON.parse(stdoutSpy.mock.calls.map(call => call[0]).join('')) as {
+        dryRun: boolean;
+        summary: { entries: number };
+      };
+      expect(result.dryRun).toBe(true);
+      expect(result.summary.entries).toBe(1);
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
+  it('reports existing meta source in dry-run package plans', async () => {
+    const dir = await makeTempDir();
+    const sourceFile = path.join(dir, 'DryRun.cs');
+    const packageFile = path.join(dir, 'out.unitypackage');
+
+    await writeFile(sourceFile, 'public class DryRun {}');
+    await writeFile(sourceFile + '.meta', 'fileFormatVersion: 2\nguid: abcdefabcdefabcdefabcdefabcdefab\n');
+
+    const result = await pack({ [sourceFile]: 'Assets/DryRun.cs' }, packageFile, { dryRun: true });
+
+    expect(result.entries[0]).toMatchObject({
+      guid: 'abcdefabcdefabcdefabcdefabcdefab',
+      metaSource: 'existing',
+    });
+  });
+
   it('rejects invalid manifest entries', async () => {
     const dir = await makeTempDir();
     const manifestFile = path.join(dir, 'manifest.json');

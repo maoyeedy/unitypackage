@@ -8,13 +8,18 @@ export interface DiffEntry {
   guid: string;
   pathname: string;
   assetHash: string | null;
+  metaHash: string | null;
+  previewHash: string | null;
 }
 
 export interface ChangedDiffEntry {
   guid: string;
   before: DiffEntry;
   after: DiffEntry;
+  changed: DiffChangedComponent[];
 }
+
+type DiffChangedComponent = 'pathname' | 'asset' | 'meta' | 'preview';
 
 export interface DiffResult {
   schemaVersion: 0;
@@ -47,8 +52,11 @@ export async function diff(packageA: string, packageB: string, opts: DiffOptions
     const afterEntry = afterByGuid.get(entry.guid);
     if (!afterEntry) {
       removed.push(entry);
-    } else if (entry.pathname !== afterEntry.pathname || entry.assetHash !== afterEntry.assetHash) {
-      changed.push({ guid: entry.guid, before: entry, after: afterEntry });
+    } else {
+      const changedComponents = getChangedComponents(entry, afterEntry);
+      if (changedComponents.length > 0) {
+        changed.push({ guid: entry.guid, before: entry, after: afterEntry, changed: changedComponents });
+      }
     }
   }
 
@@ -84,8 +92,23 @@ function toDiffEntry(entry: UnityPackageEntry): DiffEntry {
   return {
     guid: entry.guid,
     pathname: entry.pathname,
-    assetHash: entry.asset ? crypto.createHash('sha256').update(entry.asset).digest('hex') : null,
+    assetHash: hashBytes(entry.asset),
+    metaHash: hashBytes(entry.meta),
+    previewHash: hashBytes(entry.preview),
   };
+}
+
+function hashBytes(bytes: Uint8Array | undefined): string | null {
+  return bytes ? crypto.createHash('sha256').update(bytes).digest('hex') : null;
+}
+
+function getChangedComponents(before: DiffEntry, after: DiffEntry): DiffChangedComponent[] {
+  const changed: DiffChangedComponent[] = [];
+  if (before.pathname !== after.pathname) changed.push('pathname');
+  if (before.assetHash !== after.assetHash) changed.push('asset');
+  if (before.metaHash !== after.metaHash) changed.push('meta');
+  if (before.previewHash !== after.previewHash) changed.push('preview');
+  return changed;
 }
 
 function sortEntries(entries: DiffEntry[]): void {
@@ -93,7 +116,7 @@ function sortEntries(entries: DiffEntry[]): void {
 }
 
 function formatEntry(entry: DiffEntry): string {
-  return `${entry.guid} ${entry.pathname} asset=${entry.assetHash ?? '<none>'}`;
+  return `${entry.guid} ${entry.pathname} asset=${entry.assetHash ?? '<none>'} meta=${entry.metaHash ?? '<none>'} preview=${entry.previewHash ?? '<none>'}`;
 }
 
 function printDiff(result: DiffResult): void {
@@ -110,8 +133,8 @@ function printDiff(result: DiffResult): void {
 
   info(`Changed: ${result.summary.changed}`);
   for (const entry of result.changed) {
-    info(`  ~ ${entry.guid}`);
-    info(`    before ${entry.before.pathname} asset=${entry.before.assetHash ?? '<none>'}`);
-    info(`    after  ${entry.after.pathname} asset=${entry.after.assetHash ?? '<none>'}`);
+    info(`  ~ ${entry.guid} changed=${entry.changed.join(',')}`);
+    info(`    before ${formatEntry(entry.before)}`);
+    info(`    after  ${formatEntry(entry.after)}`);
   }
 }
