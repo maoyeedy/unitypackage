@@ -27,13 +27,12 @@ bunx eslint apps/web/src
 
 Manual smoke (after `build`):
 ```
-node packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
-node packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
-node packages/cli/dist/bin.js doctor  "fixtures/static/editor-packed.unitypackage"
+bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
+bun packages/cli/dist/bin.js verify  "fixtures/static/editor-packed.unitypackage"
 node scripts/fixtures-build.ts
-node packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
-node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"
-node packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge
+bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
+bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"
+bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge
 ```
 
 ## Node versions
@@ -80,7 +79,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **NodeNext `.js` extensions** (`packages/cli`): all relative `.ts` imports must use `.js` extension in source.
 - **CLI glob filters match full package pathnames**: use `**/*.shader` for nested shader files; `*.shader` only matches root-level package paths.
 - **CLI JSON modes keep stdout parseable**: route progress, warnings, and summaries through stderr/logger helpers.
-- **`doctor` is format-scoped**: do not add Unity YAML schema validation unless a later plan explicitly asks for it.
+- **`verify` is format-scoped**: do not add Unity YAML schema validation unless a later plan explicitly asks for it.
 - **Generated fixtures currently include** `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, and `truncated`; use `minimal` vs `nested` for diff smoke, not `multi-entry`.
 - **`packages/core/tsconfig.json` omits `moduleResolution`** intentionally: TS 5.9 forbids `module:CommonJS` + `moduleResolution:Node16`. Don't add it.
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
@@ -90,6 +89,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **`bun run --filter @unitypackage-tools/web lint` may lint generated `apps/web/dev-dist/`**: use `bunx eslint apps/web/src` for source-only lint after web UI edits.
 - **ESLint type-aware rules exclude `*.test.ts`** in `packages/cli` — they lack `@types/node` in tsconfig scope.
 - **`build:cli` order**: `node scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
+- **Built CLI smoke uses Bun**: run `packages/cli/dist/bin.js` smoke commands with `bun`, not `node`; Node currently fails on the core ESM barrel's extensionless imports.
 - **100-byte tar entry name limit**: entry format `<guid>/pathname`, `<guid>/asset.meta`, `<guid>/asset`. GUID is 32 chars — remaining budget tight.
 - **`sanitize-filename` removed**: inlined as `sanitizeFilename()` in `packages/cli/src/util/path.ts` via simple regex (Node ≥22).
 - **E2E tests are ESM**: `__dirname` is unavailable in `apps/web/tests/*.spec.ts`; use `path.dirname(fileURLToPath(import.meta.url))` for fixture paths.

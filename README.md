@@ -5,7 +5,7 @@ Tools for inspecting, extracting, verifying, diffing, and packing Unity
 
 This monorepo contains:
 - `packages/core`: browser-safe parser and package creation library. Public imports stay on the package root (`unitypackage-core`); runtime source is split by domain under `packages/core/src`.
-- `packages/cli`: Node CLI for extract, inspect, verify, pack, diff, and doctor workflows.
+- `packages/cli`: Node CLI for extract, inspect, verify, pack, and diff workflows.
 - `apps/web`: English-only React/Vite PWA workspace for local browser inspection and extraction.
 - `fixtures`: generated and editor-exported packages used by tests and smoke checks.
 
@@ -45,8 +45,7 @@ bun run --filter @unitypackage-tools/web typecheck
 After `bun run build`, common manual checks are:
 
 ```sh
-node packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
-node packages/cli/dist/bin.js verify "fixtures/static/editor-packed.unitypackage"
-node packages/cli/dist/bin.js doctor "fixtures/static/editor-packed.unitypackage"
-node packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
+bun packages/cli/dist/bin.js inspect "fixtures/static/editor-packed.unitypackage" --json
+bun packages/cli/dist/bin.js verify "fixtures/static/editor-packed.unitypackage"
+bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json
 ```

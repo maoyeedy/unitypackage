@@ -908,4 +908,4 @@ This package intentionally does not:
 - Expose public subpath imports.
 
 Use the CLI package when you need filesystem commands such as inspect, extract,
-verify, doctor, or diff.
+verify, or diff.

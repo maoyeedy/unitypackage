@@ -53,7 +53,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 
 - **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, buffered, includes structured diagnostics), `parseUnityPackageStream` (iterator-based; yields entries and diagnostics as each GUID group completes; supports `onProgress` and bomb guards), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
 - `packages/core/src/index.ts` is the public barrel. Implementation lives in domain modules (`guid`, `pathname`, `meta`, `parse`, `create`, `summary`) plus shared `model` types and private `tar` helpers. Public consumers should import from `unitypackage-core`, not internal files.
-- **`packages/cli`**: extract, pack, inspect, verify, diff, doctor, web.
+- **`packages/cli`**: extract, pack, inspect, verify, diff, web.
 
 | Aspect | Detail |
 |---|---|
@@ -99,14 +99,13 @@ unitypackage-tools pack    <output> <src> <dest>... [--manifest <file.json>] [--
 unitypackage-tools inspect <package> [--json] [--format tree] [--filter <ext>]
 unitypackage-tools verify  <package> [--json] [--strict]
 unitypackage-tools diff    <before> <after> [--json]
-unitypackage-tools doctor  <package>
 unitypackage-tools web     [--port <n>]
 ```
 
 CLI glob filters match full package pathnames. For nested shader assets, use
 `**/*.shader`; `*.shader` only matches root-level package paths.
 
-`doctor` reports structural health checks scoped to this format reference. It
+`verify` reports structural health checks scoped to this format reference. It
 does not validate Unity YAML schemas.
 
 ## Compatibility

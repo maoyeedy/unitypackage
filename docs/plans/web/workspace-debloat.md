@@ -4,7 +4,7 @@
 
 The current web workspace is functionally rich but visually overloaded. The
 left pane mixes package opening, search, advanced filters, grouping, ZIP
-settings, stats, top extensions, recents, and theme controls. The right pane
+settings, stats, top extensions, and recents. The right pane
 mixes preview, metadata, diagnostics, and raw sidecar detail in one long
 surface. The implementation mirrors this concentration: `apps/web/src/App.tsx`
 is over 4000 lines, `App.css` is over 1700 lines, and `packageModel.ts`
@@ -50,7 +50,7 @@ Out of scope:
 | P1 | Split web shell | Move App subtrees, hooks, and CSS into smaller files with no behavior change. | - | `apps/web/src/App.tsx`, `apps/web/src/App.css`, new `components/`, `hooks/`, `styles/` |
 | P2 | Simplify search and filters | Remove confusing filter controls and make search behave as one obvious path/name search. | P1 | `apps/web/src/components/`, `apps/web/src/packageModel.ts`, tests |
 | P3 | Hide preview rows by default | Make synthetic Unity preview records opt-in in the Extract list. | P2 | model helpers, explorer components, tests |
-| P4 | Reduce left pane chrome | Move stats, recents, theme, and secondary settings out of the always-visible sidebar. | P2, P3 | sidebar/topbar/settings components, CSS |
+| P4 | Reduce left pane chrome | Move stats, recents, and secondary settings out of the always-visible sidebar. | P2, P3 | sidebar/topbar/settings components, CSS |
 | P5 | Rebuild details pane hierarchy | Make the right pane preview-first with compact details and expandable diagnostics. | P1 | preview/details components, CSS |
 
 ### P1 -- Split web shell
@@ -190,8 +190,6 @@ Behavior changes:
 - Move package stats and top extensions to a compact "Package summary"
   disclosure, details tab, or diagnostics drawer section.
 - Move recent packages to the top bar open menu or a small dialog.
-- Move theme control to a settings menu in the top bar.
-
 Exit criteria:
 
 - The left pane fits in a short viewport without becoming a long stack of
@@ -267,4 +265,4 @@ Manual smoke:
   stageable assets.
 - Select a diagnostic-heavy record and confirm details remain readable until
   the diagnostics section is expanded.
-- Switch theme and reopen a recent package from its new location.
+- Reopen a recent package from its new location in the top bar.
