@@ -13,6 +13,8 @@ export default tseslint.config(
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
+      'no-trailing-spaces': 'error',
+      'eol-last': ['error', 'always'],
     },
   },
 
