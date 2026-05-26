@@ -39,10 +39,15 @@ Do not rebuild these surfaces in `apps/web`.
      sidecar behavior is settled.
    - Core creation phases are already done, so start at the web worker phase.
 
-5. `workspace-polish.md`
-   - Final shell and organization pass after Extract and Pack surfaces exist.
-   - Includes componentization and should not happen before the main workflows
-     stabilize.
+5. `workspace-debloat.md`
+   - First workspace cleanup pass after Extract and Pack surfaces exist.
+   - Splits the oversized web files, removes low-value filters, hides preview
+     rows by default, and makes the left and right panes readable again.
+
+6. `workspace-additions.md`
+   - Restrained follow-up polish after the debloat pass lands.
+   - Adds pane controls, compact top-bar menus, related-record navigation,
+     operation feedback, and Pack scanability without restoring clutter.
 
 ## Validation Floor
 

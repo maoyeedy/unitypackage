@@ -31,6 +31,14 @@ export default defineConfig({
             purpose: 'any maskable',
           },
         ],
+        file_handlers: [
+          {
+            action: './',
+            accept: {
+              'application/x-unitypackage': ['.unitypackage'],
+            },
+          },
+        ],
       },
     }),
   ],

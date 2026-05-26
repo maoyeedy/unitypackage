@@ -9,9 +9,15 @@ test('renders app heading', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Unity Package Workspace', level: 1 })).toBeVisible();
 });
 
-test('shows initial status prompt', async ({ page }) => {
+test('statusbar has no initial text on fresh load', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('Open a .unitypackage to inspect its contents.')).toBeVisible();
+  // After the status string was replaced with a current-op indicator,
+  // the footer is empty on idle (no freeform initial message).
+  const statusbar = page.locator('.statusbar');
+  await expect(statusbar).toBeVisible();
+  // The statusbar-op span should be empty when no op is running
+  const opSpan = statusbar.locator('.statusbar-op');
+  await expect(opSpan).toBeEmpty();
 });
 
 test('shows Extract and Pack mode tabs', async ({ page }) => {
@@ -39,5 +45,17 @@ test('preview panel shows file content and metadata after clicking a record', as
   await tree.getByText('Changelog.md', { exact: true }).click();
   const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
   await expect(preview.getByText('[2.0.0]')).toBeVisible();
-  await expect(preview.getByText('af5e6a19cb4edd345ac8100ccb3a44b7')).toBeVisible();
+  await expect(preview.getByText('af5e6a19cb4edd345ac8100ccb3a44b7').first()).toBeVisible();
+});
+
+test('meta rows are not visible in tree when Include .meta with assets is off', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Open package').setInputFiles(fixturePath);
+  await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+  const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
+  await expect(metaCheckbox).not.toBeChecked();
+  const tree = page.getByRole('tree', { name: 'Package file tree' });
+  // With setting off, no treeitem label should end with .meta
+  const metaItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.meta/ });
+  await expect(metaItems.first()).not.toBeVisible();
 });
