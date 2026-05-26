@@ -39,14 +39,14 @@ core break. No deprecation aliases.
 
 ## Phases
 
-| Phase | Title | Files touched | Independent? |
-|------:|-------|---------------|:---:|
-| [P1](P1-drop-dead-code.md) | Drop dead and deprecated code | core, cli, web | yes |
-| [P2](P2-verify-consume-diagnostics.md) | CLI `verify` consumes core diagnostics | cli | yes |
-| [P3](P3-collapse-parse-surface.md) | Collapse parse API surface | core, cli, web, docs | breaking |
-| [P4](P4-lift-helpers-to-core.md) | Lift `matchGlob` + `writeMetaGuid` into core | core, cli, web | yes |
-| [P5](P5-cross-package-consistency.md) | GUID validity, preview-on-create, diagnostic codes | core, cli, web | breaking |
-| [P6](P6-web-record-extends-core.md) | `PackageFileRecord` extends `UnityPackageComponentRecord` | web | yes |
+| Phase | Title | Files touched | Independent? | Status |
+|------:|-------|---------------|:---:|:---:|
+| [P1](P1-drop-dead-code.md) | Drop dead and deprecated code | core, cli, web | yes | Shipped |
+| [P2](P2-verify-consume-diagnostics.md) | CLI `verify` consumes core diagnostics | cli | yes | Shipped |
+| [P3](P3-collapse-parse-surface.md) | Collapse parse API surface | core, cli, web, docs | breaking | Shipped |
+| [P4](P4-lift-helpers-to-core.md) | Lift `matchGlob` + `writeMetaGuid` into core | core, cli, web | yes | Shipped |
+| [P5](P5-cross-package-consistency.md) | GUID validity, preview-on-create, diagnostic codes | core, cli, web | breaking | Shipped |
+| [P6](P6-web-record-extends-core.md) | `PackageFileRecord` extends `UnityPackageComponentRecord` | web | yes | Shipped |
 
 Phases are mostly independent and can ship in any order. P1 and P2 are pure
 deletion/refactor and good first picks. P3 and P5 require consumer updates
