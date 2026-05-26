@@ -5,7 +5,7 @@ description: Write committed E2E test suites for apps/web using @playwright/test
 
 # Writing E2E Tests for apps/web
 
-Tests live in `apps/web/tests/`. Runner: `cd apps/web && bunx playwright test` (Chromium + Firefox, port 4173 preview).
+Tests live in `apps/web/tests/`. Runner: `cd apps/web && bunx playwright test` (Chromium, port 4173 preview).
 
 ## Workflow
 

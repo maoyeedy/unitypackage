@@ -80,7 +80,7 @@ All contexts (dev, CI, published): Node ≥24.
 
 ## Testing
 
-- **E2E**: `@playwright/test` via `apps/web/playwright.config.ts` (Chromium+Firefox, port 4173, `strictPort: true`). Requires `bun run build` first. Reuses preview server (`reuseExistingServer: true`). No `playwright-cli` or `@playwright/mcp`.
+- **E2E**: `@playwright/test` via `apps/web/playwright.config.ts` (Chromium, port 4173, `strictPort: true`). Requires `bun run build` first. Reuses preview server (`reuseExistingServer: true`). No `playwright-cli` or `@playwright/mcp`.
   - Run: `cd apps/web && bunx playwright test`
   - Debug: `cd apps/web && bunx playwright test --debug`
   - Report: `cd apps/web && bunx playwright show-report`

@@ -15,7 +15,7 @@ bunx playwright codegen           # record actions, generate locator drafts
 
 ## Config
 
-- `apps/web/playwright.config.ts` - projects Chromium + Firefox; expects Vite preview on port 5173.
+- `apps/web/playwright.config.ts` - project Chromium; expects Vite preview on port 5173.
 
 ## Best practices
 
