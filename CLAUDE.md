@@ -4,7 +4,7 @@
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | Node CLI, Node ≥24 |
-| `apps/web` | `@unitypackage-tools/web` | Vite 6 + React 19 PWA |
+| `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 PWA |
 | `fixtures` | `@unitypackage-tools/fixtures` | synth builders (`generated/`), assets, archived packages (`static/`) |
 | `scripts` | — | `clean.ts`, `copy-web-assets.ts`, `fixtures-build.ts`, `smoke.ts` |
 
@@ -66,6 +66,8 @@ All contexts (dev, CI, published): Node ≥24.
 - **`PARSER_IGNORED_PREVIEW` silently skipped** in verify — normal for every `preview.png`.
 - **ESLint in CLI excludes `*.test.ts`** — they lack `@types/node` in tsconfig scope.
 - **Generated fixtures**: `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, `truncated`. Static fixtures cover common Unity file types. Archive: `fixtures/static/archives/Polytope_URP.unitypackage`.
+- **`react-hooks/set-state-in-effect` globally disabled** — eslint-plugin-react-hooks v7+ bundles React Compiler rules. Suppressed in `eslint.config.mjs` because the codebase uses `useEffect` for derived-state resets. New code should avoid `setState` in effects; re-enable after a refactor pass.
+- **`bun run test` chains project-based commands** — `bun run test:core && bun run test:cli && bun run test:web`. Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
 
 ## Testing
 
