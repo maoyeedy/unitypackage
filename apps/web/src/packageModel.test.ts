@@ -9,6 +9,7 @@ import { analyzeUnityPackageEntries, createMinimalMetaFor, createUnityPackage, p
 import {
   buildExtensionGroups,
   buildTreeRows,
+  canStageRecordForPack,
   collectDiagCodes,
   entriesToRecords,
   expandAncestors,
@@ -113,6 +114,29 @@ describe('package model helpers', () => {
     expect(metaRecord?.previewKind).toBe('text');
     expect(metaRecord?.mimeType).toBe('text/plain;charset=utf-8');
     expect(metaRecord?.byteLength).toBe(pngMeta.byteLength);
+  });
+
+  it('only allows asset records to be staged for pack', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Texture.png',
+        asset: encoder.encode('asset'),
+        meta: encoder.encode('meta content'),
+        preview: encoder.encode('preview bytes'),
+      },
+    ], []);
+
+    const asset = records.find(record => getRecordCategory(record) === 'asset');
+    const meta = records.find(record => getRecordCategory(record) === 'meta');
+    const preview = records.find(record => getRecordCategory(record) === 'preview');
+
+    expect(asset).toBeDefined();
+    expect(meta).toBeDefined();
+    expect(preview).toBeDefined();
+    expect(records.filter(canStageRecordForPack).map(record => record.id)).toEqual([asset?.id]);
+    expect(canStageRecordForPack(meta!)).toBe(false);
+    expect(canStageRecordForPack(preview!)).toBe(false);
   });
 
   it('builds deterministic tree rows', () => {

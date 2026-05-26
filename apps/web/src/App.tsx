@@ -40,6 +40,7 @@ import type { DownloadZipResponse, ParsePackageResponse, CreatePackageResponse }
 import {
   buildExtensionGroups,
   buildTreeRows,
+  canStageRecordForPack,
   collectDiagCodes,
   expandAncestors,
   filterRecords,
@@ -1155,11 +1156,26 @@ function AppContent() {
   }, [includeMetaSidecars, records]);
 
   const stageSelection = () => {
+    const selectedRecords = records.filter(record => selectedRecordIds.has(record.id));
+    const stageableIds = new Set(
+      selectedRecords
+        .filter(canStageRecordForPack)
+        .map(record => record.id)
+    );
+    const skippedCount = selectedRecords.length - stageableIds.size;
+
     setStagedRecordIds(previous => {
       const next = new Set(previous);
-      for (const id of selectedRecordIds) next.add(id);
+      for (const id of stageableIds) next.add(id);
       return next;
     });
+    if (stageableIds.size === 0) {
+      setStatus('No packable assets selected.');
+    } else if (skippedCount > 0) {
+      setStatus(`Staged ${stageableIds.size.toString()} assets and skipped ${skippedCount.toString()} preview or meta records.`);
+    } else {
+      setStatus(`Staged ${stageableIds.size.toString()} assets for pack.`);
+    }
     setMode('pack');
   };
 

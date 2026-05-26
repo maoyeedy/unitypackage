@@ -73,6 +73,10 @@ export function getRecordCategory(record: PackageFileRecord): RecordCategory {
   return 'asset';
 }
 
+export function canStageRecordForPack(record: PackageFileRecord): boolean {
+  return !record.isUnityPreview && record.extension !== 'meta';
+}
+
 /**
  * Adapts a PackageFileRecord[] to the shape resolveMetaSidecarSelection expects.
  * Uses getRecordCategory(record) for the 'kind' field.
@@ -1047,5 +1051,4 @@ export function pairDroppedItems(
 
   return results;
 }
-
 
