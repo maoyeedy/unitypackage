@@ -126,7 +126,7 @@ let passed = 0;
 let failed = 0;
 
 for (const t of tests) {
-  let ok = false;
+  let ok: boolean;
   try { ok = t.run(); } catch { ok = false; }
   log(ok, t.name);
   if (ok) passed++;
