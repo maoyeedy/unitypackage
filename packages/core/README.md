@@ -118,6 +118,7 @@ Options:
 interface ParseUnityPackageOptions {
   maxOutputBytes?: number;
   maxEntries?: number;
+  chunkSize?: number;
 }
 ```
 
@@ -132,6 +133,7 @@ import {
 
 - `DEFAULT_MAX_OUTPUT_BYTES` is `4 * 1024 * 1024 * 1024`.
 - `DEFAULT_MAX_ENTRIES` is `250_000`.
+- `chunkSize` is the chunk size for gzip decompression in bytes (default `262144` / 256 KiB).
 
 If a limit is exceeded, parsing throws `DecompressionBombError`:
 
@@ -169,14 +171,14 @@ const metaBytes = files['Assets/Scripts/Player.cs.meta'];
 - Diagnostics are not returned. Use `parseUnityPackageEntries` when diagnostics
   matter.
 
-### Streaming Parse
+### Iterator Parse
 
 ```ts
-import { parseUnityPackageStream } from 'unitypackage-core';
+import { iterUnityPackageEntries } from 'unitypackage-core';
 
-for (const item of parseUnityPackageStream(bytes, {
+for (const item of iterUnityPackageEntries(bytes, {
   onProgress(event) {
-    console.log(event.entryCount, event.bytesRead, event.bytesTotal);
+    console.log(event.entryCount);
   },
 })) {
   if (item._kind === 'entry') {
@@ -187,60 +189,31 @@ for (const item of parseUnityPackageStream(bytes, {
 }
 ```
 
-`parseUnityPackageStream(bytes, options?)` is a synchronous generator. It still
-decompresses the full gzip payload synchronously, then streams at the tar layer
-and yields items as GUID groups complete.
+`iterUnityPackageEntries(bytes, options?)` is a synchronous generator. Note that
+gzip and tar are fully decompressed and processed before the generator yields the first
+entry. This function is for callers that want incremental UI updates between entry
+yielding, not memory bounding.
 
 Yielded items are discriminated unions:
 
 ```ts
-type StreamedEntry = UnityPackageEntry & { _kind: 'entry' };
-type StreamedDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
+type IterEntriesEntry = UnityPackageEntry & { _kind: 'entry' };
+type IterEntriesDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
 ```
 
-`StreamParseOptions` extends `ParseUnityPackageOptions` with:
+`IterEntriesOptions` extends `ParseUnityPackageOptions` with:
 
 ```ts
-interface StreamParseOptions extends ParseUnityPackageOptions {
-  onProgress?: (event: StreamParseProgressEvent) => void;
+interface IterEntriesOptions extends ParseUnityPackageOptions {
+  onProgress?: (event: IterEntriesProgressEvent) => void;
 }
 
-interface StreamParseProgressEvent {
-  bytesRead: number;
-  bytesTotal: number;
+interface IterEntriesProgressEvent {
   entryCount: number;
 }
 ```
 
-Progress callbacks are synchronous, rate-limited to about one call every 16 ms,
-and always receive a final event when parsing completes.
-
-### Streamed Gzip Parse
-
-```ts
-import { parseUnityPackageStreamed } from 'unitypackage-core';
-
-const { entries, diagnostics } = parseUnityPackageStreamed(bytes, {
-  maxOutputBytes: 50_000_000,
-  chunkSize: 64 * 1024,
-});
-```
-
-`parseUnityPackageStreamed(data, options?)` uses fflate's streaming `Gunzip`
-API while decompressing. It still returns the same `{ entries, diagnostics }`
-shape as `parseUnityPackageEntries`, but `maxOutputBytes` is checked while gzip
-output chunks are produced, before retaining the full decompressed tar buffer.
-
-Options extend `ParseUnityPackageOptions` with:
-
-```ts
-{
-  chunkSize?: number;
-}
-```
-
-`chunkSize` controls how many compressed bytes are pushed into `Gunzip` per
-step. The default is `64 * 1024`.
+Progress callbacks are synchronous, and fire once per entry.
 
 ## Parse Diagnostics
 
@@ -845,10 +818,9 @@ Runtime exports:
 - `isMetaSidecarPath`
 - `isValidGuid`
 - `metaSidecarPathForAsset`
+- `iterUnityPackageEntries`
 - `parseUnityPackage`
 - `parseUnityPackageEntries`
-- `parseUnityPackageStream`
-- `parseUnityPackageStreamed`
 - `readDeclaredMetaImporter`
 - `readMetaGuid`
 - `resolveMetaSidecarSelection`
@@ -873,11 +845,11 @@ Type exports:
 - `ResolveMetaSidecarsResult`
 - `SidecarSelectableKind`
 - `SidecarSelectableRecord`
-- `StreamParseItemKind`
-- `StreamParseOptions`
-- `StreamParseProgressEvent`
-- `StreamedDiagnostic`
-- `StreamedEntry`
+- `IterEntriesDiagnostic`
+- `IterEntriesEntry`
+- `IterEntriesItemKind`
+- `IterEntriesOptions`
+- `IterEntriesProgressEvent`
 - `SyntaxLanguage`
 - `UnityFileCategory`
 - `UnityPackageAnalysisFinding`

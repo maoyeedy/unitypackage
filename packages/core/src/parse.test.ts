@@ -7,11 +7,10 @@ import {
   DecompressionBombError,
   parseUnityPackage,
   parseUnityPackageEntries,
-  parseUnityPackageStream,
-  parseUnityPackageStreamed,
+  iterUnityPackageEntries,
   type CreateUnityPackageEntry,
-  type StreamedDiagnostic,
-  type StreamedEntry,
+  type IterEntriesDiagnostic,
+  type IterEntriesEntry,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
 } from './index';
@@ -536,36 +535,36 @@ describe('ParseUnityPackageOptions / DecompressionBombError', () => {
 
 
 // ---------------------------------------------------------------------------
-// parseUnityPackageStream helpers
+// iterUnityPackageEntries helpers
 // ---------------------------------------------------------------------------
 
-async function collectStream(
+function collectIterEntries(
   pkg: Uint8Array,
-  options?: Parameters<typeof parseUnityPackageStream>[1],
-): Promise<{ entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] }> {
+  options?: Parameters<typeof iterUnityPackageEntries>[1],
+): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
   const entries: UnityPackageEntry[] = [];
   const diagnostics: UnityPackageParseDiagnostic[] = [];
-  for await (const item of parseUnityPackageStream(pkg, options)) {
+  for (const item of iterUnityPackageEntries(pkg, options)) {
     if (item._kind === 'entry') {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { _kind, ...entry } = item as StreamedEntry;
+      const { _kind, ...entry } = item as IterEntriesEntry;
       entries.push(entry);
     } else {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { _kind, ...diag } = item as StreamedDiagnostic;
+      const { _kind, ...diag } = item as IterEntriesDiagnostic;
       diagnostics.push(diag);
     }
   }
   return { entries, diagnostics };
 }
 
-describe('parseUnityPackageStream', () => {
+describe('iterUnityPackageEntries', () => {
   // -------------------------------------------------------------------------
   // Empty input
   // -------------------------------------------------------------------------
-  it('yields nothing for an empty tar (only zero blocks)', async () => {
+  it('yields nothing for an empty tar (only zero blocks)', () => {
     const pkg = gzipSync(new Uint8Array(1024));
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     expect(entries).toHaveLength(0);
     expect(diagnostics).toHaveLength(0);
   });
@@ -573,7 +572,7 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // Matches parseUnityPackageEntries for a minimal single-entry package
   // -------------------------------------------------------------------------
-  it('produces the same entries and diagnostics as parseUnityPackageEntries (single entry)', async () => {
+  it('produces the same entries and diagnostics as parseUnityPackageEntries (single entry)', () => {
     const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/MyScript.cs',
@@ -582,7 +581,7 @@ describe('parseUnityPackageStream', () => {
     });
 
     const buffered = parseUnityPackageEntries(pkg);
-    const streamed = await collectStream(pkg);
+    const streamed = collectIterEntries(pkg);
 
     expect(streamed.entries).toHaveLength(1);
     expect(streamed.entries[0].guid).toBe(buffered.entries[0].guid);
@@ -595,7 +594,7 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // Multi-entry package (round-trip via createUnityPackage)
   // -------------------------------------------------------------------------
-  it('produces the same entries as parseUnityPackageEntries for a multi-entry package', async () => {
+  it('produces the same entries as parseUnityPackageEntries for a multi-entry package', () => {
     const inputEntries: CreateUnityPackageEntry[] = [
       {
         guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -618,7 +617,7 @@ describe('parseUnityPackageStream', () => {
     const pkg = createUnityPackage(inputEntries, { gzipLevel: 1 });
 
     const buffered = parseUnityPackageEntries(pkg);
-    const streamed = await collectStream(pkg);
+    const streamed = collectIterEntries(pkg);
 
     expect(streamed.entries).toHaveLength(buffered.entries.length);
     for (let i = 0; i < buffered.entries.length; i += 1) {
@@ -632,14 +631,14 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // Diagnostics: non-standard GUID, empty pathname, duplicate GUID
   // -------------------------------------------------------------------------
-  it('emits empty-pathname diagnostic and no entry for an empty pathname', async () => {
+  it('emits empty-pathname diagnostic and no entry for an empty pathname', () => {
     const guid = '11111111111111111111111111111111';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: '\nAssets/Ignored.cs',
       [`${guid}/asset`]: 'content',
     });
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     expect(entries).toHaveLength(0);
     const diag = diagnostics.find(d => d.code === 'empty-pathname');
     expect(diag).toBeDefined();
@@ -647,14 +646,17 @@ describe('parseUnityPackageStream', () => {
     expect(diag!.guid).toBe(guid);
   });
 
-  it('emits non-standard-guid diagnostic for non-32-hex prefix', async () => {
+  // -------------------------------------------------------------------------
+  // Non-standard GUID
+  // -------------------------------------------------------------------------
+  it('emits non-standard-guid diagnostic for non-32-hex prefix', () => {
     const guid = 'not-a-guid';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/LooseGuid.asset',
       [`${guid}/asset`]: 'content',
     });
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     expect(entries).toHaveLength(1);
     expect(entries[0].guid).toBe(guid);
     const diag = diagnostics.find(d => d.code === 'non-standard-guid');
@@ -662,7 +664,7 @@ describe('parseUnityPackageStream', () => {
     expect(diag!.severity).toBe('info');
   });
 
-  it('emits duplicate-guid diagnostic and keeps only the first occurrence', async () => {
+  it('emits duplicate-guid diagnostic and keeps only the first occurrence', () => {
     const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const tarEntries: Uint8Array[] = [];
     tarEntries.push(createTarEntry(`${guid}/pathname`, encoder.encode('Assets/First.cs')));
@@ -672,7 +674,7 @@ describe('parseUnityPackageStream', () => {
     tarEntries.push(new Uint8Array(1024));
     const pkg = gzipSync(concatUint8Arrays(tarEntries));
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     const dupDiag = diagnostics.filter(d => d.code === 'duplicate-guid');
     expect(dupDiag).toHaveLength(1);
     expect(dupDiag[0].guid).toBe(guid);
@@ -682,13 +684,13 @@ describe('parseUnityPackageStream', () => {
     expect(entries[0].pathname).toBe('Assets/First.cs');
   });
 
-  it('emits malformed-tar-entry diagnostic for invalid size field', async () => {
+  it('emits malformed-tar-entry diagnostic for invalid size field', () => {
     const header = new Uint8Array(512);
     header.set(encoder.encode('bad/pathname'), 0);
     header.set(encoder.encode('not-octal'), 124);
     const pkg = gzipSync(concatUint8Arrays([header, new Uint8Array(1024)]));
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     expect(entries).toHaveLength(0);
     const diag = diagnostics.find(d => d.code === 'malformed-tar-entry');
     expect(diag).toBeDefined();
@@ -698,7 +700,7 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // preview.png is surfaced; ignored-preview diagnostic is emitted
   // -------------------------------------------------------------------------
-  it('surfaces preview on entry and emits ignored-preview diagnostic', async () => {
+  it('surfaces preview on entry and emits ignored-preview diagnostic', () => {
     const guid = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/Texture.png',
@@ -707,7 +709,7 @@ describe('parseUnityPackageStream', () => {
       [`${guid}/preview.png`]: 'thumbnail',
     });
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     expect(entries).toHaveLength(1);
     expect(decoder.decode(entries[0].preview!)).toBe('thumbnail');
     const diag = diagnostics.find(d => d.code === 'ignored-preview');
@@ -718,9 +720,8 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // Truncated / truncated-within-content entry
   // -------------------------------------------------------------------------
-  it('emits malformed-tar-entry diagnostic when entry content extends beyond the archive', async () => {
+  it('emits malformed-tar-entry diagnostic when entry content extends beyond the archive', () => {
     const guid = 'ffffffffffffffffffffffffffffffff';
-    // Build a raw tar with a file claiming size=1000 but only providing 50 bytes of content
     const header = new Uint8Array(512);
     header.set(encoder.encode(`${guid}/asset`), 0);
     const overSize = 1000;
@@ -734,20 +735,19 @@ describe('parseUnityPackageStream', () => {
     for (let i = 0; i < 512; i += 1) checksum += header[i];
     const csStr = checksum.toString(8).padStart(6, '0') + '\0 ';
     header.set(encoder.encode(csStr), 148);
-    const shortContent = new Uint8Array(50); // only 50 bytes, not 1000
+    const shortContent = new Uint8Array(50);
     const pkg = gzipSync(concatUint8Arrays([header, shortContent, new Uint8Array(512)]));
 
-    const { diagnostics } = await collectStream(pkg);
+    const { diagnostics } = collectIterEntries(pkg);
     const diag = diagnostics.find(d => d.code === 'malformed-tar-entry');
     expect(diag).toBeDefined();
     expect(diag!.message).toContain('extends beyond the archive');
   });
 
   // -------------------------------------------------------------------------
-  // Streaming yields first entry before full traversal
+  // Partial consumption
   // -------------------------------------------------------------------------
-  it('yields the first entry before the entire tar has been walked', async () => {
-    // Build a package with 3 entries; consume only the first iteration
+  it('yields the first entry on partial iteration', () => {
     const inputEntries: CreateUnityPackageEntry[] = [
       {
         guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -770,25 +770,23 @@ describe('parseUnityPackageStream', () => {
     ];
     const pkg = createUnityPackage(inputEntries, { gzipLevel: 1 });
 
-    // Get the first yielded item without consuming the rest
-    const gen = parseUnityPackageStream(pkg);
-    let firstEntry: StreamedEntry | null = null;
-    for await (const item of gen) {
+    const gen = iterUnityPackageEntries(pkg);
+    let firstEntry: IterEntriesEntry | null = null;
+    for (const item of gen) {
       if (item._kind === 'entry') {
-        firstEntry = item as StreamedEntry;
-        break; // stop after the first entry
+        firstEntry = item as IterEntriesEntry;
+        break;
       }
     }
 
     expect(firstEntry).not.toBeNull();
-    // createUnityPackage sorts by GUID; 'aaa...' comes first
     expect(firstEntry!.guid).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   });
 
   // -------------------------------------------------------------------------
   // Bomb guards
   // -------------------------------------------------------------------------
-  it('throws DecompressionBombError with kind "output-bytes" when maxOutputBytes is exceeded', async () => {
+  it('throws DecompressionBombError with kind "output-bytes" when maxOutputBytes is exceeded', () => {
     const guid = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/Big.asset',
@@ -798,8 +796,7 @@ describe('parseUnityPackageStream', () => {
 
     let thrown: unknown;
     try {
-      // consume all items -- bomb should trigger
-      for await (const item of parseUnityPackageStream(pkg, { maxOutputBytes: 50 })) void item;
+      for (const item of iterUnityPackageEntries(pkg, { maxOutputBytes: 50 })) void item;
     } catch (err) {
       thrown = err;
     }
@@ -809,7 +806,7 @@ describe('parseUnityPackageStream', () => {
     expect(bomb.observed).toBeGreaterThan(50);
   });
 
-  it('throws DecompressionBombError with kind "entry-count" when maxEntries is exceeded', async () => {
+  it('throws DecompressionBombError with kind "entry-count" when maxEntries is exceeded', () => {
     const tarEntries: Uint8Array[] = [];
     for (let i = 0; i < 3; i += 1) {
       const guid = `${'a'.repeat(30)}${i.toString().padStart(2, '0')}`;
@@ -822,8 +819,7 @@ describe('parseUnityPackageStream', () => {
 
     let thrown: unknown;
     try {
-      // consume all items -- bomb should trigger
-      for await (const item of parseUnityPackageStream(pkg, { maxEntries: 2 })) void item;
+      for (const item of iterUnityPackageEntries(pkg, { maxEntries: 2 })) void item;
     } catch (err) {
       thrown = err;
     }
@@ -834,10 +830,9 @@ describe('parseUnityPackageStream', () => {
   });
 
   // -------------------------------------------------------------------------
-  // onProgress: monotonically non-decreasing entryCount, rate-limited
+  // onProgress: monotonically non-decreasing entryCount, called once per entry
   // -------------------------------------------------------------------------
-  it('onProgress fires with monotonically non-decreasing entryCount', async () => {
-    // Build a package with 5 entries using unique 32-hex GUIDs
+  it('onProgress fires with monotonically non-decreasing entryCount', () => {
     const uniqueEntries: CreateUnityPackageEntry[] = [
       { guid: 'aaaa0000000000000000000000000000', pathname: 'Assets/A.cs', asset: encoder.encode('a'), meta: encoder.encode('ma') },
       { guid: 'bbbb0000000000000000000000000000', pathname: 'Assets/B.cs', asset: encoder.encode('b'), meta: encoder.encode('mb') },
@@ -848,74 +843,37 @@ describe('parseUnityPackageStream', () => {
     const pkg = createUnityPackage(uniqueEntries, { gzipLevel: 1 });
 
     const progressEvents: number[] = [];
-    await collectStream(pkg, {
+    collectIterEntries(pkg, {
       onProgress: (ev) => progressEvents.push(ev.entryCount),
     });
 
-    // Should have at least one progress event (the final one always fires)
     expect(progressEvents.length).toBeGreaterThan(0);
-    // entryCount must be monotonically non-decreasing
     for (let i = 1; i < progressEvents.length; i += 1) {
       expect(progressEvents[i]).toBeGreaterThanOrEqual(progressEvents[i - 1]);
     }
-    // Last event should reflect all 5 entries
     expect(progressEvents[progressEvents.length - 1]).toBe(5);
   });
 
-  it('onProgress bytesTotal equals decompressed tar length (known after sync gzip decompression)', async () => {
-    const guid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    const pkg = createLegacyUnityPackage({
-      [`${guid}/pathname`]: 'Assets/A.cs',
-      [`${guid}/asset`]: 'class A {}',
-      [`${guid}/asset.meta`]: 'guid: aaaa',
+  it('onProgress fires once per entry', () => {
+    const uniqueEntries: CreateUnityPackageEntry[] = [
+      { guid: 'aaaa0000000000000000000000000000', pathname: 'Assets/A.cs', asset: encoder.encode('a'), meta: encoder.encode('ma') },
+      { guid: 'bbbb0000000000000000000000000000', pathname: 'Assets/B.cs', asset: encoder.encode('b'), meta: encoder.encode('mb') },
+      { guid: 'cccc0000000000000000000000000000', pathname: 'Assets/C.cs', asset: encoder.encode('c'), meta: encoder.encode('mc') },
+    ];
+    const pkg = createUnityPackage(uniqueEntries, { gzipLevel: 1 });
+
+    const progressEvents: number[] = [];
+    collectIterEntries(pkg, {
+      onProgress: (ev) => progressEvents.push(ev.entryCount),
     });
 
-    let lastEvent: { bytesRead: number; bytesTotal: number; entryCount: number } | null = null;
-    await collectStream(pkg, {
-      onProgress: (ev) => { lastEvent = ev; },
-    });
-
-    expect(lastEvent).not.toBeNull();
-    // bytesTotal must be positive and equal to bytesRead at the end
-    expect(lastEvent!.bytesTotal).toBeGreaterThan(0);
-    expect(lastEvent!.bytesRead).toBe(lastEvent!.bytesTotal);
-  });
-
-  it('rate-limit: onProgress fires no more than once per ~16ms for a fast synchronous archive', async () => {
-    // Build 20 entries; the loop runs synchronously (no real async I/O).
-    // Without rate-limiting, we'd get one event per entry = 20 events.
-    // With rate-limiting, we may get fewer (depends on timing), but never more than entries+1
-    // (one final unconditional event is always fired).
-    const entries: CreateUnityPackageEntry[] = Array.from({ length: 20 }, (_, i) => ({
-      guid: `${'a'.repeat(30)}${i.toString().padStart(2, '0')}`,
-      pathname: `Assets/Script${i}.cs`,
-      asset: encoder.encode(`class S${i} {}`),
-      meta: encoder.encode(`guid: ${i}`),
-    }));
-    const pkg = createUnityPackage(entries, { gzipLevel: 0 });
-
-    let callCount = 0;
-    let lastEntryCount = -1;
-    await collectStream(pkg, {
-      onProgress: (ev) => {
-        callCount += 1;
-        expect(ev.entryCount).toBeGreaterThanOrEqual(lastEntryCount);
-        lastEntryCount = ev.entryCount;
-      },
-    });
-
-    // The final progress event always fires unconditionally, so callCount >= 1.
-    // In a synchronous loop the rate-limit will typically suppress intermediate events
-    // to just 1-2 total (plus the unconditional final). We assert the count is
-    // at most 21 (not one per block) and at least 1.
-    expect(callCount).toBeGreaterThanOrEqual(1);
-    expect(callCount).toBeLessThanOrEqual(21);
+    expect(progressEvents).toEqual([1, 2, 3]);
   });
 
   // -------------------------------------------------------------------------
   // asset-missing, meta-missing, zero-byte-asset diagnostics match buffered
   // -------------------------------------------------------------------------
-  it('emits asset-missing diagnostic matching parseUnityPackageEntries', async () => {
+  it('emits asset-missing diagnostic matching parseUnityPackageEntries', () => {
     const guid = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/MetaOnly.cs',
@@ -923,7 +881,7 @@ describe('parseUnityPackageStream', () => {
     });
 
     const buffered = parseUnityPackageEntries(pkg);
-    const streamed = await collectStream(pkg);
+    const streamed = collectIterEntries(pkg);
 
     const bDiag = buffered.diagnostics.filter(d => d.code === 'asset-missing');
     const sDiag = streamed.diagnostics.filter(d => d.code === 'asset-missing');
@@ -932,7 +890,7 @@ describe('parseUnityPackageStream', () => {
     expect(sDiag[0].severity).toBe('warning');
   });
 
-  it('emits meta-missing diagnostic matching parseUnityPackageEntries', async () => {
+  it('emits meta-missing diagnostic matching parseUnityPackageEntries', () => {
     const guid = 'cccccccccccccccccccccccccccccccc';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/NoMeta.cs',
@@ -940,7 +898,7 @@ describe('parseUnityPackageStream', () => {
     });
 
     const buffered = parseUnityPackageEntries(pkg);
-    const streamed = await collectStream(pkg);
+    const streamed = collectIterEntries(pkg);
 
     const bDiag = buffered.diagnostics.filter(d => d.code === 'meta-missing');
     const sDiag = streamed.diagnostics.filter(d => d.code === 'meta-missing');
@@ -948,7 +906,7 @@ describe('parseUnityPackageStream', () => {
     expect(sDiag[0].severity).toBe('warning');
   });
 
-  it('emits zero-byte-asset diagnostic matching parseUnityPackageEntries', async () => {
+  it('emits zero-byte-asset diagnostic matching parseUnityPackageEntries', () => {
     const guid = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/Empty.cs',
@@ -957,7 +915,7 @@ describe('parseUnityPackageStream', () => {
     });
 
     const buffered = parseUnityPackageEntries(pkg);
-    const streamed = await collectStream(pkg);
+    const streamed = collectIterEntries(pkg);
 
     const bDiag = buffered.diagnostics.filter(d => d.code === 'zero-byte-asset');
     const sDiag = streamed.diagnostics.filter(d => d.code === 'zero-byte-asset');
@@ -968,7 +926,7 @@ describe('parseUnityPackageStream', () => {
   // -------------------------------------------------------------------------
   // oversized-entry-name matches buffered
   // -------------------------------------------------------------------------
-  it('emits oversized-entry-name diagnostic for pathnames > 200 characters', async () => {
+  it('emits oversized-entry-name diagnostic for pathnames > 200 characters', () => {
     const guid = 'ffffffffffffffffffffffffffffffff';
     const longPathname = 'Assets/' + 'A'.repeat(195);
     const pkg = createLegacyUnityPackage({
@@ -977,16 +935,15 @@ describe('parseUnityPackageStream', () => {
       [`${guid}/asset.meta`]: 'guid: ffff',
     });
 
-    const { entries, diagnostics } = await collectStream(pkg);
+    const { entries, diagnostics } = collectIterEntries(pkg);
     const diag = diagnostics.find(d => d.code === 'oversized-entry-name');
     expect(diag).toBeDefined();
     expect(diag!.severity).toBe('warning');
-    // Entry is still yielded despite the diagnostic
     expect(entries).toHaveLength(1);
     expect(entries[0].pathname).toBe(longPathname);
   });
 
-  it('parseUnityPackageStreamed parses normal packages and enforces maxOutputBytes during gunzip', () => {
+  it('parseUnityPackageEntries enforces maxOutputBytes and respects chunkSize during gunzip', () => {
     const guid = 'edededededededededededededededed';
     const pkg = createLegacyUnityPackage({
       [`${guid}/pathname`]: 'Assets/Big.asset',
@@ -994,16 +951,20 @@ describe('parseUnityPackageStream', () => {
       [`${guid}/asset.meta`]: `guid: ${guid}`,
     });
 
-    expect(parseUnityPackageStreamed(pkg).entries).toHaveLength(1);
-    expect(() => parseUnityPackageStreamed(pkg, { maxOutputBytes: 50, chunkSize: 8 })).toThrow(DecompressionBombError);
+    const defaultResult = parseUnityPackageEntries(pkg);
+    expect(defaultResult.entries).toHaveLength(1);
+
+    const chunkedResult = parseUnityPackageEntries(pkg, { chunkSize: 8 });
+    expect(chunkedResult.entries).toHaveLength(1);
+    expect(chunkedResult.entries[0]).toEqual(defaultResult.entries[0]);
+
+    expect(() => parseUnityPackageEntries(pkg, { maxOutputBytes: 50, chunkSize: 8 })).toThrow(DecompressionBombError);
   });
 
   // -------------------------------------------------------------------------
   // gunzipBounded fires before tar work: zero-block bomb
   // -------------------------------------------------------------------------
-  it('throws DecompressionBombError before tar work when gzip expands to ~64 KiB of zeroes', async () => {
-    // A gzip of 64 KiB of zeroes; maxOutputBytes is 1 KiB -- the bomb must
-    // fire during decompression, before any tar header parsing runs.
+  it('throws DecompressionBombError before tar work when gzip expands to ~64 KiB of zeroes', () => {
     const zeroes = new Uint8Array(64 * 1024);
     const bombGzip = gzipSync(zeroes);
 
@@ -1018,10 +979,10 @@ describe('parseUnityPackageStream', () => {
     expect((entryThrown as DecompressionBombError).kind).toBe('output-bytes');
     expect((entryThrown as DecompressionBombError).observed).toBeGreaterThan(1024);
 
-    // parseUnityPackageStream
+    // iterUnityPackageEntries
     let streamThrown: unknown;
     try {
-      for (const _ of parseUnityPackageStream(bombGzip, { maxOutputBytes: 1024 })) void _;
+      for (const _ of iterUnityPackageEntries(bombGzip, { maxOutputBytes: 1024 })) void _;
     } catch (err) {
       streamThrown = err;
     }

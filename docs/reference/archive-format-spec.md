@@ -51,7 +51,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 
 ## Implementation
 
-- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, buffered, includes structured diagnostics), `parseUnityPackageStream` (iterator-based; yields entries and diagnostics as each GUID group completes; supports `onProgress` and bomb guards), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
+- **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, buffered, includes structured diagnostics, supports `chunkSize`), `iterUnityPackageEntries` (iterator-based; yields entries and diagnostics; supports `onProgress` and bomb guards), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
 - `packages/core/src/index.ts` is the public barrel. Implementation lives in domain modules (`guid`, `pathname`, `meta`, `parse`, `create`, `summary`) plus shared `model` types and private `tar` helpers. Public consumers should import from `unitypackage-core`, not internal files.
 - **`packages/cli`**: extract, pack, inspect, verify, diff, web.
 
@@ -64,7 +64,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 | Legacy fallback | `asset.meta` → `metaData` |
 | GUID validation | Unity exports use 32 hex; core preserves any archive prefix as `guid` |
 | GUID generation | MD5 of UTF-16LE path |
-| Archive model | Gzip decompressed synchronously (fflate); tar parsed entry-by-entry via `parseUnityPackageStream`; buffered collection via `parseUnityPackageEntries` |
+| Archive model | Gzip decompressed synchronously (fflate); tar parsed and iterated via `iterUnityPackageEntries`; buffered collection via `parseUnityPackageEntries` |
 
 ```ts
 interface UnityPackageEntry {
@@ -112,7 +112,7 @@ does not validate Unity YAML schemas.
 
 - Old exports: `metaData` instead of `asset.meta`, multi-line `pathname` (use first line only).
 - `preview.png` surfaced by `parseUnityPackageEntries`; flat `parseUnityPackage` ignores it.
-- Streaming: `parseUnityPackageStream` is a synchronous generator and yields entries as each GUID group completes; gzip decompression remains synchronous (fflate). Use `parseUnityPackageEntries` for a fully buffered result.
+- Streaming: `iterUnityPackageEntries` is a synchronous generator and yields entries as each GUID group completes; gzip decompression remains synchronous (fflate). Use `parseUnityPackageEntries` for a fully buffered result.
 
 ## References
 

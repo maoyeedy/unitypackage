@@ -2,7 +2,7 @@
 
 import {
   analyzeUnityPackageEntries,
-  parseUnityPackageStreamed,
+  parseUnityPackageEntries,
 } from 'unitypackage-core';
 import { entriesToRecords } from './packageModel';
 import type { ParsePackageRequest, ParsePackageResponse } from './workerTypes';
@@ -12,7 +12,7 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     const bytes = new Uint8Array(data.buffer);
     const options = data.maxOutputBytes !== undefined ? { maxOutputBytes: data.maxOutputBytes } : undefined;
 
-    const { entries, diagnostics } = parseUnityPackageStreamed(bytes, options);
+    const { entries, diagnostics } = parseUnityPackageEntries(bytes, options);
 
     const records = entriesToRecords(entries, diagnostics);
     const { findings: analysis } = analyzeUnityPackageEntries(entries, diagnostics);

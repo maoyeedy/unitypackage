@@ -71,24 +71,22 @@ export interface ParseUnityPackageOptions {
   maxOutputBytes?: number;
   /** Maximum number of parsed GUID entries. Default: {@link DEFAULT_MAX_ENTRIES} (250 000). */
   maxEntries?: number;
+  /** Chunk size for gzip decompression in bytes. Default: 256 KiB (262144 bytes). */
+  chunkSize?: number;
 }
 
-export interface StreamParseProgressEvent {
-  /** Decompressed bytes consumed so far in the tar stream. */
-  bytesRead: number;
-  /** Total decompressed tar bytes, when known. */
-  bytesTotal: number;
+export interface IterEntriesProgressEvent {
   /** Number of fully emitted GUID entries so far. */
   entryCount: number;
 }
 
-export interface StreamParseOptions extends ParseUnityPackageOptions {
-  onProgress?: (event: StreamParseProgressEvent) => void;
+export interface IterEntriesOptions extends ParseUnityPackageOptions {
+  onProgress?: (event: IterEntriesProgressEvent) => void;
 }
 
-export type StreamParseItemKind = 'entry' | 'diagnostic';
-export type StreamedEntry = UnityPackageEntry & { _kind: 'entry' };
-export type StreamedDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
+export type IterEntriesItemKind = 'entry' | 'diagnostic';
+export type IterEntriesEntry = UnityPackageEntry & { _kind: 'entry' };
+export type IterEntriesDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
 
 const UNITY_GUID_PATTERN = /^[0-9a-fA-F]{32}$/;
 const EXPECTED_GUID_FILES = new Set(['pathname', 'asset', 'asset.meta', 'metaData', 'preview.png']);
@@ -117,16 +115,25 @@ export function parseUnityPackageEntries(
   options?: ParseUnityPackageOptions,
 ): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
   const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
-  const decompressed = gunzipBounded(data, maxOutputBytes);
+  const chunkSize = options?.chunkSize ?? 256 * 1024;
+  const decompressed = gunzipBounded(data, maxOutputBytes, chunkSize);
   return parseUnityPackageTar(decompressed, options);
 }
 
-export function* parseUnityPackageStream(
+/**
+ * Synchronous generator that yields entries and diagnostics.
+ *
+ * Note: gzip and tar are fully decompressed and processed before the generator
+ * yields the first entry. This function is for callers that want incremental UI
+ * updates between entry yielding, not memory bounding.
+ */
+export function* iterUnityPackageEntries(
   bytes: Uint8Array,
-  options?: StreamParseOptions,
-): Generator<StreamedEntry | StreamedDiagnostic> {
+  options?: IterEntriesOptions,
+): Generator<IterEntriesEntry | IterEntriesDiagnostic> {
   const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
-  const decompressed = gunzipBounded(bytes, maxOutputBytes);
+  const chunkSize = options?.chunkSize ?? 256 * 1024;
+  const decompressed = gunzipBounded(bytes, maxOutputBytes, chunkSize);
   const { entries, diagnostics } = parseUnityPackageTar(decompressed, options);
 
   for (const diagnostic of diagnostics) {
@@ -134,32 +141,13 @@ export function* parseUnityPackageStream(
   }
 
   let entryCount = 0;
-  let lastProgressMs = -Infinity;
   for (const entry of entries) {
     yield { ...entry, _kind: 'entry' };
     entryCount += 1;
     if (options?.onProgress !== undefined) {
-      const now = Date.now();
-      if (now - lastProgressMs >= 16) {
-        lastProgressMs = now;
-        options.onProgress({ bytesRead: decompressed.byteLength, bytesTotal: decompressed.byteLength, entryCount });
-      }
+      options.onProgress({ entryCount });
     }
   }
-
-  if (options?.onProgress !== undefined) {
-    options.onProgress({ bytesRead: decompressed.byteLength, bytesTotal: decompressed.byteLength, entryCount });
-  }
-}
-
-export function parseUnityPackageStreamed(
-  data: Uint8Array,
-  options?: ParseUnityPackageOptions & { chunkSize?: number },
-): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
-  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
-  const chunkSize = options?.chunkSize ?? 64 * 1024;
-  const decompressed = gunzipBounded(data, maxOutputBytes, chunkSize);
-  return parseUnityPackageTar(decompressed, options);
 }
 
 /**
