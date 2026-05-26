@@ -71,16 +71,14 @@ test.describe('package loading', () => {
     await expect(page.getByRole('heading', { name: 'Reopen Recent Package' })).not.toBeVisible();
   });
 
-  test('persistence and rehydration of grouping, sort, and theme preferences', async ({ page }) => {
+  test('persistence and rehydration of grouping and sort preferences', async ({ page }) => {
     await page.goto('/');
 
-    // Change preferences
-    await page.getByRole('button', { name: 'Dark' }).click();
+    // Change sort and grouping
     await page.locator('#sort-key').selectOption('size');
     await page.getByRole('button', { name: 'Extension', exact: true }).click();
 
     // Verify immediately applied
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('#sort-key')).toHaveValue('size');
     await expect(page.getByRole('button', { name: 'Extension', exact: true })).toHaveClass(/active/);
 
@@ -88,7 +86,6 @@ test.describe('package loading', () => {
     await page.reload();
 
     // Verify rehydrated values
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('#sort-key')).toHaveValue('size');
     await expect(page.getByRole('button', { name: 'Extension', exact: true })).toHaveClass(/active/);
   });

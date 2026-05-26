@@ -45,6 +45,7 @@ import {
   pairDroppedItems,
   getUniqueGuid,
   updateMetaBytesGuid,
+  getSiblings,
   type RawDroppedFile,
 } from './packageModel';
 
@@ -2037,6 +2038,104 @@ describe('P2 tree ergonomics helpers', () => {
         expect(new TextDecoder().decode(parsed?.asset)).toBe(new TextDecoder().decode(input.asset));
         expect(parsed?.meta).toBeDefined();
         expect(new TextDecoder().decode(parsed?.meta)).toBe(new TextDecoder().decode(input.meta));
+      }
+    });
+  });
+
+  describe('getSiblings', () => {
+    const enc = new TextEncoder();
+
+    function makeRecords() {
+      const entries: UnityPackageEntry[] = [
+        {
+          guid: 'aabbccdd00000000aabbccdd00000001',
+          pathname: 'Assets/Textures/sprite.png',
+          asset: enc.encode('pngbytes'),
+          meta: enc.encode('guid: aabbccdd00000000aabbccdd00000001\nimporter: TextureImporter'),
+          preview: enc.encode('previewbytes'),
+        },
+        {
+          guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          pathname: 'Assets/Scripts/Player.cs',
+          asset: enc.encode('class Player {}'),
+          meta: enc.encode('guid: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nimporter: MonoImporter'),
+        },
+      ];
+      return entriesToRecords(entries, []);
+    }
+
+    it('returns asset and meta siblings for a preview record', () => {
+      const records = makeRecords();
+      const previewRecord = records.find(r => r.isUnityPreview && r.guid === 'aabbccdd00000000aabbccdd00000001');
+      expect(previewRecord).toBeDefined();
+      if (!previewRecord) return;
+
+      const siblings = getSiblings(previewRecord, records);
+      expect(siblings.asset).toBeDefined();
+      expect(siblings.meta).toBeDefined();
+      expect(siblings.preview).toBeUndefined();
+      expect(siblings.asset?.extension).not.toBe('meta');
+      expect(siblings.asset?.isUnityPreview).toBe(false);
+      expect(siblings.meta?.extension).toBe('meta');
+    });
+
+    it('returns meta and preview siblings for an asset record', () => {
+      const records = makeRecords();
+      const assetRecord = records.find(r => !r.isUnityPreview && r.extension !== 'meta' && r.guid === 'aabbccdd00000000aabbccdd00000001');
+      expect(assetRecord).toBeDefined();
+      if (!assetRecord) return;
+
+      const siblings = getSiblings(assetRecord, records);
+      expect(siblings.asset).toBeUndefined();
+      expect(siblings.meta).toBeDefined();
+      expect(siblings.preview).toBeDefined();
+      expect(siblings.meta?.extension).toBe('meta');
+      expect(siblings.preview?.isUnityPreview).toBe(true);
+    });
+
+    it('returns only the asset sibling for a meta record', () => {
+      const records = makeRecords();
+      const metaRecord = records.find(r => r.extension === 'meta' && r.guid === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+      expect(metaRecord).toBeDefined();
+      if (!metaRecord) return;
+
+      const siblings = getSiblings(metaRecord, records);
+      expect(siblings.meta).toBeUndefined();
+      expect(siblings.preview).toBeUndefined();
+      expect(siblings.asset).toBeDefined();
+      expect(siblings.asset?.extension).toBe('cs');
+    });
+
+    it('returns empty siblings when no other records share the GUID', () => {
+      const entries: UnityPackageEntry[] = [
+        {
+          guid: 'cccccccccccccccccccccccccccccccc',
+          pathname: 'Assets/lonely.txt',
+          asset: enc.encode('hello'),
+          // no meta, no preview -- but entriesToRecords always generates a meta
+        },
+      ];
+      const records = entriesToRecords(entries, []);
+      const assetRecord = records.find(r => !r.isUnityPreview && r.extension !== 'meta');
+      expect(assetRecord).toBeDefined();
+      if (!assetRecord) return;
+
+      // Remove all siblings from the list except this record
+      const isolated = [assetRecord];
+      const siblings = getSiblings(assetRecord, isolated);
+      expect(siblings.asset).toBeUndefined();
+      expect(siblings.meta).toBeUndefined();
+      expect(siblings.preview).toBeUndefined();
+    });
+
+    it('never returns the record itself as a sibling', () => {
+      const records = makeRecords();
+      for (const record of records) {
+        const siblings = getSiblings(record, records);
+        const allSiblings = [siblings.asset, siblings.meta, siblings.preview].filter(Boolean);
+        for (const sibling of allSiblings) {
+          expect(sibling?.id).not.toBe(record.id);
+        }
       }
     });
   });

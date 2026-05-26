@@ -4,7 +4,7 @@ import { highlightCode, findQueryMatches, splitLineTokensForMatches } from './sy
 
 describe('syntax highlighting', () => {
   it('highlights mapped Unity YAML without injecting HTML', async () => {
-    const result = await highlightCode('fileFormatVersion: 2', 'yaml', 'light');
+    const result = await highlightCode('fileFormatVersion: 2', 'yaml');
 
     expect(result.lines).toHaveLength(1);
     expect(result.lines[0]?.map(token => token.content).join('')).toBe('fileFormatVersion: 2');
@@ -12,7 +12,7 @@ describe('syntax highlighting', () => {
   });
 
   it('falls back to plain text language', async () => {
-    const result = await highlightCode('plain preview', 'text', 'dark');
+    const result = await highlightCode('plain preview', 'text');
 
     expect(result.lines[0]?.map(token => token.content).join('')).toBe('plain preview');
     expect(result.background).toBeTruthy();
@@ -22,7 +22,7 @@ describe('syntax highlighting', () => {
     const longText = 'line1\nline2\nline3\nline4\nline5';
     // Highlight a chunk (slice of lines)
     const chunk = longText.split('\n').slice(1, 4).join('\n'); // line2\nline3\nline4
-    const result = await highlightCode(chunk, 'text', 'light');
+    const result = await highlightCode(chunk, 'text');
     expect(result.lines).toHaveLength(3);
     expect(result.lines[0]?.map(t => t.content).join('')).toBe('line2');
     expect(result.lines[1]?.map(t => t.content).join('')).toBe('line3');

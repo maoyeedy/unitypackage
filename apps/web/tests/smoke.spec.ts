@@ -9,9 +9,15 @@ test('renders app heading', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Unity Package Workspace', level: 1 })).toBeVisible();
 });
 
-test('shows initial status prompt', async ({ page }) => {
+test('statusbar has no initial text on fresh load', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('Open a .unitypackage to inspect its contents.')).toBeVisible();
+  // After the status string was replaced with a current-op indicator,
+  // the footer is empty on idle (no freeform initial message).
+  const statusbar = page.locator('.statusbar');
+  await expect(statusbar).toBeVisible();
+  // The statusbar-op span should be empty when no op is running
+  const opSpan = statusbar.locator('.statusbar-op');
+  await expect(opSpan).toBeEmpty();
 });
 
 test('shows Extract and Pack mode tabs', async ({ page }) => {

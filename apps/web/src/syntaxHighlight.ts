@@ -19,8 +19,6 @@ export interface HighlightedCode {
   background?: string;
 }
 
-export type SyntaxThemeMode = 'light' | 'dark';
-
 const languageLoaders = {
   yaml: () => import('@shikijs/langs/yaml'),
   json: () => import('@shikijs/langs/json'),
@@ -37,7 +35,6 @@ const languageLoaders = {
 };
 
 const themeLoaders = {
-  'github-light': () => import('@shikijs/themes/github-light'),
   'github-dark': () => import('@shikijs/themes/github-dark'),
 };
 
@@ -51,9 +48,9 @@ type UnityHighlighter = Awaited<ReturnType<typeof createUnityHighlighter>>;
 
 let highlighterPromise: Promise<UnityHighlighter> | null = null;
 
-export async function highlightCode(code: string, language: SyntaxLanguage, mode: SyntaxThemeMode): Promise<HighlightedCode> {
+export async function highlightCode(code: string, language: SyntaxLanguage): Promise<HighlightedCode> {
   const highlighter = await getHighlighter();
-  const theme = mode === 'dark' ? 'github-dark' : 'github-light';
+  const theme = 'github-dark';
   const lang = language === 'text' ? 'text' : language;
   const result = highlighter.codeToTokens(code, {
     lang,

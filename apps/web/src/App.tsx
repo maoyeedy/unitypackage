@@ -6,19 +6,17 @@ import {
   ArrowDownUp,
   ArrowUpDown,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileArchive,
   Filter,
-  FolderOpen,
   Info,
   ListTree,
-  Moon,
   PackagePlus,
   RefreshCw,
   Search,
   Settings,
-  Sun,
-  SunMoon,
   UploadCloud,
 } from 'lucide-react';
 import { estimateUnityPackageSize } from 'unitypackage-core';
@@ -33,7 +31,6 @@ import {
   collectDiagCodes,
   expandAncestors,
   filterRecords,
-  formatBytes,
   getAllFolderPaths,
   getExtensionFileRecordIds,
   getTreeFileRecordIds,
@@ -70,6 +67,10 @@ import { Explorer } from './components/Explorer';
 import { PreviewPanel } from './components/PreviewPanel';
 import { DiagnosticsDrawer } from './components/DiagnosticsDrawer';
 import { PackPanel } from './components/PackPanel';
+import { ToastStack } from './components/ToastStack';
+import type { Toast } from './components/ToastStack';
+import { RecentsMenu } from './components/RecentsMenu.js';
+import { SettingsMenu } from './components/SettingsMenu.js';
 
 interface ParseResult {
   records: PackageFileRecord[];
@@ -337,12 +338,17 @@ function AppContent() {
     return new Set();
   });
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  // detailsRecordId: overrides which record is shown in the details/preview pane
+  // without changing the explorer selection. Resets to null whenever activeRecordId
+  // changes so the pane tracks the explorer by default.
+  const [detailsRecordId, setDetailsRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [keyboardRangeBaseIds, setKeyboardRangeBaseIds] = useState<Set<string> | null>(null);
   const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
   const [isRecentsOpen, setIsRecentsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [maintainStructure, setMaintainStructure] = useState<boolean>(() => {
     const stored = localStorage.getItem('unitypackage-maintainStructure');
     return stored === null ? true : stored === 'true';
@@ -368,14 +374,23 @@ function AppContent() {
     const val = localStorage.getItem('unitypackage-sortDirection');
     return (val === 'asc' || val === 'desc') ? val : 'asc';
   });
-  const [theme, setTheme] = useState<'auto' | 'light' | 'dark'>(() => {
-    const val = localStorage.getItem('unitypackage-theme');
-    return (val === 'auto' || val === 'light' || val === 'dark') ? val : 'auto';
+  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('leftPaneCollapsed') === 'true';
   });
+  const [rightPaneCollapsed, setRightPaneCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('rightPaneCollapsed') === 'true';
+  });
+
   const [recents, setRecents] = useState<RecentPackage[]>([]);
   const [recentToPrompt, setRecentToPrompt] = useState<RecentPackage | null>(null);
   const [packageName, setPackageName] = useState<string | null>(null);
-  const [status, setStatus] = useState('Open a .unitypackage to inspect its contents.');
+  // currentOp: label shown while an async operation is in flight (cleared when done)
+  const [currentOp, setCurrentOp] = useState<string | null>(null);
+  // lastCompleted: fades out a few seconds after an op finishes
+  const [lastCompleted, setLastCompleted] = useState<string | null>(null);
+  const lastCompletedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastCounterRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPacking, setIsPacking] = useState(false);
@@ -452,6 +467,35 @@ function AppContent() {
     }
     return [];
   });
+
+  const addToast = useCallback((message: string, kind: Toast['kind'] = 'success') => {
+    toastCounterRef.current += 1;
+    const id = toastCounterRef.current;
+    setToasts(prev => [...prev, { id, message, kind }]);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const completeOp = useCallback((label: string) => {
+    setCurrentOp(null);
+    setLastCompleted(label);
+    if (lastCompletedTimerRef.current !== null) {
+      clearTimeout(lastCompletedTimerRef.current);
+    }
+    lastCompletedTimerRef.current = setTimeout(() => {
+      setLastCompleted(null);
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (lastCompletedTimerRef.current !== null) {
+        clearTimeout(lastCompletedTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 200);
@@ -535,14 +579,12 @@ function AppContent() {
   }, [showPreviews]);
 
   useEffect(() => {
-    localStorage.setItem('unitypackage-theme', theme);
-    const root = document.documentElement;
-    if (theme === 'auto') {
-      root.removeAttribute('data-theme');
-    } else {
-      root.setAttribute('data-theme', theme);
-    }
-  }, [theme]);
+    localStorage.setItem('leftPaneCollapsed', String(leftPaneCollapsed));
+  }, [leftPaneCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('rightPaneCollapsed', String(rightPaneCollapsed));
+  }, [rightPaneCollapsed]);
 
   useEffect(() => {
     void getRecentPackages().then(setRecents);
@@ -601,6 +643,7 @@ function AppContent() {
 
   const activateRecord = useCallback((id: string) => {
     setActiveRecordId(id);
+    setDetailsRecordId(null);
     setFocusedRowId(id);
     setSelectionAnchorId(id);
   }, []);
@@ -608,6 +651,16 @@ function AppContent() {
   const activeRecord = useMemo(() => {
     return records.find(record => record.id === activeRecordId) ?? visibleRecords[0] ?? null;
   }, [activeRecordId, visibleRecords, records]);
+
+  // The record shown in the details pane. Follows the explorer selection by default;
+  // overridden when the user navigates to a sibling from the Related row.
+  const detailsRecord = useMemo(() => {
+    if (detailsRecordId !== null) {
+      const found = records.find(r => r.id === detailsRecordId);
+      if (found) return found;
+    }
+    return activeRecord;
+  }, [detailsRecordId, records, activeRecord]);
 
   const stagedRecords = useMemo(() => {
     const parsedStaged = records.filter(record => stagedRecordIds.has(record.id));
@@ -660,13 +713,14 @@ function AppContent() {
     setIsLoading(true);
     setError(null);
     setPackageName(file.name);
-    setStatus(`Parsing ${file.name}`);
+    setCurrentOp(`Parsing ${file.name}…`);
     setRecords([]);
     setDiagnostics([]);
     setAnalysis([]);
     setIsDiagnosticsOpen(false);
     setSelectedRecordIds(new Set());
     setActiveRecordId(null);
+    setDetailsRecordId(null);
     setCollapsedFolders(new Set());
     setQuery('');
     setDebouncedQuery('');
@@ -681,7 +735,8 @@ function AppContent() {
       setDiagnostics(result.diagnostics);
       setAnalysis(result.analysis);
       setActiveRecordId(result.records[0]?.id ?? null);
-      setStatus(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms.`);
+      completeOp(`Parsed ${file.name}`);
+      addToast(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms`);
 
       const headHash = await computeHeadHash(file);
       const recentKey = `${file.name}|${file.size.toString()}|${headHash}`;
@@ -697,7 +752,8 @@ function AppContent() {
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to parse package';
       setError(message);
-      setStatus('Package parsing failed.');
+      setCurrentOp(null);
+      addToast(`Parse failed: ${message}`, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -753,6 +809,33 @@ function AppContent() {
     setRecents(updatedRecents);
   };
 
+  const handleClearAllRecents = async () => {
+    for (const recent of recents) {
+      await removeRecentPackage(recent.key);
+    }
+    setRecents([]);
+  };
+
+  const handleResetSettings = () => {
+    const keysToRemove = [
+      'unitypackage-groupingMode',
+      'unitypackage-sortKey',
+      'unitypackage-sortDirection',
+      'unitypackage-maintainStructure',
+      'unitypackage-showPreviews',
+      'unitypackage-caseSensitive',
+      'unitypackage-globMode',
+    ];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+    setGroupingMode('tree');
+    setSortKey('name');
+    setSortDirection('asc');
+    setMaintainStructure(true);
+    setShowPreviews(false);
+  };
+
   const handlePathnameChange = useCallback((id: string, newPathname: string) => {
     setImportedRecords(prev =>
       prev.map(r => {
@@ -777,7 +860,7 @@ function AppContent() {
   }, []);
 
   const handleImportFiles = useCallback(async (dataTransfer: DataTransfer) => {
-    setStatus('Processing dropped files...');
+    setCurrentOp('Importing files…');
     setError(null);
 
     interface DroppedItem {
@@ -928,27 +1011,35 @@ function AppContent() {
       });
 
       setImportedRecords(prev => [...prev, ...newImportedRecords]);
-      setStatus(`Imported ${newImportedRecords.length} entries.`);
+      setCurrentOp(null);
+      addToast(`Imported ${newImportedRecords.length.toString()} entries`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to import files';
       setError(msg);
-      setStatus('Import failed.');
+      setCurrentOp(null);
+      addToast(`Import failed: ${msg}`, 'error');
     }
-  }, [records, stagedRecordIds, importedRecords]);
+  }, [records, stagedRecordIds, importedRecords, addToast]);
 
   const handleDownload = async (targetRecords: PackageFileRecord[], fileName: string, recordIds?: string[]) => {
     setError(null);
+    setCurrentOp('Creating ZIP…');
     try {
       const data = await createDownloadZipInWorker(targetRecords, maintainStructure, recordIds);
       if (!data) {
-        setError('There are no files to download.');
+        setCurrentOp(null);
+        addToast('No files to download.', 'error');
         return;
       }
 
       downloadBlob(new Blob([new Uint8Array(data)], { type: 'application/zip' }), fileName);
+      setCurrentOp(null);
+      addToast(`ZIP downloaded: ${fileName}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to create ZIP file';
       setError(message);
+      setCurrentOp(null);
+      addToast(`ZIP failed: ${message}`, 'error');
     }
   };
 
@@ -956,6 +1047,7 @@ function AppContent() {
     setIsPacking(true);
     setPackDiagnostics([]);
     setSuccessExport(null);
+    setCurrentOp('Exporting package…');
     try {
       let filename = exportFilename.trim();
       if (!filename) {
@@ -971,16 +1063,22 @@ function AppContent() {
       });
       const blob = new Blob([result.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
       downloadBlob(blob, result.filename);
+      setCurrentOp(null);
+      addToast(`Exported ${result.filename}`);
     } catch (caught) {
+      setCurrentOp(null);
       if (caught instanceof Error) {
         const err = caught as PackageCreationError;
         if (err.diagnostics) {
           setPackDiagnostics(err.diagnostics);
+          addToast('Export failed: see diagnostics in the Pack panel.', 'error');
         } else {
           setError(err.message);
+          addToast(`Export failed: ${err.message}`, 'error');
         }
       } else {
         setError('Failed to create package');
+        addToast('Export failed.', 'error');
       }
     } finally {
       setIsPacking(false);
@@ -1164,11 +1262,11 @@ function AppContent() {
       return next;
     });
     if (stageableIds.size === 0) {
-      setStatus('No packable assets selected.');
+      addToast('No packable assets selected.', 'error');
     } else if (skippedCount > 0) {
-      setStatus(`Staged ${stageableIds.size.toString()} assets and skipped ${skippedCount.toString()} preview or meta records.`);
+      addToast(`Staged ${stageableIds.size.toString()} assets (skipped ${skippedCount.toString()} preview/meta records).`);
     } else {
-      setStatus(`Staged ${stageableIds.size.toString()} assets for pack.`);
+      addToast(`Staged ${stageableIds.size.toString()} assets for pack.`);
     }
     setMode('pack');
   };
@@ -1198,97 +1296,44 @@ function AppContent() {
               }}
             />
           </label>
-          {recents.length > 0 && (
-            <div className="recents-menu-container">
-              <button
-                type="button"
-                className="recents-menu-btn"
-                aria-label="Recent packages"
-                aria-expanded={isRecentsOpen}
-                aria-haspopup="menu"
-                onClick={() => { setIsRecentsOpen(prev => !prev); }}
-              >
-                <FolderOpen aria-hidden="true" size={16} />
-                <span>Recent</span>
-              </button>
-              {isRecentsOpen && (
-                <ul className="recents-list recents-menu" role="menu">
-                  {recents.map(recent => (
-                    <li
-                      key={recent.key}
-                      className="recent-item"
-                      role="menuitem"
-                      onClick={() => { void handleRecentClick(recent); setIsRecentsOpen(false); }}
-                      title={recent.name}
-                    >
-                      <div className="recent-item-info">
-                        <span className="recent-name">{recent.name}</span>
-                        <span className="recent-meta">{formatBytes(recent.size)}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="recent-remove-btn"
-                        onClick={(e) => void handleRemoveRecent(recent.key, e)}
-                        title="Remove from recents"
-                        aria-label={`Remove ${recent.name} from recents`}
-                      >
-                        &times;
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-          <div className="theme-menu-container">
-            <button
-              type="button"
-              className="icon-button theme-menu-btn"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => {
-                const order: ('auto' | 'light' | 'dark')[] = ['auto', 'light', 'dark'];
-                const next = order[(order.indexOf(theme) + 1) % order.length];
-                if (next) setTheme(next);
-              }}
-            >
-              {theme === 'dark' ? (
-                <Moon aria-hidden="true" size={16} />
-              ) : theme === 'light' ? (
-                <Sun aria-hidden="true" size={16} />
-              ) : (
-                <SunMoon aria-hidden="true" size={16} />
-              )}
-            </button>
-            <div className="theme-flyout segmented-control" aria-label="Theme mode">
-              <button
-                type="button"
-                className={theme === 'auto' ? 'active' : ''}
-                onClick={() => setTheme('auto')}
-              >
-                Auto
-              </button>
-              <button
-                type="button"
-                className={theme === 'light' ? 'active' : ''}
-                onClick={() => setTheme('light')}
-              >
-                Light
-              </button>
-              <button
-                type="button"
-                className={theme === 'dark' ? 'active' : ''}
-                onClick={() => setTheme('dark')}
-              >
-                Dark
-              </button>
-            </div>
-          </div>
+          <RecentsMenu
+            recents={recents}
+            isOpen={isRecentsOpen}
+            onToggle={() => { setIsRecentsOpen(prev => !prev); setIsSettingsOpen(false); }}
+            onOpen={(recent) => { void handleRecentClick(recent); }}
+            onRemove={(key, e) => { void handleRemoveRecent(key, e); }}
+            onClearAll={() => { void handleClearAllRecents(); }}
+            onClose={() => { setIsRecentsOpen(false); }}
+          />
+          <SettingsMenu
+            isOpen={isSettingsOpen}
+            onToggle={() => { setIsSettingsOpen(prev => !prev); setIsRecentsOpen(false); }}
+            onResetSettings={handleResetSettings}
+            onClose={() => { setIsSettingsOpen(false); }}
+          />
         </div>
       </header>
 
-      <section className="workspace" aria-label="Unity package workspace">
-        <aside className="sidebar" aria-label="Package controls">
+      <section
+        className={[
+          'workspace',
+          leftPaneCollapsed ? 'workspace--left-collapsed' : '',
+          rightPaneCollapsed ? 'workspace--right-collapsed' : '',
+        ].filter(Boolean).join(' ')}
+        aria-label="Unity package workspace"
+      >
+        <aside className={`sidebar${leftPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Package controls">
+          <button
+            type="button"
+            className="pane-collapse-toggle pane-collapse-toggle--left"
+            aria-label={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'}
+            title={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'}
+            onClick={() => { setLeftPaneCollapsed(prev => !prev); }}
+          >
+            {leftPaneCollapsed
+              ? <ChevronRight aria-hidden="true" size={15} />
+              : <ChevronLeft aria-hidden="true" size={15} />}
+          </button>
           <DropZone isLoading={isLoading} onPackageFile={(file) => void handlePackageFile(file)} />
           <div className="search-box">
             <Search aria-hidden="true" size={17} />
@@ -1466,8 +1511,9 @@ function AppContent() {
                       );
                       void handleDownload(records, 'selected_files.zip', result.ids).then(() => {
                         if (result.missingMetaForAssetIds.length > 0) {
-                          setStatus(
-                            `ZIP created. ${result.missingMetaForAssetIds.length.toString()} asset(s) have no .meta sidecar in this package.`,
+                          addToast(
+                            `${result.missingMetaForAssetIds.length.toString()} asset(s) have no .meta sidecar in this package.`,
+                            'error',
                           );
                         }
                       });
@@ -1535,6 +1581,7 @@ function AppContent() {
                 setImportedRecords([]);
                 setGzipLevel(6);
                 setExportFilename(getDefaultFilename());
+                addToast('Pack draft reset.');
               }}
               gzipLevel={gzipLevel}
               setGzipLevel={setGzipLevel}
@@ -1565,14 +1612,34 @@ function AppContent() {
           )}
         </section>
 
-        <aside className="preview-panel" aria-label="Preview and metadata">
+        <aside className={`preview-panel${rightPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Preview and metadata">
+          <button
+            type="button"
+            className="pane-collapse-toggle pane-collapse-toggle--right"
+            aria-label={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'}
+            title={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'}
+            onClick={() => { setRightPaneCollapsed(prev => !prev); }}
+          >
+            {rightPaneCollapsed
+              ? <ChevronLeft aria-hidden="true" size={15} />
+              : <ChevronRight aria-hidden="true" size={15} />}
+          </button>
           <PreviewPanel
-            record={activeRecord}
+            record={detailsRecord}
             records={records}
             includeMetaSidecars={includeMetaSidecars}
             onDownloadZip={(zipRecords, fileName, recordIds) => void handleDownload(zipRecords, fileName, recordIds)}
-            onStatusWarning={setStatus}
+            onStatusWarning={(msg) => { addToast(msg, 'error'); }}
             onRevealInTree={revealPathInTree}
+            onOpenSibling={(siblingId) => { setDetailsRecordId(siblingId); }}
+            onOpenSiblingInExplorer={(siblingId) => {
+              setDetailsRecordId(null);
+              revealPathInTree(siblingId);
+            }}
+            showPreviews={showPreviews}
+            onSetShowPreviews={setShowPreviews}
+            includeMetaSidecarsForSibling={includeMetaSidecars}
+            onSetIncludeMetaSidecars={setIncludeMetaSidecars}
           />
         </aside>
       </section>
@@ -1608,8 +1675,11 @@ function AppContent() {
           onClose={() => { setIsDiagnosticsOpen(false); }}
         />
       ) : null}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <footer className="statusbar" aria-live="polite">
-        <span>{status}</span>
+        <span className="statusbar-op">
+          {currentOp ?? lastCompleted ?? null}
+        </span>
         {error ? (
           <span className="status-error">
             <AlertTriangle aria-hidden="true" size={15} />

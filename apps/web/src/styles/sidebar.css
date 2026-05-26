@@ -1,11 +1,75 @@
 /* Sidebar: drop zone, search, filters, disclosure sections */
 
+/* Pane collapse toggle button -- appears at the inner edge of both side panes */
+.pane-collapse-toggle {
+  display: none; /* hidden on mobile; enabled at desktop breakpoint below */
+  position: absolute;
+  z-index: 10;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.pane-collapse-toggle--left {
+  right: -10px;
+}
+
+.pane-collapse-toggle--right {
+  left: -10px;
+}
+
+.sidebar:hover .pane-collapse-toggle,
+.preview-panel:hover .pane-collapse-toggle,
+.pane-collapsed .pane-collapse-toggle {
+  opacity: 1;
+}
+
+/* Collapsed pane: hide all content except the toggle */
+.pane-collapsed {
+  overflow: visible;
+  position: relative;
+  padding: 0 !important;
+}
+
+.pane-collapsed > *:not(.pane-collapse-toggle) {
+  display: none !important;
+}
+
+.pane-collapsed .pane-collapse-toggle {
+  display: flex;
+  opacity: 1;
+  top: 50%;
+  /* centre the strip button within the narrow 28px column */
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  width: 22px;
+}
+
+@media (min-width: 761px) {
+  .pane-collapse-toggle {
+    display: flex;
+  }
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px;
   overflow: auto;
+  position: relative;
 }
 
 /* Disclosure sections */

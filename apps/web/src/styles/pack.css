@@ -55,12 +55,20 @@
   border-bottom: 0;
 }
 
-.staged-row span {
+.staged-row-path {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.staged-row-size {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 0 6px;
 }
 
 /* PackUX enrichment */
@@ -184,9 +192,11 @@
   font-weight: 600;
 }
 
-.order-note {
-  font-size: 0.75rem;
+.order-note-icon {
+  display: flex;
+  align-items: center;
   color: var(--muted);
+  cursor: default;
 }
 
 .staged-row-wrapper {
@@ -276,11 +286,6 @@
   font-weight: 500;
 }
 
-.drag-drop-placeholder small {
-  color: var(--muted);
-  font-size: 0.75rem;
-  max-width: 250px;
-}
 
 .staged-pathname-input:focus {
   outline: none;

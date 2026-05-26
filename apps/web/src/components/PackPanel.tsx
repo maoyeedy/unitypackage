@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle,
   File,
+  Info,
   PackagePlus,
   RefreshCw,
   UploadCloud,
@@ -246,13 +247,18 @@ export function PackPanel({
       >
         <div className="staged-list-header">
           <h3>Staged Entries</h3>
-          <span className="order-note">Entries are written in deterministic GUID order.</span>
+          <span
+            className="order-note-icon"
+            title="Entries are written in deterministic GUID order."
+            aria-label="Entries are written in deterministic GUID order."
+          >
+            <Info aria-hidden="true" size={14} />
+          </span>
         </div>
         {stagedRecords.length === 0 ? (
           <div className="drag-drop-placeholder">
             <UploadCloud size={32} />
-            <p>Drag and drop local files/folders here to stage them</p>
-            <small>Pairs of file + file.meta are matched; loose files auto-generate minimal metas.</small>
+            <p>Drop files or use Stage for Pack in the explorer.</p>
           </div>
         ) : (
           <div className="staged-list">
@@ -285,8 +291,9 @@ export function PackPanel({
                         }}
                       />
                     ) : (
-                      <span>{record.virtualPath}</span>
+                      <span className="staged-row-path">{record.virtualPath}</span>
                     )}
+                    <span className="staged-row-size">{formatBytes(record.byteLength)}</span>
                     <button
                       type="button"
                       className="icon-button"

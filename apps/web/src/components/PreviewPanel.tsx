@@ -14,14 +14,16 @@ import {
   getDeclaredMetaInfoForRecord,
   getExpectedImporterTypeForRecord,
   getRecordCategory,
+  getSiblings,
   readDeclaredMetaImporter,
   readMetaGuid,
   resolveMetaSidecarSelection,
   toSidecarSelectableRecords,
   type PackageFileRecord,
   type PreviewKind,
+  type RecordCategory,
 } from '../packageModel';
-import { highlightCode, findQueryMatches, splitLineTokensForMatches, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from '../syntaxHighlight';
+import { highlightCode, findQueryMatches, splitLineTokensForMatches, type HighlightedCode, type HighlightedToken } from '../syntaxHighlight';
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -43,6 +45,12 @@ export function PreviewPanel({
   onDownloadZip,
   onStatusWarning,
   onRevealInTree,
+  onOpenSibling,
+  onOpenSiblingInExplorer,
+  showPreviews,
+  onSetShowPreviews,
+  includeMetaSidecarsForSibling,
+  onSetIncludeMetaSidecars,
 }: {
   record: PackageFileRecord | null;
   records: PackageFileRecord[];
@@ -50,6 +58,12 @@ export function PreviewPanel({
   onDownloadZip: (records: PackageFileRecord[], fileName: string, recordIds: string[]) => void;
   onStatusWarning: (message: string) => void;
   onRevealInTree: (path: string) => void;
+  onOpenSibling?: (siblingId: string) => void;
+  onOpenSiblingInExplorer?: (siblingId: string) => void;
+  showPreviews?: boolean;
+  onSetShowPreviews?: (value: boolean) => void;
+  includeMetaSidecarsForSibling?: boolean;
+  onSetIncludeMetaSidecars?: (value: boolean) => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState(false);
@@ -191,6 +205,16 @@ export function PreviewPanel({
       </header>
       <PreviewBody record={record} blobUrl={blobUrl} />
       <Metadata record={record} records={records} />
+      <RelatedRow
+        record={record}
+        records={records}
+        onOpenSibling={onOpenSibling}
+        onOpenSiblingInExplorer={onOpenSiblingInExplorer}
+        showPreviews={showPreviews}
+        onSetShowPreviews={onSetShowPreviews}
+        includeMetaSidecarsForSibling={includeMetaSidecarsForSibling}
+        onSetIncludeMetaSidecars={onSetIncludeMetaSidecars}
+      />
     </div>
   );
 }
@@ -445,29 +469,6 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   return <HexPreview record={record} />;
 }
 
-function usePreferredSyntaxTheme(): SyntaxThemeMode {
-  const [themeMode, setThemeMode] = useState<SyntaxThemeMode>(() => getPreferredSyntaxTheme());
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const updateTheme = () => {
-      setThemeMode(mediaQuery.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', updateTheme);
-    updateTheme();
-
-    return () => {
-      mediaQuery.removeEventListener('change', updateTheme);
-    };
-  }, []);
-
-  return themeMode;
-}
-
-function getPreferredSyntaxTheme(): SyntaxThemeMode {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 function tokenStyle(token: HighlightedToken): CSSProperties {
   const style: CSSProperties = {
     color: token.color,
@@ -488,7 +489,6 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
   const [loadedLimit, setLoadedLimit] = useState(20000);
-  const themeMode = usePreferredSyntaxTheme();
 
   useEffect(() => {
     setLoadedLimit(20000);
@@ -507,7 +507,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     let cancelled = false;
     setHighlightedCode(null);
 
-    void highlightCode(preview, record.syntaxLanguage, themeMode)
+    void highlightCode(preview, record.syntaxLanguage)
       .then(result => {
         if (!cancelled) setHighlightedCode(result);
       })
@@ -518,7 +518,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     return () => {
       cancelled = true;
     };
-  }, [preview, record.syntaxLanguage, themeMode]);
+  }, [preview, record.syntaxLanguage]);
 
   const [isFindOpen, setIsFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
@@ -828,7 +828,6 @@ function CopyButton({ text }: { text: string }) {
 }
 
 function MetaSidecarView({ siblingRecord }: { siblingRecord: PackageFileRecord }) {
-  const themeMode = usePreferredSyntaxTheme();
   const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null);
 
   const metaText = useMemo(() => {
@@ -842,7 +841,7 @@ function MetaSidecarView({ siblingRecord }: { siblingRecord: PackageFileRecord }
     let cancelled = false;
     setHighlightedCode(null);
 
-    void highlightCode(metaText, 'yaml', themeMode)
+    void highlightCode(metaText, 'yaml')
       .then(result => {
         if (!cancelled) setHighlightedCode(result);
       })
@@ -853,7 +852,7 @@ function MetaSidecarView({ siblingRecord }: { siblingRecord: PackageFileRecord }
     return () => {
       cancelled = true;
     };
-  }, [metaText, themeMode]);
+  }, [metaText]);
 
   const importerString = metaImporter
     ? metaImporter.kind === 'known'
@@ -1006,6 +1005,90 @@ function MetaSidecarDisclosure({ siblingRecord }: { siblingRecord: PackageFileRe
       </summary>
       <MetaSidecarView siblingRecord={siblingRecord} />
     </details>
+  );
+}
+
+const CATEGORY_LABEL: Record<RecordCategory, string> = {
+  asset: 'Asset',
+  meta: '.meta',
+  preview: 'Preview',
+};
+
+function RelatedRow({
+  record,
+  records,
+  onOpenSibling,
+  onOpenSiblingInExplorer,
+  showPreviews,
+  onSetShowPreviews,
+  includeMetaSidecarsForSibling,
+  onSetIncludeMetaSidecars,
+}: {
+  record: PackageFileRecord;
+  records: PackageFileRecord[];
+  onOpenSibling?: (siblingId: string) => void;
+  onOpenSiblingInExplorer?: (siblingId: string) => void;
+  showPreviews?: boolean;
+  onSetShowPreviews?: (value: boolean) => void;
+  includeMetaSidecarsForSibling?: boolean;
+  onSetIncludeMetaSidecars?: (value: boolean) => void;
+}) {
+  const siblings = useMemo(() => getSiblings(record, records), [record, records]);
+  const hasSiblings = siblings.asset !== undefined || siblings.meta !== undefined || siblings.preview !== undefined;
+  if (!hasSiblings) return null;
+
+  const siblingEntries: { category: RecordCategory; sibling: PackageFileRecord }[] = [];
+  if (siblings.asset !== undefined) siblingEntries.push({ category: 'asset', sibling: siblings.asset });
+  if (siblings.meta !== undefined) siblingEntries.push({ category: 'meta', sibling: siblings.meta });
+  if (siblings.preview !== undefined) siblingEntries.push({ category: 'preview', sibling: siblings.preview });
+
+  return (
+    <section className="related-row" aria-label="Related records">
+      <h4 className="related-row-label">Related</h4>
+      <ul className="related-row-list">
+        {siblingEntries.map(({ category, sibling }) => {
+          // Determine whether this sibling is currently hidden by explorer filters
+          const isPreviewHidden = category === 'preview' && !showPreviews;
+          const isMetaHidden = category === 'meta' && !includeMetaSidecarsForSibling;
+          const isHiddenInExplorer = isPreviewHidden || isMetaHidden;
+
+          return (
+            <li key={sibling.id} className="related-row-item">
+              <button
+                type="button"
+                className="related-sibling-btn"
+                title={`View ${sibling.virtualPath} in details pane`}
+                onClick={() => { onOpenSibling?.(sibling.id); }}
+              >
+                <span className="related-badge">{CATEGORY_LABEL[category]}</span>
+                <span className="related-filename">{sibling.fileName}</span>
+              </button>
+              <button
+                type="button"
+                className="related-reveal-btn"
+                title={
+                  isHiddenInExplorer
+                    ? `Enable ${category === 'preview' ? 'preview records' : '.meta sidecars'} and reveal in list`
+                    : `Open ${sibling.virtualPath} in explorer`
+                }
+                onClick={() => {
+                  // Enable the appropriate filter if needed so the record is visible
+                  if (isPreviewHidden) {
+                    onSetShowPreviews?.(true);
+                  }
+                  if (isMetaHidden) {
+                    onSetIncludeMetaSidecars?.(true);
+                  }
+                  onOpenSiblingInExplorer?.(sibling.id);
+                }}
+              >
+                Open in list
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

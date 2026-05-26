@@ -638,6 +638,43 @@ export function getExpectedImporterTypeForRecord(record: PackageFileRecord): Met
   return detectMetaImporterType(pathname);
 }
 
+export interface RecordSiblings {
+  asset?: PackageFileRecord;
+  meta?: PackageFileRecord;
+  preview?: PackageFileRecord;
+}
+
+/**
+ * Returns the asset/meta/preview siblings for the given record by GUID.
+ * Only includes records whose category differs from the current record's
+ * category (i.e. the record itself is never included in the result).
+ * Uses getRecordCategory() to discriminate -- no 'kind' field on the record.
+ */
+export function getSiblings(
+  record: PackageFileRecord,
+  allRecords: PackageFileRecord[],
+): RecordSiblings {
+  const currentCategory = getRecordCategory(record);
+  const siblings: RecordSiblings = {};
+
+  for (const candidate of allRecords) {
+    if (candidate.id === record.id) continue;
+    if (candidate.guid !== record.guid) continue;
+    const category = getRecordCategory(candidate);
+    if (category === currentCategory) continue;
+    // Take the first match per category (duplicates are rare; first wins)
+    if (category === 'asset' && siblings.asset === undefined) {
+      siblings.asset = candidate;
+    } else if (category === 'meta' && siblings.meta === undefined) {
+      siblings.meta = candidate;
+    } else if (category === 'preview' && siblings.preview === undefined) {
+      siblings.preview = candidate;
+    }
+  }
+
+  return siblings;
+}
+
 /**
  * Finds the meta sibling record for the given record among `records`.
  *
