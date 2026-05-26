@@ -909,7 +909,7 @@ describe('package model helpers', () => {
       expect(diag?.recordId).toBe(records[0]?.id);
     });
 
-    it('returns blocked for oversized-pathname when tar entry name exceeds 100 bytes', () => {
+    it('returns blocked for oversized-pathname-tar when tar entry name exceeds 100 bytes', () => {
       // worst case is <guid>/asset.meta, with a long guid it would exceed 100 bytes
       const longGuid = 'a'.repeat(90);
       const records = entriesToRecords([
@@ -923,7 +923,7 @@ describe('package model helpers', () => {
 
       const validation = validatePackDraft(records);
       expect(validation.status).toBe('blocked');
-      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname');
+      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname-tar');
       expect(diag).toBeDefined();
       expect(diag?.recordId).toBe(records[0]?.id);
     });
@@ -1996,7 +1996,7 @@ describe('P2 tree ergonomics helpers', () => {
       
       const validation = validatePackDraft(records);
       expect(validation.status).toBe('blocked');
-      expect(validation.diagnostics.some(d => d.code === 'oversized-pathname')).toBe(true);
+      expect(validation.diagnostics.some(d => d.code === 'oversized-pathname-tar')).toBe(true);
     });
 
     it('updates meta bytes guid correctly', () => {

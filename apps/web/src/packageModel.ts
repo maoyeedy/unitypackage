@@ -111,6 +111,7 @@ export type PackDraftDiagnosticCode =
   | 'missing-meta'
   | 'duplicate-guid'
   | 'oversized-pathname'
+  | 'oversized-pathname-tar'
   | 'empty-entries'
   | 'preview-record'
   | 'no-assets'
@@ -788,9 +789,9 @@ export function validatePackDraft(
       });
     }
     if (!pathVal.ok) {
-      if (pathVal.reason === 'oversized-tar-entry') {
+      if (pathVal.reason === 'oversized-pathname-tar') {
         diagnostics.push({
-          code: 'oversized-pathname',
+          code: 'oversized-pathname-tar',
           message: `Pathname validation failed for ${record.pathname}: tar entry name is too long (${pathVal.detail} bytes)`,
           recordId: record.id,
         });

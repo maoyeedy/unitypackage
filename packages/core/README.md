@@ -266,6 +266,7 @@ interface CreateUnityPackageEntry {
   pathname: string;
   meta: Uint8Array;
   asset?: Uint8Array;
+  preview?: Uint8Array;
 }
 
 interface CreateUnityPackageOptions {
@@ -281,6 +282,7 @@ Writer behavior:
 - Requires at least one entry.
 - Requires a non-empty `meta` payload for every entry.
 - Allows folder-like entries by omitting `asset`.
+- Allows preview-like thumbnail images via `preview` (emits `<guid>/preview.png`).
 - Allows GUIDs that are exactly 32 hexadecimal characters, case-insensitive.
 - Rejects duplicate GUIDs.
 - Rejects pathnames longer than 200 characters.
@@ -415,7 +417,7 @@ Rejection reasons:
 | `parent-traversal` | Any `/`-delimited segment is exactly `..`. |
 | `backslash` | The pathname contains `\`. |
 | `control-character` | A character has code point below `0x20`; `detail` includes the index and code point. |
-| `oversized-tar-entry` | With `options.guid`, `<guid>/asset.meta` exceeds the 100-byte ustar name limit. |
+| `oversized-pathname-tar` | With `options.guid`, `<guid>/asset.meta` exceeds the 100-byte ustar name limit. |
 
 `detectPathnameCollisions(entries)` groups parsed entries by lower-cased
 pathname and returns only groups with more than one entry:

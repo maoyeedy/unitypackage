@@ -2,15 +2,15 @@
 // GUID utilities
 // ---------------------------------------------------------------------------
 
-const VALID_GUID_LOWERCASE_PATTERN = /^[0-9a-f]{32}$/;
+const VALID_GUID_PATTERN = /^[0-9a-fA-F]{32}$/;
 
 /**
- * Returns true when value is exactly 32 lowercase hexadecimal characters.
+ * Returns true when value is exactly 32 hexadecimal characters (case-insensitive).
  * Unity Editor exports use lowercase 32-hex GUIDs; the parser preserves
  * whatever prefix appears in the archive as `guid`.
  */
 export function isValidGuid(value: string): boolean {
-  return VALID_GUID_LOWERCASE_PATTERN.test(value);
+  return VALID_GUID_PATTERN.test(value);
 }
 
 /**

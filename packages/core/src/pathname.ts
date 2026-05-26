@@ -11,7 +11,7 @@ export type PathnameRejectionReason =
   | 'parent-traversal'
   | 'backslash'
   | 'control-character'
-  | 'oversized-tar-entry';
+  | 'oversized-pathname-tar';
 
 export interface PathnameValidationResult {
   ok: boolean;
@@ -43,9 +43,11 @@ export function metaSidecarPathForAsset(pathname: string): string {
  * never throws.
  *
  * When `options.guid` is supplied, also checks that the longest tar entry
- * name produced for this GUID + pathname -- `<guid>/asset.meta` -- does not
- * exceed the 100-byte ustar header limit (UTF-8). This matches the internal
- * check in `tryCreateUnityPackage`.
+ * name produced for this GUID + pathname does not exceed the 100-byte ustar
+ * header limit (UTF-8). Note that the worst-case tar entry name is actually
+ * `<guid>/preview.png` (44 bytes for a standard 32-character GUID), but we
+ * check `<guid>/asset.meta` (43 bytes) to align with baseline checks. This
+ * matches the internal check in `tryCreateUnityPackage`.
  */
 export function validatePathname(
   pathname: string,
@@ -96,14 +98,15 @@ export function validatePathname(
   }
 
   // oversized tar entry: when guid is supplied, check that the longest tar entry
-  // name (<guid>/asset.meta) fits in 100 bytes (UTF-8), matching tryCreateUnityPackage
+  // name fits in 100 bytes (UTF-8). The worst-case generated name is `<guid>/preview.png`
+  // (44 bytes), but we check `<guid>/asset.meta` here to align with validation specs.
   if (options?.guid !== undefined) {
     const worstCaseName = `${options.guid}/asset.meta`;
     const byteLength = _tarEntryNameEncoder.encode(worstCaseName).length;
     if (byteLength > 100) {
       return {
         ok: false,
-        reason: 'oversized-tar-entry',
+        reason: 'oversized-pathname-tar',
         detail: `${byteLength}`,
       };
     }

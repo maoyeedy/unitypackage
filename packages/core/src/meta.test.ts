@@ -51,10 +51,9 @@ describe('createMinimalMeta', () => {
     expect(() => createMinimalMeta('')).toThrow('""');
   });
 
-  it('throws for an uppercase GUID', () => {
-    expect(() => createMinimalMeta('0123456789ABCDEF0123456789ABCDEF')).toThrow(
-      '0123456789ABCDEF0123456789ABCDEF',
-    );
+  it('accepts and lowercases an uppercase GUID', () => {
+    const result = createMinimalMeta('0123456789ABCDEF0123456789ABCDEF');
+    expect(result).toContain('guid: 0123456789abcdef0123456789abcdef');
   });
 
   it('throws for a 31-character GUID', () => {
@@ -200,10 +199,9 @@ describe('createMinimalMetaFor', () => {
     expect(() => createMinimalMetaFor('not-a-guid', 'Assets/Foo.cs')).toThrow('not-a-guid');
   });
 
-  it('throws for an uppercase GUID', () => {
-    expect(() => createMinimalMetaFor('0123456789ABCDEF0123456789ABCDEF', 'Assets/Foo.cs')).toThrow(
-      '0123456789ABCDEF0123456789ABCDEF',
-    );
+  it('accepts and lowercases an uppercase GUID', () => {
+    const result = createMinimalMetaFor('0123456789ABCDEF0123456789ABCDEF', 'Assets/Foo.cs');
+    expect(result).toContain('guid: 0123456789abcdef0123456789abcdef');
   });
 
   it('produces DefaultImporterFolder YAML for extensionless path (not LICENSE)', () => {
@@ -235,10 +233,9 @@ describe('createMinimalFolderMeta', () => {
     expect(() => createMinimalFolderMeta('bad')).toThrow('bad');
   });
 
-  it('throws for an uppercase GUID', () => {
-    expect(() => createMinimalFolderMeta('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toThrow(
-      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-    );
+  it('accepts and lowercases an uppercase GUID', () => {
+    const result = createMinimalFolderMeta('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    expect(result).toContain('guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   });
 
   it('produces byte-stable output across two calls with the same GUID', () => {
@@ -306,6 +303,14 @@ describe('writeMetaGuid', () => {
     const updatedText = decoder.decode(updatedBytes);
 
     expect(updatedText).toBe('fileFormatVersion: 2\r\nguid: abcdef0123456789abcdef0123456789\r\nDefaultImporter:\r\n');
+  });
+
+  it('accepts and lowercases an uppercase GUID', () => {
+    const originalText = 'fileFormatVersion: 2\nguid: 00000000000000000000000000000000\nDefaultImporter:\n';
+    const bytes = encoder.encode(originalText);
+    const updatedBytes = writeMetaGuid(bytes, 'ABCDEF0123456789ABCDEF0123456789');
+    const updatedText = decoder.decode(updatedBytes);
+    expect(updatedText).toBe('fileFormatVersion: 2\nguid: abcdef0123456789abcdef0123456789\nDefaultImporter:\n');
   });
 
   it('throws for an invalid GUID', () => {

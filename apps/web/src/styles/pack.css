@@ -235,7 +235,8 @@
   color: var(--danger);
 }
 
-.record-diagnostic-item.oversized-pathname {
+.record-diagnostic-item.oversized-pathname,
+.record-diagnostic-item.oversized-pathname-tar {
   color: var(--danger);
 }
 

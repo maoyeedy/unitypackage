@@ -7,6 +7,7 @@ export interface CreateUnityPackageEntry {
   pathname: string;
   meta: Uint8Array;
   asset?: Uint8Array;
+  preview?: Uint8Array;
 }
 
 export interface CreateUnityPackageOptions {
@@ -17,6 +18,7 @@ export type CreateUnityPackageDiagnosticCode =
   | 'duplicate-guid'
   | 'missing-meta'
   | 'oversized-pathname'
+  | 'oversized-pathname-tar'
   | 'empty-entries'
   | 'invalid-guid';
 
@@ -27,6 +29,7 @@ export interface CreateUnityPackageDiagnostic {
   guid?: string;
   path?: string;
 }
+
 export function estimateUnityPackageSize(
   entries: CreateUnityPackageEntry[],
 ): { tarBytes: number; entryCount: number } {
@@ -46,6 +49,12 @@ export function estimateUnityPackageSize(
     // asset member is optional
     if (entry.asset) {
       tarBytes += BLOCK_SIZE + Math.ceil(entry.asset.length / BLOCK_SIZE) * BLOCK_SIZE;
+      entryCount += 1;
+    }
+
+    // preview member is optional
+    if (entry.preview) {
+      tarBytes += BLOCK_SIZE + Math.ceil(entry.preview.length / BLOCK_SIZE) * BLOCK_SIZE;
       entryCount += 1;
     }
   }
@@ -126,17 +135,20 @@ export function tryCreateUnityPackage(
       });
     }
 
-    // oversized-pathname (ustar 100-byte tar entry name limit)
+    // oversized-pathname-tar (ustar 100-byte tar entry name limit)
     // Use the normalized (lowercase) guid since that is what gets written to the tar
+    // Note: The worst-case tar entry name length is <guid>/preview.png (44 bytes),
+    // but we check all generated entry names here.
     const tarNames = [
       `${guid}/pathname`,
       `${guid}/asset.meta`,
       ...(entry.asset ? [`${guid}/asset`] : []),
+      ...(entry.preview ? [`${guid}/preview.png`] : []),
     ];
     for (const tarName of tarNames) {
       if (textEncoder.encode(tarName).length > TAR_NAME_LIMIT) {
         diagnostics.push({
-          code: 'oversized-pathname',
+          code: 'oversized-pathname-tar',
           message: `Tar entry name is too long: ${tarName}`,
           severity: 'error',
           guid,
@@ -167,6 +179,10 @@ export function tryCreateUnityPackage(
 
     if (entry.asset) {
       tarEntries.push(createTarEntry(`${g}/asset`, entry.asset));
+    }
+
+    if (entry.preview) {
+      tarEntries.push(createTarEntry(`${g}/preview.png`, entry.preview));
     }
   }
 

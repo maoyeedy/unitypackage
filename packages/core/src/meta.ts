@@ -20,7 +20,8 @@ export function createMinimalMeta(guid: string): string {
   if (!isValidGuid(guid)) {
     throw new Error(`createMinimalMeta: invalid GUID "${guid}" -- must be exactly 32 lowercase hexadecimal characters`);
   }
-  return `fileFormatVersion: 2\nguid: ${guid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n`;
+  const lowerGuid = guid.toLowerCase();
+  return `fileFormatVersion: 2\nguid: ${lowerGuid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n`;
 }
 
 /**
@@ -68,6 +69,7 @@ export function writeMetaGuid(meta: Uint8Array, newGuid: string): Uint8Array {
   if (!isValidGuid(newGuid)) {
     throw new Error(`writeMetaGuid: invalid GUID "${newGuid}" -- must be exactly 32 lowercase hexadecimal characters`);
   }
+  const lowerGuid = newGuid.toLowerCase();
   const text = textDecoder.decode(meta);
   const lines = text.split('\n');
   let found = false;
@@ -79,13 +81,13 @@ export function writeMetaGuid(meta: Uint8Array, newGuid: string): Uint8Array {
       const matchIndent = /^\s*/.exec(line);
       const indent = matchIndent ? matchIndent[0] : '';
       const hasCR = line.endsWith('\r');
-      lines[i] = `${indent}guid: ${newGuid}${hasCR ? '\r' : ''}`;
+      lines[i] = `${indent}guid: ${lowerGuid}${hasCR ? '\r' : ''}`;
       found = true;
       break;
     }
   }
 
-  const updatedText = found ? lines.join('\n') : `guid: ${newGuid}\n` + text;
+  const updatedText = found ? lines.join('\n') : `guid: ${lowerGuid}\n` + text;
   return new TextEncoder().encode(updatedText);
 }
 
@@ -204,12 +206,13 @@ export function createMinimalMetaFor(guid: string, pathname: string, isDir?: boo
   if (!isValidGuid(guid)) {
     throw new Error(`createMinimalMetaFor: invalid GUID "${guid}" -- must be exactly 32 lowercase hexadecimal characters`);
   }
+  const lowerGuid = guid.toLowerCase();
   const type = detectMetaImporterType(pathname, isDir);
   switch (type) {
-    case 'DefaultImporterFolder': return defaultImporterFolderTemplate(guid);
-    case 'TextScriptImporter':    return textScriptImporterTemplate(guid);
-    case 'MonoImporter':          return monoImporterTemplate(guid);
-    default:                      return `fileFormatVersion: 2\nguid: ${guid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n`;
+    case 'DefaultImporterFolder': return defaultImporterFolderTemplate(lowerGuid);
+    case 'TextScriptImporter':    return textScriptImporterTemplate(lowerGuid);
+    case 'MonoImporter':          return monoImporterTemplate(lowerGuid);
+    default:                      return `fileFormatVersion: 2\nguid: ${lowerGuid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n`;
   }
 }
 
@@ -225,5 +228,5 @@ export function createMinimalFolderMeta(guid: string): string {
   if (!isValidGuid(guid)) {
     throw new Error(`createMinimalFolderMeta: invalid GUID "${guid}" -- must be exactly 32 lowercase hexadecimal characters`);
   }
-  return defaultImporterFolderTemplate(guid);
+  return defaultImporterFolderTemplate(guid.toLowerCase());
 }
