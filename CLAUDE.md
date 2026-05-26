@@ -17,6 +17,9 @@ bun run build:cli                 # build:web → copy assets → build cli
 bun run dev:web                   # Vite dev server
 bun run lint:fix                  # eslint --fix all
 bun run pack:dry                  # npm pack --dry-run
+bun run test:core                 # vitest run --project core (fast, fail-fast)
+bun run test:cli                  # vitest run --project cli (slower, I/O)
+bun run test:web                  # vitest run --project web (unit)
 bun run --filter unitypackage-core test
 bun run --filter unitypackage-tools test
 bun run --filter @unitypackage-tools/web test
@@ -46,7 +49,7 @@ bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unit
 
 - `docs/reference/archive-format-spec.md` — `.unitypackage` format spec
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
-- `docs/reference/release.md` — publishing checklist
+- `docs/plans/ci/ci-release.md` — publishing checklist
 - `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features
 
@@ -86,7 +89,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **`packages/core` build writes `dist/esm/package.json`**: `printf '{"type":"module"}'` is load-bearing — keeps Node from emitting `MODULE_TYPELESS_PACKAGE_JSON`.
 - **`packages/core` test helpers**: avoid non-test helper files under `packages/core/src`; `tsconfig.json` includes all non-`*.test.ts` source files in the published build.
 - **`apps/web` typecheck is `tsc -b`** (not `--noEmit`). `--noEmit` skips project reference resolution.
-- **`apps/web` tests are Vitest unit tests**: use `bun run --filter @unitypackage-tools/web test` for model/helper coverage.
+- **`apps/web` tests are Vitest unit tests**: use `bun run --filter @unitypackage-tools/web test` or `bun run test:web` for model/helper coverage.
 - **`bun run --filter @unitypackage-tools/web lint` may lint generated `apps/web/dev-dist/`**: use `bunx eslint apps/web/src` for source-only lint after web UI edits.
 - **ESLint type-aware rules exclude `*.test.ts`** in `packages/cli` — they lack `@types/node` in tsconfig scope.
 - **`build:cli` order**: `node scripts/copy-web-assets.ts` errors if `apps/web/dist/` missing. Use the root `build:cli` script (chains `build:web` first).
@@ -97,6 +100,8 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - **`getByRole` name matching is substring by default**: `getByRole('button', { name: 'Pack' })` also matches "Stage for pack". Add `exact: true` whenever the button label appears inside another button's label.
 - **E2E fixture path**: `fixtures/static/archives/Polytope_URP.unitypackage` is 3 dirs above `apps/web/tests/` — `path.join(…, '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
 - **`PARSER_IGNORED_PREVIEW` is silently skipped in `verify`**: the core emits it for every `preview.png` in a GUID directory (normal Unity Editor output), but `packages/cli/src/commands/verify.ts` filters it out before adding to `findings` — intentional, not an oversight.
+
+- **`vitest.config.ts` at root**: defines projects for core, cli, web via `test.projects` array. CI can stage independently: `test:core` (fast, fail-first) → `test:cli` → `test:web`. Per-package `bun run --filter <pkg> test` still works standalone.
 
 ## Do Not Edit
 
