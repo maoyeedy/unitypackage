@@ -24,6 +24,6 @@
     "prepublishOnly": "npm run build && npm run lint && npm run test"
   },
   "dependencies": {
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.3"
   }
 }
