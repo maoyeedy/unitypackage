@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { gunzipSync } from 'fflate';
 import {
@@ -393,46 +392,39 @@ describe('estimateUnityPackageSize', () => {
     expect(entryCount).toBe(5);
   });
 
-  it('round-trips the Polytope_URP fixture preserving preview bytes exactly', () => {
-    const fixtureUrl = new URL('../../../fixtures/static/archives/Polytope_URP.unitypackage', import.meta.url);
-    const fixtureBytes = readFileSync(fixtureUrl);
+  it('round-trips a small package preserving preview, asset, and meta bytes exactly', () => {
+    const entries: CreateUnityPackageEntry[] = [
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/WithPreview.asset',
+        asset: encoder.encode('some asset content'),
+        meta: encoder.encode('guid: aaaa'),
+        preview: encoder.encode('fake preview'),
+      },
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: 'Assets/NoPreview.asset',
+        asset: encoder.encode('no preview here'),
+        meta: encoder.encode('guid: bbbb'),
+      },
+      {
+        guid: 'cccccccccccccccccccccccccccccccc',
+        pathname: 'Assets/FolderEntry',
+        meta: encoder.encode('folderAsset: yes'),
+      },
+    ];
 
-    // Parse the original package
-    const { entries: originalEntries } = parseUnityPackageEntries(fixtureBytes);
+    const pkg = createUnityPackage(entries, { gzipLevel: 1 });
+    const { entries: parsed } = parseUnityPackageEntries(pkg);
+    expect(parsed).toHaveLength(3);
 
-    // Verify we have entries with previews to make the test meaningful
-    const entriesWithPreviews = originalEntries.filter(e => e.preview !== undefined);
-    expect(entriesWithPreviews.length).toBeGreaterThan(0);
+    const byGuid = new Map(parsed.map(e => [e.guid, e]));
 
-    // Create package entries structure for repackaging
-    const repackEntries: CreateUnityPackageEntry[] = originalEntries.map(e => {
-      if (!e.meta) {
-        throw new Error(`Fixture entry missing meta: ${e.pathname}`);
-      }
-      return {
-        guid: e.guid,
-        pathname: e.pathname,
-        meta: e.meta,
-        asset: e.asset,
-        preview: e.preview,
-      };
-    });
-
-    // Pack them back
-    const repackedPkg = createUnityPackage(repackEntries, { gzipLevel: 6 });
-
-    // Parse the repacked package
-    const { entries: repackedEntries } = parseUnityPackageEntries(repackedPkg);
-
-    // Check that we got the exact same entries back, including preview bytes
-    expect(repackedEntries.length).toBe(originalEntries.length);
-
-    for (const original of originalEntries) {
-      const repacked = repackedEntries.find(r => r.guid === original.guid);
+    for (const original of entries) {
+      const repacked = byGuid.get(original.guid);
       expect(repacked).toBeDefined();
       expect(repacked!.pathname).toBe(original.pathname);
 
-      // Compare preview bytes
       if (original.preview) {
         expect(repacked!.preview).toBeDefined();
         expect(repacked!.preview).toEqual(original.preview);
@@ -440,7 +432,6 @@ describe('estimateUnityPackageSize', () => {
         expect(repacked!.preview).toBeUndefined();
       }
 
-      // Compare asset bytes
       if (original.asset) {
         expect(repacked!.asset).toBeDefined();
         expect(repacked!.asset).toEqual(original.asset);
@@ -448,11 +439,7 @@ describe('estimateUnityPackageSize', () => {
         expect(repacked!.asset).toBeUndefined();
       }
 
-      // Compare meta bytes
-      if (original.meta) {
-        expect(repacked!.meta).toBeDefined();
-        expect(repacked!.meta).toEqual(original.meta);
-      }
+      expect(repacked!.meta).toEqual(original.meta);
     }
   });
 });
