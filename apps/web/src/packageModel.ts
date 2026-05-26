@@ -6,6 +6,10 @@ import {
   getSyntaxLanguageForPath,
   readDeclaredMetaImporter,
   readMetaGuid,
+  validatePathname,
+  generateGuid,
+  createMinimalMetaFor,
+  createMinimalFolderMeta,
   type MetaImporterType,
   type PreviewKind,
   type SidecarSelectableRecord,
@@ -58,6 +62,9 @@ export interface PackageFileRecord {
   syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
   findings: UnityPackageAnalysisFinding[];
+  meta?: Uint8Array;
+  isRawImported?: boolean;
+  isDirectory?: boolean;
 }
 
 export function getRecordCategory(record: PackageFileRecord): RecordCategory {
@@ -104,9 +111,24 @@ export interface ExtensionGroup {
   totalBytes: number;
 }
 
+export type PackDraftDiagnosticCode =
+  | 'missing-meta'
+  | 'duplicate-guid'
+  | 'oversized-pathname'
+  | 'empty-entries'
+  | 'preview-record'
+  | 'no-assets'
+  | 'invalid-pathname';
+
+export interface PackDraftDiagnostic {
+  code: PackDraftDiagnosticCode;
+  message: string;
+  recordId?: string;
+}
+
 export interface PackValidation {
   status: 'ready' | 'blocked';
-  messages: string[];
+  diagnostics: PackDraftDiagnostic[];
   createEntryCount: number;
 }
 
@@ -721,42 +743,94 @@ export function getAllFolderPaths(records: PackageFileRecord[]): string[] {
   return [...seen].sort((a, b) => a.localeCompare(b));
 }
 
-export function validatePackDraft(records: PackageFileRecord[]): PackValidation {
-  const messages: string[] = [];
-  const stagedAssets = records.filter(record => !record.isUnityPreview && record.extension !== 'meta');
-  const unsupported = records.filter(record => record.isUnityPreview);
+export function validatePackDraft(
+  stagedRecords: PackageFileRecord[],
+  allRecords: PackageFileRecord[] = stagedRecords,
+): PackValidation {
+  const diagnostics: PackDraftDiagnostic[] = [];
+  const stagedAssets = stagedRecords.filter(record => !record.isUnityPreview && record.extension !== 'meta');
+  const unsupported = stagedRecords.filter(record => record.isUnityPreview);
   const guidCounts = new Map<string, number>();
 
   for (const record of stagedAssets) {
     guidCounts.set(record.guid, (guidCounts.get(record.guid) ?? 0) + 1);
-    if (!record.hasMeta) {
-      messages.push(`${record.pathname} is missing metadata.`);
+    
+    // Look for meta record in stagedRecords, then in allRecords, or record.meta
+    const hasMeta = !!record.meta ||
+                    stagedRecords.some(r => r.guid === record.guid && r.extension === 'meta') ||
+                    allRecords.some(r => r.guid === record.guid && r.extension === 'meta');
+    if (!hasMeta) {
+      diagnostics.push({
+        code: 'missing-meta',
+        message: `${record.pathname} is missing metadata.`,
+        recordId: record.id,
+      });
+    }
+
+    // Use validatePathname for safety and tar entry budget checks
+    const pathVal = validatePathname(record.pathname, { guid: record.guid });
+    if (record.pathname.length > 200) {
+      diagnostics.push({
+        code: 'oversized-pathname',
+        message: `Pathname validation failed for ${record.pathname}: pathname exceeds 200 characters (${record.pathname.length})`,
+        recordId: record.id,
+      });
+    }
+    if (!pathVal.ok) {
+      if (pathVal.reason === 'oversized-tar-entry') {
+        diagnostics.push({
+          code: 'oversized-pathname',
+          message: `Pathname validation failed for ${record.pathname}: tar entry name is too long (${pathVal.detail} bytes)`,
+          recordId: record.id,
+        });
+      } else {
+        diagnostics.push({
+          code: 'invalid-pathname',
+          message: `Pathname validation failed for ${record.pathname}: ${pathVal.reason}`,
+          recordId: record.id,
+        });
+      }
     }
   }
 
   for (const record of unsupported) {
-    messages.push(`${record.virtualPath} is a preview record and cannot be packed directly.`);
+    diagnostics.push({
+      code: 'preview-record',
+      message: `${record.virtualPath} is a preview record and cannot be packed directly.`,
+      recordId: record.id,
+    });
   }
 
-  for (const [guid, count] of guidCounts) {
-    if (count > 1) {
-      messages.push(`${guid} is staged more than once.`);
+  for (const record of stagedAssets) {
+    if ((guidCounts.get(record.guid) ?? 0) > 1) {
+      diagnostics.push({
+        code: 'duplicate-guid',
+        message: `${record.guid} is staged more than once.`,
+        recordId: record.id,
+      });
     }
   }
 
-  if (records.length === 0) {
-    messages.push('Stage at least one extracted asset before packing.');
+  if (stagedRecords.length === 0) {
+    diagnostics.push({
+      code: 'empty-entries',
+      message: 'Stage at least one extracted asset before packing.',
+    });
   }
 
-  if (stagedAssets.length === 0 && records.length > 0) {
-    messages.push('Only asset records can become package entries.');
+  if (stagedAssets.length === 0 && stagedRecords.length > 0) {
+    diagnostics.push({
+      code: 'no-assets',
+      message: 'Only asset records can become package entries.',
+    });
   }
 
-  messages.push('Unitypackage export is disabled until the package creation API from docs/plans/web/new-api.md is implemented.');
+  const hasFatal = diagnostics.length > 0;
+  const status = (!hasFatal && stagedAssets.length > 0) ? 'ready' : 'blocked';
 
   return {
-    status: 'blocked',
-    messages,
+    status,
+    diagnostics,
     createEntryCount: stagedAssets.length,
   };
 }
@@ -875,4 +949,103 @@ export async function removeRecentPackage(key: string): Promise<void> {
     console.error('Failed to remove recent package from IndexedDB:', err);
   }
 }
+
+export interface RawDroppedFile {
+  relativePath: string;
+  content: Uint8Array;
+  isDirectory: boolean;
+}
+
+export interface PairedDroppedItem {
+  pathname: string;
+  guid: string;
+  content: Uint8Array;
+  meta: Uint8Array;
+  isDirectory: boolean;
+  isLoose: boolean;
+}
+
+export function getUniqueGuid(preferredGuid: string | null, existingGuids: Set<string>): string {
+  const guid = (preferredGuid ?? generateGuid()).toLowerCase();
+  if (!existingGuids.has(guid)) {
+    return guid;
+  }
+  for (let i = 0; i < 4; i++) {
+    const nextGuid = generateGuid().toLowerCase();
+    if (!existingGuids.has(nextGuid)) {
+      return nextGuid;
+    }
+  }
+  throw new Error('GUID collision: Failed to generate a unique GUID after 4 retries.');
+}
+
+export function updateMetaBytesGuid(metaBytes: Uint8Array, newGuid: string): Uint8Array {
+  const text = new TextDecoder().decode(metaBytes);
+  let updatedText = text;
+  if (/guid:\s*[0-9a-fA-F]{32}/.test(text)) {
+    updatedText = text.replace(/guid:\s*[0-9a-fA-F]{32}/, `guid: ${newGuid}`);
+  } else {
+    updatedText = `guid: ${newGuid}\n` + text;
+  }
+  return new TextEncoder().encode(updatedText);
+}
+
+export function pairDroppedItems(
+  dropped: RawDroppedFile[],
+  existingGuids: Set<string>,
+): PairedDroppedItem[] {
+  const results: PairedDroppedItem[] = [];
+  const usedGuidsInBatch = new Set<string>(existingGuids);
+
+  // Normalize paths (backslashes to forward slashes, trim)
+  const normalized = dropped.map(d => ({
+    ...d,
+    relativePath: d.relativePath.replace(/\\/g, '/').trim(),
+  }));
+
+  // Separate assets (files/folders not ending with .meta) and metas
+  const assets = normalized.filter(d => d.isDirectory || !d.relativePath.toLowerCase().endsWith('.meta'));
+  const metas = normalized.filter(d => !d.isDirectory && d.relativePath.toLowerCase().endsWith('.meta'));
+
+  for (const asset of assets) {
+    const metaPath = `${asset.relativePath}.meta`;
+    const matchingMeta = metas.find(m => m.relativePath === metaPath);
+
+    let guid: string;
+    let metaBytes: Uint8Array;
+    let isLoose = false;
+
+    if (matchingMeta) {
+      const parsedGuid = readMetaGuid(matchingMeta.content) ?? undefined;
+      
+      guid = getUniqueGuid(parsedGuid ?? null, usedGuidsInBatch);
+      if (guid !== parsedGuid) {
+        metaBytes = updateMetaBytesGuid(matchingMeta.content, guid);
+      } else {
+        metaBytes = matchingMeta.content;
+      }
+    } else {
+      isLoose = true;
+      guid = getUniqueGuid(null, usedGuidsInBatch);
+      const metaText = asset.isDirectory
+        ? createMinimalFolderMeta(guid)
+        : createMinimalMetaFor(guid, asset.relativePath);
+      metaBytes = new TextEncoder().encode(metaText);
+    }
+
+    usedGuidsInBatch.add(guid);
+
+    results.push({
+      pathname: asset.relativePath,
+      guid,
+      content: asset.content,
+      meta: metaBytes,
+      isDirectory: asset.isDirectory,
+      isLoose,
+    });
+  }
+
+  return results;
+}
+
 

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { UnityPackageEntry, UnityPackageParseDiagnostic } from 'unitypackage-core';
 
-import { analyzeUnityPackageEntries, createMinimalMetaFor } from 'unitypackage-core';
+import { analyzeUnityPackageEntries, createMinimalMetaFor, createUnityPackage, parseUnityPackageEntries } from 'unitypackage-core';
 
 import {
   buildExtensionGroups,
@@ -40,6 +40,10 @@ import {
   getRecentPackages,
   addRecentPackage,
   removeRecentPackage,
+  pairDroppedItems,
+  getUniqueGuid,
+  updateMetaBytesGuid,
+  type RawDroppedFile,
 } from './packageModel';
 
 import type { UnityPackageAnalysisFinding } from './packageModel';
@@ -744,21 +748,159 @@ describe('package model helpers', () => {
     });
   });
 
-  it('keeps pack export blocked until the creation API plan lands', () => {
-    const records = entriesToRecords([
-      {
-        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        pathname: 'Assets/A.prefab',
-        asset: encoder.encode('prefab'),
-      },
-    ], []);
+  describe('validatePackDraft', () => {
+    it('returns ready for a valid draft with asset and meta staged', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
 
-    const validation = validatePackDraft(records);
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('ready');
+      expect(validation.createEntryCount).toBe(1);
+      expect(validation.diagnostics).toHaveLength(0);
+    });
 
-    expect(validation.status).toBe('blocked');
-    expect(validation.createEntryCount).toBe(1);
-    expect(validation.messages).toContain('Assets/A.prefab is missing metadata.');
-    expect(validation.messages.at(-1)).toContain('docs/plans/web/new-api.md');
+    it('returns ready when asset is staged and meta is found in allRecords', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+
+      const staged = records.filter(r => r.extension !== 'meta');
+      expect(staged).toHaveLength(1);
+
+      const validation = validatePackDraft(staged, records);
+      expect(validation.status).toBe('ready');
+      expect(validation.diagnostics).toHaveLength(0);
+    });
+
+    it('returns blocked for empty selection', () => {
+      const validation = validatePackDraft([]);
+      expect(validation.status).toBe('blocked');
+      expect(validation.diagnostics.some(d => d.code === 'empty-entries')).toBe(true);
+    });
+
+    it('returns blocked for missing meta per asset', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+        },
+      ], []);
+
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('blocked');
+      const missingMetaDiag = validation.diagnostics.find(d => d.code === 'missing-meta');
+      expect(missingMetaDiag).toBeDefined();
+      expect(missingMetaDiag?.message).toContain('missing metadata');
+      expect(missingMetaDiag?.recordId).toBe(records[0]?.id);
+    });
+
+    it('returns blocked for duplicate GUIDs across staged assets', () => {
+      const records1 = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+      const records2 = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/B.prefab',
+          asset: encoder.encode('prefab2'),
+          meta: encoder.encode('meta content2'),
+        },
+      ], []);
+
+      const staged = [...records1, ...records2];
+      const validation = validatePackDraft(staged);
+      expect(validation.status).toBe('blocked');
+      const dupDiag = validation.diagnostics.find(d => d.code === 'duplicate-guid');
+      expect(dupDiag).toBeDefined();
+      expect(dupDiag?.message).toContain('staged more than once');
+    });
+
+    it('returns blocked when only preview records are staged', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          preview: encoder.encode('preview bytes'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+
+      const staged = records.filter(r => r.isUnityPreview);
+      expect(staged).toHaveLength(1);
+
+      const validation = validatePackDraft(staged);
+      expect(validation.status).toBe('blocked');
+      expect(validation.diagnostics.some(d => d.code === 'preview-record')).toBe(true);
+    });
+
+    it('returns blocked for invalid pathname', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/../A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('blocked');
+      expect(validation.diagnostics.some(d => d.code === 'invalid-pathname')).toBe(true);
+    });
+
+    it('returns blocked for oversized-pathname when pathname > 200 chars', () => {
+      const longPath = 'Assets/' + 'a'.repeat(200) + '.prefab';
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: longPath,
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('blocked');
+      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname');
+      expect(diag).toBeDefined();
+      expect(diag?.recordId).toBe(records[0]?.id);
+    });
+
+    it('returns blocked for oversized-pathname when tar entry name exceeds 100 bytes', () => {
+      // worst case is <guid>/asset.meta, with a long guid it would exceed 100 bytes
+      const longGuid = 'a'.repeat(90);
+      const records = entriesToRecords([
+        {
+          guid: longGuid,
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta content'),
+        },
+      ], []);
+
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('blocked');
+      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname');
+      expect(diag).toBeDefined();
+      expect(diag?.recordId).toBe(records[0]?.id);
+    });
   });
 
   describe('getExpectedImporterTypeForRecord', () => {
@@ -1662,5 +1804,130 @@ describe('P2 tree ergonomics helpers', () => {
     await expect(getRecentPackages()).resolves.toEqual([]);
     await expect(addRecentPackage({ key: 'test|123|abc', name: 'test', size: 123, headHash: 'abc' })).resolves.toBeUndefined();
     await expect(removeRecentPackage('test|123|abc')).resolves.toBeUndefined();
+  });
+
+  describe('P5 Raw File Import', () => {
+    it('pairs asset and meta sidecar correctly', () => {
+      const dropped: RawDroppedFile[] = [
+        { relativePath: 'Assets/Scripts/Player.cs', content: encoder.encode('class Player {}'), isDirectory: false },
+        { relativePath: 'Assets/Scripts/Player.cs.meta', content: encoder.encode('guid: 0123456789abcdef0123456789abcdef\n'), isDirectory: false },
+      ];
+      const existingGuids = new Set<string>();
+      const paired = pairDroppedItems(dropped, existingGuids);
+      
+      expect(paired).toHaveLength(1);
+      expect(paired[0].pathname).toBe('Assets/Scripts/Player.cs');
+      expect(paired[0].guid).toBe('0123456789abcdef0123456789abcdef');
+      expect(new TextDecoder().decode(paired[0].content)).toBe('class Player {}');
+      expect(new TextDecoder().decode(paired[0].meta)).toContain('guid: 0123456789abcdef0123456789abcdef');
+      expect(paired[0].isLoose).toBe(false);
+    });
+
+    it('generates minimal meta for loose file', () => {
+      const dropped: RawDroppedFile[] = [
+        { relativePath: 'Assets/Scripts/Player.cs', content: encoder.encode('class Player {}'), isDirectory: false },
+      ];
+      const existingGuids = new Set<string>();
+      const paired = pairDroppedItems(dropped, existingGuids);
+      
+      expect(paired).toHaveLength(1);
+      expect(paired[0].pathname).toBe('Assets/Scripts/Player.cs');
+      expect(paired[0].guid).toHaveLength(32);
+      expect(new TextDecoder().decode(paired[0].content)).toBe('class Player {}');
+      expect(new TextDecoder().decode(paired[0].meta)).toContain('MonoImporter');
+      expect(paired[0].isLoose).toBe(true);
+    });
+
+    it('generates minimal meta for loose folder', () => {
+      const dropped: RawDroppedFile[] = [
+        { relativePath: 'Assets/MyFolder', content: new Uint8Array(), isDirectory: true },
+      ];
+      const existingGuids = new Set<string>();
+      const paired = pairDroppedItems(dropped, existingGuids);
+      
+      expect(paired).toHaveLength(1);
+      expect(paired[0].pathname).toBe('Assets/MyFolder');
+      expect(paired[0].guid).toHaveLength(32);
+      expect(paired[0].isDirectory).toBe(true);
+      expect(new TextDecoder().decode(paired[0].meta)).toContain('folderAsset: yes');
+    });
+
+    it('retries GUID generation on collision', () => {
+      const targetGuid = '0123456789abcdef0123456789abcdef';
+      const existingGuids = new Set<string>([targetGuid]);
+      const resolved = getUniqueGuid(targetGuid, existingGuids);
+      expect(resolved).not.toBe(targetGuid);
+      expect(resolved).toHaveLength(32);
+    });
+
+    it('throws error after 4 retries of GUID generation', () => {
+      const originalGetRandomValues = globalThis.crypto.getRandomValues;
+      globalThis.crypto.getRandomValues = (array: Uint8Array) => {
+        array.fill(0);
+        return array;
+      };
+      
+      const collidesWithAll = new Set<string>(['00000000000000000000000000000000']);
+      expect(() => getUniqueGuid(null, collidesWithAll)).toThrow('GUID collision');
+      
+      globalThis.crypto.getRandomValues = originalGetRandomValues;
+    });
+
+    it('validates pathname byte-budget limit', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'a'.repeat(90),
+          pathname: 'Assets/C.png',
+          asset: encoder.encode('png'),
+          meta: encoder.encode('meta'),
+        },
+      ], []);
+      
+      const validation = validatePackDraft(records);
+      expect(validation.status).toBe('blocked');
+      expect(validation.diagnostics.some(d => d.code === 'oversized-pathname')).toBe(true);
+    });
+
+    it('updates meta bytes guid correctly', () => {
+      const originalMeta = encoder.encode('fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\nDefaultImporter:\n');
+      const updated = updateMetaBytesGuid(originalMeta, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      const updatedText = new TextDecoder().decode(updated);
+      expect(updatedText).toContain('guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    });
+  });
+
+  describe('Round-trip pack export smoke test', () => {
+    it('round-trips a small entry set through createUnityPackage + parseUnityPackageEntries', () => {
+      const inputEntries = [
+        {
+          guid: '11111111111111111111111111111111',
+          pathname: 'Assets/Scripts/Player.cs',
+          asset: encoder.encode('class Player {}'),
+          meta: encoder.encode('guid: 11111111111111111111111111111111\n'),
+        },
+        {
+          guid: '22222222222222222222222222222222',
+          pathname: 'Assets/Textures/Icon.png',
+          asset: encoder.encode('png-bytes-here'),
+          meta: encoder.encode('guid: 22222222222222222222222222222222\n'),
+        },
+      ];
+
+      const pkgBytes = createUnityPackage(inputEntries, { gzipLevel: 1 });
+      const { entries: parsedEntries } = parseUnityPackageEntries(pkgBytes);
+
+      expect(parsedEntries).toHaveLength(2);
+
+      // Verify that GUIDs, pathnames, and asset bytes are equal
+      for (const input of inputEntries) {
+        const parsed = parsedEntries.find(e => e.guid === input.guid);
+        expect(parsed).toBeDefined();
+        expect(parsed?.pathname).toBe(input.pathname);
+        expect(parsed?.asset).toBeDefined();
+        expect(new TextDecoder().decode(parsed?.asset)).toBe(new TextDecoder().decode(input.asset));
+        expect(parsed?.meta).toBeDefined();
+        expect(new TextDecoder().decode(parsed?.meta)).toBe(new TextDecoder().decode(input.meta));
+      }
+    });
   });
 });

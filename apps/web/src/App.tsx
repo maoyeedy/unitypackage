@@ -28,13 +28,15 @@ import {
   Search,
   Square,
   UploadCloud,
+  CheckCircle,
 } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { UnityPackageParseDiagnostic } from 'unitypackage-core';
+import { estimateUnityPackageSize } from 'unitypackage-core';
+import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic } from 'unitypackage-core';
 
 import './App.css';
 import { getFileIconDescriptor } from './fileIcons';
-import type { DownloadZipResponse, ParsePackageResponse } from './workerTypes';
+import type { DownloadZipResponse, ParsePackageResponse, CreatePackageResponse } from './workerTypes';
 import {
   buildExtensionGroups,
   buildTreeRows,
@@ -63,6 +65,11 @@ import {
   getRecentPackages,
   addRecentPackage,
   removeRecentPackage,
+  pairDroppedItems,
+  getMimeType,
+  getPreviewKind,
+  getSyntaxLanguage,
+  type RawDroppedFile,
   type ExtensionGroup,
   type FilterMatchMode,
   type GroupingMode,
@@ -70,6 +77,7 @@ import {
   type PreviewKind,
   type RecordCategory,
   type SelectionState,
+  type SyntaxLanguage,
   type SortDirection,
   type SortKey,
   type TreeRow,
@@ -77,6 +85,8 @@ import {
   type WorkspaceMode,
   type RecentPackage,
   type FileSystemFileHandle,
+  type PackValidation,
+  type PackDraftDiagnostic,
 } from './packageModel';
 import { highlightCode, findQueryMatches, splitLineTokensForMatches, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
 
@@ -109,6 +119,61 @@ const textDecoder = new TextDecoder('utf-8', { fatal: false });
 const dragSelectionThresholdPx = 4;
 const dragAutoScrollEdgePx = 32;
 const dragAutoScrollStepPx = 18;
+const packDraftStorageKey = 'unitypackage:pack-draft:v1';
+const maxPersistedImportedRecordBytes = 2 * 1024 * 1024;
+
+function uint8ArrayToBase64(arr: Uint8Array): string {
+  let binary = '';
+  const len = arr.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(arr[i]);
+  }
+  return window.btoa(binary);
+}
+
+function base64ToUint8Array(str: string): Uint8Array {
+  const binary = window.atob(str);
+  const len = binary.length;
+  const arr = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    arr[i] = binary.charCodeAt(i);
+  }
+  return arr;
+}
+
+interface SerializedRawImportedRecord {
+  id: string;
+  guid: string;
+  pathname: string;
+  virtualPath: string;
+  fileName: string;
+  extension: string;
+  mimeType: string;
+  isUnityPreview: boolean;
+  content: string;
+  byteLength: number;
+  hasAsset: boolean;
+  hasMeta: boolean;
+  hasPreview: boolean;
+  assetSize?: number;
+  metaSize?: number;
+  previewSize?: number;
+  duplicatePathCount: number;
+  previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
+  diagnostics: UnityPackageParseDiagnostic[];
+  findings: UnityPackageAnalysisFinding[];
+  meta?: string;
+  isRawImported?: boolean;
+  isDirectory?: boolean;
+}
+
+interface PackDraft {
+  stagedRecordIds?: string[];
+  importedRecords?: SerializedRawImportedRecord[];
+  gzipLevel?: number;
+  exportFilename?: string;
+}
 
 type SelectionMode = 'add' | 'remove';
 
@@ -190,6 +255,51 @@ function createDownloadZipInWorker(
   });
 }
 
+interface PackageCreationError extends Error {
+  diagnostics?: CreateUnityPackageDiagnostic[];
+}
+
+function createPackageInWorker(
+  stagedRecords: PackageFileRecord[],
+  allRecords: PackageFileRecord[],
+  gzipLevel?: number,
+  filename?: string,
+): Promise<{ bytes: Uint8Array; filename: string }> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./createPackage.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+
+    worker.onmessage = ({ data }: MessageEvent<CreatePackageResponse>) => {
+      worker.terminate();
+      if (data.type === 'success') {
+        resolve({ bytes: data.bytes, filename: data.filename });
+        return;
+      }
+
+      if (data.type === 'error') {
+        const err: PackageCreationError = new Error('Failed to create package');
+        err.diagnostics = data.diagnostics;
+        reject(err);
+        return;
+      }
+    };
+
+    worker.onerror = (event) => {
+      worker.terminate();
+      reject(new Error(event.message));
+    };
+
+    worker.onmessageerror = () => {
+      worker.terminate();
+      reject(new Error('Failed to receive package data'));
+    };
+
+    worker.postMessage({ stagedRecords, allRecords, gzipLevel, filename });
+  });
+}
+
+
 class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = { hasError: false };
 
@@ -215,6 +325,16 @@ class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryS
   }
 }
 
+function getDefaultFilename(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  return `unitypackage-${yyyy}${mm}${dd}-${hh}${min}.unitypackage`;
+}
+
 function AppContent() {
   const [mode, setMode] = useState<WorkspaceMode>('extract');
   const [groupingMode, setGroupingMode] = useState<GroupingMode>(() => {
@@ -226,7 +346,20 @@ function AppContent() {
   const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
-  const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(new Set());
+  const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (draft.stagedRecordIds && Array.isArray(draft.stagedRecordIds)) {
+          return new Set(draft.stagedRecordIds);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load stagedRecordIds from draft:', err);
+    }
+    return new Set();
+  });
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
@@ -281,11 +414,133 @@ function AppContent() {
   const [status, setStatus] = useState('Open a .unitypackage to inspect its contents.');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPacking, setIsPacking] = useState(false);
+  const [packDiagnostics, setPackDiagnostics] = useState<CreateUnityPackageDiagnostic[]>([]);
+  const [gzipLevel, setGzipLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (typeof draft.gzipLevel === 'number') {
+          return draft.gzipLevel;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load gzipLevel from draft:', err);
+    }
+    return 6;
+  });
+  const [exportFilename, setExportFilename] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (typeof draft.exportFilename === 'string') {
+          return draft.exportFilename;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load exportFilename from draft:', err);
+    }
+    return getDefaultFilename();
+  });
+  const [successExport, setSuccessExport] = useState<{ bytes: Uint8Array; filename: string } | null>(null);
+  const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
+  const [importedRecords, setImportedRecords] = useState<PackageFileRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (draft.importedRecords && Array.isArray(draft.importedRecords)) {
+          return draft.importedRecords.map((r: SerializedRawImportedRecord) => {
+            const mapped: PackageFileRecord = {
+              id: r.id,
+              guid: r.guid,
+              pathname: r.pathname,
+              virtualPath: r.virtualPath,
+              fileName: r.fileName,
+              extension: r.extension,
+              mimeType: r.mimeType,
+              isUnityPreview: r.isUnityPreview,
+              content: r.content ? base64ToUint8Array(r.content) : new Uint8Array(),
+              byteLength: r.byteLength,
+              hasAsset: r.hasAsset,
+              hasMeta: r.hasMeta,
+              hasPreview: r.hasPreview,
+              assetSize: r.assetSize,
+              metaSize: r.metaSize,
+              previewSize: r.previewSize,
+              duplicatePathCount: r.duplicatePathCount,
+              previewKind: r.previewKind,
+              syntaxLanguage: r.syntaxLanguage,
+              diagnostics: r.diagnostics,
+              findings: r.findings,
+              meta: r.meta ? base64ToUint8Array(r.meta) : undefined,
+              isRawImported: r.isRawImported,
+              isDirectory: r.isDirectory,
+            };
+            return mapped;
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load importedRecords from draft:', err);
+    }
+    return [];
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 200);
     return () => clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    try {
+      if (stagedRecordIds.size === 0 && importedRecords.length === 0) {
+        localStorage.removeItem(packDraftStorageKey);
+      } else {
+        const importedPayloadBytes = importedRecords.reduce(
+          (sum, record) => sum + record.content.byteLength + (record.meta?.byteLength ?? 0),
+          0
+        );
+        const shouldPersistImportedRecords = importedPayloadBytes <= maxPersistedImportedRecordBytes;
+        const draft: PackDraft = {
+          stagedRecordIds: Array.from(stagedRecordIds),
+          gzipLevel,
+          exportFilename,
+        };
+
+        if (shouldPersistImportedRecords) {
+          draft.importedRecords = importedRecords.map(r => ({
+            ...r,
+            content: uint8ArrayToBase64(r.content),
+            meta: r.meta ? uint8ArrayToBase64(r.meta) : undefined,
+          }));
+        }
+
+        localStorage.setItem(packDraftStorageKey, JSON.stringify(draft));
+      }
+    } catch (err) {
+      console.warn('Failed to persist pack draft:', err);
+    }
+  }, [stagedRecordIds, importedRecords, gzipLevel, exportFilename]);
+
+  useEffect(() => {
+    if (records.length > 0) {
+      setStagedRecordIds(prev => {
+        const next = new Set<string>();
+        let changed = false;
+        for (const id of prev) {
+          if (records.some(r => r.id === id)) {
+            next.add(id);
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [records]);
 
   useEffect(() => {
     localStorage.setItem('unitypackage-groupingMode', groupingMode);
@@ -394,15 +649,51 @@ function AppContent() {
   }, [activeRecordId, visibleRecords, records]);
 
   const stagedRecords = useMemo(() => {
-    return records.filter(record => stagedRecordIds.has(record.id));
-  }, [records, stagedRecordIds]);
+    const parsedStaged = records.filter(record => stagedRecordIds.has(record.id));
+    return [...parsedStaged, ...importedRecords];
+  }, [records, stagedRecordIds, importedRecords]);
+
+  const stagedEntries = useMemo(() => {
+    const stagedAssets = stagedRecords.filter(
+      record => !record.isUnityPreview && record.extension !== 'meta'
+    );
+    return stagedAssets.map(assetRecord => {
+      let metaBytes = assetRecord.meta;
+      if (!metaBytes) {
+        const metaRecord = stagedRecords.find(
+          r => r.guid === assetRecord.guid && r.extension === 'meta'
+        ) ?? records.find(
+          r => r.guid === assetRecord.guid && r.extension === 'meta'
+        );
+        if (metaRecord) {
+          metaBytes = metaRecord.content;
+        }
+      }
+
+      return {
+        guid: assetRecord.guid,
+        pathname: assetRecord.pathname,
+        meta: metaBytes ?? new Uint8Array(),
+        asset: assetRecord.hasAsset ? assetRecord.content : undefined,
+      };
+    });
+  }, [stagedRecords, records]);
+
+  useEffect(() => {
+    setSuccessExport(null);
+  }, [stagedEntries, gzipLevel, exportFilename]);
+
+  const estimatedSize = useMemo(() => {
+    if (stagedEntries.length === 0) return 0;
+    return estimateUnityPackageSize(stagedEntries).tarBytes;
+  }, [stagedEntries]);
 
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
   const extensionGroups = useMemo(() => buildExtensionGroups(visibleRecords), [visibleRecords]);
   const treeRows = useMemo(() => buildTreeRows(visibleRecords, collapsedFolders), [visibleRecords, collapsedFolders]);
   const treeFileRecordIds = useMemo(() => getTreeFileRecordIds(treeRows), [treeRows]);
   const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
-  const packValidation = useMemo(() => validatePackDraft(stagedRecords), [stagedRecords]);
+  const packValidation = useMemo(() => validatePackDraft(stagedRecords, records), [stagedRecords, records]);
 
   const handlePackageFileWithHandle = async (file: File, fileHandle: FileSystemFileHandle | null) => {
     setIsLoading(true);
@@ -414,7 +705,6 @@ function AppContent() {
     setAnalysis([]);
     setIsDiagnosticsOpen(false);
     setSelectedRecordIds(new Set());
-    setStagedRecordIds(new Set());
     setActiveRecordId(null);
     setCollapsedFolders(new Set());
     setQuery('');
@@ -502,6 +792,189 @@ function AppContent() {
     setRecents(updatedRecents);
   };
 
+  const handlePathnameChange = useCallback((id: string, newPathname: string) => {
+    setImportedRecords(prev =>
+      prev.map(r => {
+        if (r.id === id) {
+          const parts = newPathname.split('/');
+          const fileName = parts[parts.length - 1] ?? '';
+          const extension = fileName.includes('.') ? fileName.split('.').pop() ?? '' : '';
+          return {
+            ...r,
+            pathname: newPathname,
+            virtualPath: newPathname,
+            fileName,
+            extension,
+            mimeType: getMimeType(newPathname),
+            syntaxLanguage: getSyntaxLanguage(newPathname),
+            previewKind: r.isDirectory ? 'unsupported' : getPreviewKind(newPathname, r.content),
+          };
+        }
+        return r;
+      })
+    );
+  }, []);
+
+  const handleImportFiles = useCallback(async (dataTransfer: DataTransfer) => {
+    setStatus('Processing dropped files...');
+    setError(null);
+
+    interface DroppedItem {
+      name: string;
+      relativePath: string;
+      isFile: boolean;
+      isDirectory: boolean;
+      file?: File;
+    }
+
+    try {
+      const droppedItems: DroppedItem[] = [];
+      const items = Array.from(dataTransfer.items || []);
+      const entries: FileSystemEntry[] = [];
+      const hasWebKitGetAsEntry = items.length > 0 && typeof items[0].webkitGetAsEntry === 'function';
+      if (hasWebKitGetAsEntry) {
+        for (const item of items) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            entries.push(entry);
+          }
+        }
+      }
+      const fallbackFiles = Array.from(dataTransfer.files || []);
+
+      const walkEntry = async (entry: FileSystemEntry, pathPrefix = ''): Promise<void> => {
+        const relativePath = pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name;
+        if (entry.isFile) {
+          const file = await new Promise<File>((resolve, reject) => {
+            (entry as FileSystemFileEntry).file(resolve, reject);
+          });
+          droppedItems.push({
+            name: entry.name,
+            relativePath,
+            isFile: true,
+            isDirectory: false,
+            file,
+          });
+        } else if (entry.isDirectory) {
+          droppedItems.push({
+            name: entry.name,
+            relativePath,
+            isFile: false,
+            isDirectory: true,
+          });
+          const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+          const readEntries = (): Promise<FileSystemEntry[]> => {
+            return new Promise((resolve, reject) => {
+              dirReader.readEntries(resolve, reject);
+            });
+          };
+          
+          const dirEntries: FileSystemEntry[] = [];
+          try {
+            let chunk = await readEntries();
+            while (chunk.length > 0) {
+              dirEntries.push(...chunk);
+              chunk = await readEntries();
+            }
+          } catch (err) {
+            console.error('Error reading directory entries:', err);
+          }
+
+          for (const child of dirEntries) {
+            await walkEntry(child, relativePath);
+          }
+        }
+      };
+
+      if (hasWebKitGetAsEntry && entries.length > 0) {
+        for (const entry of entries) {
+          await walkEntry(entry);
+        }
+      } else {
+        // Fallback to top-level files
+        for (const file of fallbackFiles) {
+          droppedItems.push({
+            name: file.name,
+            relativePath: file.name,
+            isFile: true,
+            isDirectory: false,
+            file,
+          });
+        }
+      }
+
+      // Convert DroppedItem to RawDroppedFile (load content as Uint8Array)
+      const rawFiles: RawDroppedFile[] = await Promise.all(
+        droppedItems.map(async item => {
+          let content = new Uint8Array();
+          if (item.file) {
+            const buf = await item.file.arrayBuffer();
+            content = new Uint8Array(buf);
+          }
+          return {
+            relativePath: item.relativePath,
+            content,
+            isDirectory: item.isDirectory,
+          };
+        })
+      );
+
+      // Collect existing GUIDs
+      const existingGuids = new Set<string>();
+      for (const record of records) {
+        if (stagedRecordIds.has(record.id)) {
+          existingGuids.add(record.guid);
+        }
+      }
+      for (const r of importedRecords) {
+        existingGuids.add(r.guid);
+      }
+
+      // Pair dropped items
+      const paired = pairDroppedItems(rawFiles, existingGuids);
+
+      // Map PairedDroppedItem to PackageFileRecord
+      const newImportedRecords: PackageFileRecord[] = paired.map(item => {
+        const parts = item.pathname.split('/');
+        const fileName = parts[parts.length - 1] ?? '';
+        const extension = fileName.includes('.') ? fileName.split('.').pop() ?? '' : '';
+
+        return {
+          id: `raw-${item.guid}`,
+          guid: item.guid,
+          pathname: item.pathname,
+          virtualPath: item.pathname,
+          fileName,
+          extension,
+          mimeType: getMimeType(item.pathname),
+          isUnityPreview: false,
+          content: item.content,
+          byteLength: item.content.byteLength,
+          hasAsset: !item.isDirectory,
+          hasMeta: true,
+          hasPreview: false,
+          assetSize: item.isDirectory ? undefined : item.content.byteLength,
+          metaSize: item.meta.byteLength,
+          duplicatePathCount: 0,
+          previewKind: item.isDirectory ? 'unsupported' : getPreviewKind(item.pathname, item.content),
+          syntaxLanguage: getSyntaxLanguage(item.pathname),
+          diagnostics: [],
+          findings: [],
+          meta: item.meta,
+          isRawImported: true,
+          isDirectory: item.isDirectory,
+        };
+      });
+
+      setImportedRecords(prev => [...prev, ...newImportedRecords]);
+      setStatus(`Imported ${newImportedRecords.length} entries.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to import files';
+      setError(msg);
+      setStatus('Import failed.');
+    }
+  }, [records, stagedRecordIds, importedRecords]);
+
   const handleDownload = async (targetRecords: PackageFileRecord[], fileName: string, recordIds?: string[]) => {
     setError(null);
     try {
@@ -515,6 +988,41 @@ function AppContent() {
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to create ZIP file';
       setError(message);
+    }
+  };
+
+  const handleExport = async () => {
+    setIsPacking(true);
+    setPackDiagnostics([]);
+    setSuccessExport(null);
+    try {
+      let filename = exportFilename.trim();
+      if (!filename) {
+        filename = 'export.unitypackage';
+      } else if (!filename.toLowerCase().endsWith('.unitypackage')) {
+        filename += '.unitypackage';
+      }
+
+      const result = await createPackageInWorker(stagedRecords, records, gzipLevel, filename);
+      setSuccessExport({
+        bytes: result.bytes,
+        filename: result.filename,
+      });
+      const blob = new Blob([result.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
+      downloadBlob(blob, result.filename);
+    } catch (caught) {
+      if (caught instanceof Error) {
+        const err = caught as PackageCreationError;
+        if (err.diagnostics) {
+          setPackDiagnostics(err.diagnostics);
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to create package');
+      }
+    } finally {
+      setIsPacking(false);
     }
   };
 
@@ -1034,16 +1542,53 @@ function AppContent() {
             <PackPanel
               stagedRecords={stagedRecords}
               validation={packValidation}
+              isPacking={isPacking}
+              packDiagnostics={packDiagnostics}
+              onExport={() => { void handleExport(); }}
               onRemove={(id) => {
                 setStagedRecordIds(previous => {
                   const next = new Set(previous);
                   next.delete(id);
                   return next;
                 });
+                setImportedRecords(previous => previous.filter(r => r.id !== id));
               }}
               onClear={() => {
                 setStagedRecordIds(new Set());
+                setImportedRecords([]);
               }}
+              onClearDraft={() => {
+                localStorage.removeItem(packDraftStorageKey);
+                setStagedRecordIds(new Set());
+                setImportedRecords([]);
+                setGzipLevel(6);
+                setExportFilename(getDefaultFilename());
+              }}
+              gzipLevel={gzipLevel}
+              setGzipLevel={setGzipLevel}
+              exportFilename={exportFilename}
+              setExportFilename={setExportFilename}
+              estimatedSize={estimatedSize}
+              successExport={successExport}
+              onDownloadAgain={() => {
+                if (successExport) {
+                  const blob = new Blob([successExport.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
+                  downloadBlob(blob, successExport.filename);
+                }
+              }}
+              onShowInList={(recordId) => {
+                setHighlightedRecordId(null);
+                setTimeout(() => {
+                  setHighlightedRecordId(recordId);
+                  const element = document.getElementById(`staged-row-${recordId}`);
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, 10);
+              }}
+              highlightedRecordId={highlightedRecordId}
+              onPathnameChange={handlePathnameChange}
+              onImportFiles={(dt) => { void handleImportFiles(dt); }}
             />
           )}
         </section>
@@ -3514,14 +4059,94 @@ function DiagnosticsDrawer({
 function PackPanel({
   stagedRecords,
   validation,
+  isPacking,
+  packDiagnostics,
+  onExport,
   onRemove,
   onClear,
+  onClearDraft,
+  gzipLevel,
+  setGzipLevel,
+  exportFilename,
+  setExportFilename,
+  estimatedSize,
+  successExport,
+  onDownloadAgain,
+  onShowInList,
+  highlightedRecordId,
+  onPathnameChange,
+  onImportFiles,
 }: {
   stagedRecords: PackageFileRecord[];
-  validation: ReturnType<typeof validatePackDraft>;
+  validation: PackValidation;
+  isPacking: boolean;
+  packDiagnostics: CreateUnityPackageDiagnostic[];
+  onExport: () => void;
   onRemove: (id: string) => void;
   onClear: () => void;
+  onClearDraft: () => void;
+  gzipLevel: number;
+  setGzipLevel: (level: number) => void;
+  exportFilename: string;
+  setExportFilename: (name: string) => void;
+  estimatedSize: number;
+  successExport: { bytes: Uint8Array; filename: string } | null;
+  onDownloadAgain: () => void;
+  onShowInList: (id: string) => void;
+  highlightedRecordId: string | null;
+  onPathnameChange: (id: string, newPathname: string) => void;
+  onImportFiles: (dt: DataTransfer) => void;
 }) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    if (e.dataTransfer) {
+      onImportFiles(e.dataTransfer);
+    }
+  };
+  const findStagedRecordForDiag = (diag: CreateUnityPackageDiagnostic) => {
+    if (diag.guid) {
+      const found = stagedRecords.find(r => r.guid === diag.guid);
+      if (found) return found;
+    }
+    if (diag.path) {
+      const pathnamePart = diag.path.includes('/') && diag.path.split('/')[0]?.length === 32
+        ? diag.path.split('/').slice(1).join('/')
+        : diag.path;
+      const found = stagedRecords.find(r => r.pathname === pathnamePart || r.virtualPath === diag.path || r.id === diag.path);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const globalValidationDiags = validation.diagnostics.filter((d: PackDraftDiagnostic) => !d.recordId);
+  const isFilenameEmpty = !exportFilename.trim();
+  const globalDiags = [...globalValidationDiags];
+  if (isFilenameEmpty) {
+    globalDiags.push({
+      code: 'empty-entries',
+      message: 'Output filename cannot be empty.',
+    });
+  }
+
+  const isExportDisabled = validation.status !== 'ready' || isFilenameEmpty || isPacking;
+
   return (
     <section className="pack-panel">
       <div className="panel-toolbar">
@@ -3534,34 +4159,199 @@ function PackPanel({
             <RefreshCw aria-hidden="true" size={16} />
             <span>Clear</span>
           </button>
-          <button type="button" disabled>
+          <button type="button" onClick={onClearDraft} id="clear-draft-btn">
+            <RefreshCw aria-hidden="true" size={16} />
+            <span>Clear draft</span>
+          </button>
+          <button
+            type="button"
+            disabled={isExportDisabled}
+            onClick={onExport}
+          >
             <PackagePlus aria-hidden="true" size={16} />
-            <span>Export .unitypackage</span>
+            <span>{isPacking ? 'Exporting...' : 'Export .unitypackage'}</span>
           </button>
         </div>
       </div>
-      <div className="pack-status" role="status">
-        <AlertTriangle aria-hidden="true" size={18} />
-        <div>
-          <strong>Export is prepared but blocked</strong>
-          <p>The creation worker will be connected after `docs/plans/web/new-api.md` adds the browser package creation API.</p>
-        </div>
-      </div>
-      <ul className="validation-list">
-        {validation.messages.map(message => (
-          <li key={message}>{message}</li>
-        ))}
-      </ul>
-      <div className="staged-list">
-        {stagedRecords.map(record => (
-          <div key={record.id} className="staged-row">
-            <File aria-hidden="true" size={16} />
-            <span>{record.virtualPath}</span>
-            <button type="button" className="icon-button" aria-label={`Remove ${record.fileName}`} onClick={() => { onRemove(record.id); }}>
-              <RefreshCw aria-hidden="true" size={15} />
+
+      {successExport && (
+        <div className="pack-status success" role="status">
+          <CheckCircle aria-hidden="true" size={18} />
+          <div>
+            <strong>Package exported successfully!</strong>
+            <div className="success-details">
+              Filename: <code>{successExport.filename}</code>
+              <br />
+              Size: {formatBytes(successExport.bytes.length)}
+            </div>
+            <button
+              type="button"
+              className="text-button download-again-btn"
+              onClick={onDownloadAgain}
+            >
+              Download again
             </button>
           </div>
-        ))}
+        </div>
+      )}
+
+      {packDiagnostics.length > 0 && (
+        <div className="pack-status error" role="status">
+          <AlertTriangle aria-hidden="true" size={18} />
+          <div>
+            <strong>Package creation failed</strong>
+            <ul className="pack-diagnostic-list" style={{ marginTop: '0.25rem', paddingLeft: '0', listStyle: 'none' }}>
+              {packDiagnostics.map((diag, index) => {
+                const target = findStagedRecordForDiag(diag);
+                return (
+                  <li key={index} className="creation-diagnostic-item" style={{ fontSize: '0.8125rem' }}>
+                    <span>
+                      [{diag.code}] {diag.message} {diag.path ? `(${diag.path})` : ''}
+                    </span>
+                    {target && (
+                      <button
+                        type="button"
+                        className="text-button show-in-list-btn"
+                        style={{ marginLeft: '8px', fontSize: '0.75rem' }}
+                        onClick={() => onShowInList(target.id)}
+                      >
+                        Show in list
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <div className="pack-controls">
+        <div className="pack-control-group">
+          <label htmlFor="export-filename">Output filename</label>
+          <input
+            id="export-filename"
+            type="text"
+            value={exportFilename}
+            onChange={(e) => setExportFilename(e.target.value)}
+            placeholder="unitypackage-name.unitypackage"
+          />
+        </div>
+
+        <div className="pack-control-group">
+          <label htmlFor="gzip-level">Compression level</label>
+          <select
+            id="gzip-level"
+            value={gzipLevel}
+            onChange={(e) => setGzipLevel(Number(e.target.value))}
+          >
+            <option value={0}>0 (Store - No compression)</option>
+            <option value={1}>1 (Fastest)</option>
+            <option value={3}>3 (Fast)</option>
+            <option value={6}>6 (Balanced - Default)</option>
+            <option value={9}>9 (Smallest)</option>
+          </select>
+        </div>
+
+        <div className="pack-size-estimate">
+          <div className="size-info">
+            <span>Estimated uncompressed size:</span>
+            <span className="size-value">{formatBytes(estimatedSize)}</span>
+          </div>
+          {estimatedSize > 1073741824 && (
+            <div className="warning-banner">
+              <AlertTriangle size={14} />
+              <span>Warning: Estimated size exceeds 1 GiB. Large packages may cause slow exports.</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {globalDiags.length > 0 && (
+        <div className="pack-status error" role="status" style={{ margin: '12px' }}>
+          <AlertTriangle aria-hidden="true" size={18} />
+          <ul style={{ paddingLeft: '1.25rem', margin: 0 }}>
+            {globalDiags.map((d: PackDraftDiagnostic, i: number) => (
+              <li key={i}>{d.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div
+        className={`staged-list-container ${isDragOver ? 'drag-over' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div className="staged-list-header">
+          <h3>Staged Entries</h3>
+          <span className="order-note">Entries are written in deterministic GUID order.</span>
+        </div>
+        {stagedRecords.length === 0 ? (
+          <div className="drag-drop-placeholder">
+            <UploadCloud size={32} />
+            <p>Drag and drop local files/folders here to stage them</p>
+            <small>Pairs of file + file.meta are matched; loose files auto-generate minimal metas.</small>
+          </div>
+        ) : (
+          <div className="staged-list">
+            {stagedRecords.map(record => {
+              const recordDiags = validation.diagnostics.filter(d => d.recordId === record.id);
+              const isHighlighted = record.id === highlightedRecordId;
+              return (
+                <div
+                  key={record.id}
+                  id={`staged-row-${record.id}`}
+                  className={`staged-row-wrapper ${isHighlighted ? 'highlighted' : ''}`}
+                >
+                  <div className="staged-row" style={{ width: '100%' }}>
+                    <File aria-hidden="true" size={16} style={{ flexShrink: 0 }} />
+                    {record.isRawImported ? (
+                      <input
+                        type="text"
+                        className="staged-pathname-input"
+                        value={record.pathname}
+                        onChange={(e) => onPathnameChange(record.id, e.target.value)}
+                        style={{
+                          flex: 1,
+                          background: 'transparent',
+                          border: '1px solid var(--border)',
+                          borderRadius: '4px',
+                          color: 'var(--text)',
+                          padding: '2px 6px',
+                          fontSize: '0.875rem',
+                          minWidth: 0,
+                        }}
+                      />
+                    ) : (
+                      <span>{record.virtualPath}</span>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      style={{ flexShrink: 0 }}
+                      aria-label={`Remove ${record.fileName}`}
+                      onClick={() => { onRemove(record.id); }}
+                    >
+                      <RefreshCw aria-hidden="true" size={15} />
+                    </button>
+                  </div>
+                  {recordDiags.length > 0 && (
+                    <div className="record-diagnostics">
+                      {recordDiags.map((d: PackDraftDiagnostic, i: number) => (
+                        <div key={i} className={`record-diagnostic-item ${d.code}`}>
+                          <AlertTriangle size={12} />
+                          <span>[{d.code}] {d.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

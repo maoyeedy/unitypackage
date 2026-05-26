@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/editor-packed.unitypackage');
 
@@ -39,7 +40,147 @@ test.describe('pack mode', () => {
     await page.getByRole('button', { name: 'Stage for pack' }).click();
     const explorerPanel = page.getByRole('region', { name: 'Package explorer' });
     await expect(explorerPanel).not.toContainText('0 future package entries staged');
-    await explorerPanel.getByRole('button', { name: 'Clear' }).click();
+    await explorerPanel.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect(explorerPanel).toContainText('0 future package entries staged');
+  });
+
+  test('Drag and drop a file, edit its pathname, and export successfully', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Pack', exact: true }).click();
+
+    const pngPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/texture_02.png');
+    const fileBuffer = fs.readFileSync(pngPath);
+    const base64Data = fileBuffer.toString('base64');
+    const fileName = 'texture_02.png';
+
+    await page.evaluate(async ({ base64, name }) => {
+      const response = await fetch(`data:application/octet-stream;base64,${base64}`);
+      const blob = await response.blob();
+      const file = new File([blob], name, { type: 'image/png' });
+
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+
+      const dropTarget = document.querySelector('.staged-list-container');
+      if (!dropTarget) throw new Error('Drop target not found');
+
+      const dragOverEvent = new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      });
+      dropTarget.dispatchEvent(dragOverEvent);
+
+      const dropEvent = new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      });
+      dropTarget.dispatchEvent(dropEvent);
+    }, { base64: base64Data, name: fileName });
+
+    const stagedInput = page.locator('.staged-pathname-input');
+    await expect(stagedInput).toBeVisible();
+    await expect(stagedInput).toHaveValue('texture_02.png');
+
+    await stagedInput.fill('Assets/Textures/new_texture.png');
+    await expect(stagedInput).toHaveValue('Assets/Textures/new_texture.png');
+
+    const exportBtn = page.getByRole('button', { name: 'Export .unitypackage' });
+    await expect(exportBtn).toBeEnabled();
+
+    await exportBtn.click();
+    await expect(page.locator('.pack-status.success')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('Reloading the page restores draft state, and Clear draft wipes it', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Open package').setInputFiles(fixturePath);
+    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+
+    // Stage two valid assets (without preview files to keep validation ready)
+    await page.getByRole('checkbox', { name: 'Select Changelog.md' }).click();
+    await page.getByRole('checkbox', { name: 'Select README.md' }).click();
+    await page.getByRole('button', { name: 'Stage for pack' }).click();
+
+    // Now in Pack tab, change gzipLevel and output filename
+    await page.locator('#export-filename').fill('test-reload-persist.unitypackage');
+    await page.locator('#gzip-level').selectOption('9');
+
+    // Wait 500ms to allow React state updates and useEffect to write to localStorage
+    await page.waitForTimeout(500);
+
+    // Reload page
+    await page.reload();
+
+    // Verify it is restored
+    await page.getByRole('button', { name: 'Pack', exact: true }).click();
+    await expect(page.locator('#export-filename')).toHaveValue('test-reload-persist.unitypackage');
+    await expect(page.locator('#gzip-level')).toHaveValue('9');
+
+    // Reopen package so we can verify the staged row displays
+    await page.getByLabel('Open package').setInputFiles(fixturePath);
+    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Pack', exact: true }).click();
+
+    // Staged list should show 2 staged items
+    const explorerPanel = page.getByRole('region', { name: 'Package explorer' });
+    await expect(explorerPanel).toContainText('2 future package entries staged');
+
+    // Now test Clear draft
+    await page.getByRole('button', { name: 'Clear draft' }).click();
+    await expect(page.locator('#export-filename')).not.toHaveValue('test-reload-persist.unitypackage');
+    await expect(page.locator('#gzip-level')).toHaveValue('6');
+    await expect(explorerPanel).toContainText('0 future package entries staged');
+
+    // Reload page to verify localStorage draft is gone
+    await page.reload();
+    await page.getByRole('button', { name: 'Pack', exact: true }).click();
+    await expect(page.locator('#export-filename')).not.toHaveValue('test-reload-persist.unitypackage');
+    await expect(page.locator('#gzip-level')).toHaveValue('6');
+  });
+
+  test('Stage records, export package, and verify round-trip parsing', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Open package').setInputFiles(fixturePath);
+    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+
+    // Stage two valid assets (without preview files to keep validation ready)
+    await page.getByRole('checkbox', { name: 'Select Changelog.md' }).click();
+    await page.getByRole('checkbox', { name: 'Select README.md' }).click();
+    await page.getByRole('button', { name: 'Stage for pack' }).click();
+
+    // Click Export and wait for download event
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export .unitypackage' }).click();
+    const download = await downloadPromise;
+
+    // Read download stream
+    const tempPath = await download.path();
+    expect(tempPath).not.toBeNull();
+    const bytes = fs.readFileSync(tempPath!);
+    expect(bytes.length).toBeGreaterThan(0);
+
+    // Call parseUnityPackageEntries on the downloaded bytes in the test context
+    const { parseUnityPackageEntries } = await import('unitypackage-core');
+    const { entries } = parseUnityPackageEntries(bytes);
+
+    // Verify round-trip parsing success
+    expect(entries.length).toBe(2);
+
+    // Verify GUIDs, pathnames, and contents match the selected assets
+    const expectedPaths = [
+      'Assets/FronkonGames/Artistic/OneBit/Changelog.md',
+      'Assets/FronkonGames/Artistic/OneBit/Demo/README.md'
+    ];
+    for (const pathStr of expectedPaths) {
+      const parsed = entries.find(e => e.pathname === pathStr);
+      expect(parsed).toBeDefined();
+      expect(parsed?.guid).toHaveLength(32);
+      expect(parsed?.asset).toBeDefined();
+      expect(parsed?.asset!.length).toBeGreaterThan(0);
+      expect(parsed?.meta).toBeDefined();
+      expect(parsed?.meta!.length).toBeGreaterThan(0);
+    }
   });
 });

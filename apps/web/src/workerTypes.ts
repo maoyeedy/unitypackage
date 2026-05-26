@@ -23,3 +23,17 @@ export type DownloadZipResponse =
   | { type: 'empty' }
   | { type: 'error'; message: string };
 
+export interface CreatePackageRequest {
+  stagedRecords: PackageFileRecord[];
+  allRecords?: PackageFileRecord[];
+  gzipLevel?: number;
+  filename?: string;
+}
+
+import type { CreateUnityPackageDiagnostic } from 'unitypackage-core';
+
+export type CreatePackageResponse =
+  | { type: 'success'; bytes: Uint8Array; filename: string }
+  | { type: 'error'; diagnostics: CreateUnityPackageDiagnostic[] };
+
+
