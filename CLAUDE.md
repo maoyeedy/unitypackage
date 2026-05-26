@@ -76,7 +76,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **ESLint in CLI excludes `*.test.ts`** — they lack `@types/node` in tsconfig scope.
 - **Generated fixtures**: `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, `truncated`. Static fixtures cover common Unity file types. Archive: `fixtures/static/archives/Polytope_URP.unitypackage`.
 - **React effect state**: `react-hooks/set-state-in-effect` is enabled via the React Hooks recommended config. Do not use effects for derived-state or prop-change resets; derive during render or remount keyed children. Keep effects for external sync, subscriptions, timers, async callbacks, and cleanup.
-- **`bun run test` chains project-based commands** — `bun run test:core && bun run test:cli && bun run test:web`. Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
+- **`bun run test` runs all 3 vitest projects in parallel** via `vitest run` at root (~2.8s). Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
 
 ## Testing
 

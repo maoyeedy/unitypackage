@@ -11,7 +11,7 @@
     "build:core": "bun run --filter unitypackage-core build",
     "build:web": "bun run --filter @unitypackage-tools/web build",
     "build:cli": "bun run build:web && node scripts/copy-web-assets.ts && bun run --filter unitypackage-tools build",
-    "test": "bun run test:core && bun run test:cli && bun run test:web",
+    "test": "vitest run",
     "test:core": "vitest run --project core",
     "test:cli": "vitest run --project cli",
     "test:web": "vitest run --project web",
