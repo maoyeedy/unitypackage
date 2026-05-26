@@ -22,7 +22,11 @@ export default defineConfig({
         test: {
           name: { label: 'web', color: 'green' },
           root: './apps/web',
-          include: ['src/**/*.test.ts'],
+          include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+          setupFiles: ['./src/test/setup.ts'],
+          environmentMatchGlobs: [
+            ['src/**/*.test.tsx', 'jsdom'],
+          ],
         },
       },
     ],
