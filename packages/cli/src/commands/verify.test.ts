@@ -204,6 +204,24 @@ describe('verify', () => {
     expect(result.findings.some(f => f.code === 'PARSER_IGNORED_PREVIEW')).toBe(false);
   });
 
+  it('reports UNEXPECTED_FILE when a file is outside any GUID directory', async () => {
+    const dir = await makeTempDir();
+    const packagePath = path.join(dir, 'outside-guid.unitypackage');
+    const guid = 'ffffffffffffffffffffffffffffffff';
+
+    await writeFile(
+      packagePath,
+      buildRawTarPackage({
+        [`${guid}/pathname`]: 'Assets/Foo.cs',
+        [`${guid}/asset.meta`]: `guid: ${guid}`,
+        'stray_at_root.txt': 'hello',
+      }),
+    );
+
+    const result = await verify(packagePath);
+    expect(result.findings.some(f => f.code === 'UNEXPECTED_FILE' && f.entry === 'stray_at_root.txt')).toBe(true);
+  });
+
   it('reports parser diagnostics for empty pathnames, non-standard GUIDs, and malformed tar entries', async () => {
     const dir = await makeTempDir();
     const emptyPathPackage = path.join(dir, 'empty.unitypackage');

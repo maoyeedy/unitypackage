@@ -1,4 +1,3 @@
-import { gunzipSync } from 'node:zlib';
 import {
   analyzeUnityPackageEntries,
   parseUnityPackageEntries,
@@ -34,10 +33,6 @@ export interface VerifyOptions {
   parseOptions?: ParseUnityPackageOptions;
 }
 
-interface TarFile {
-  path: string;
-  content: Uint8Array;
-}
 
 export async function verify(packagePath: string, opts: VerifyOptions = {}): Promise<VerifyResult> {
   const raw = await readPackageBytes(packagePath);
@@ -63,9 +58,12 @@ export async function verify(packagePath: string, opts: VerifyOptions = {}): Pro
   for (const diagnostic of parseDiagnostics) {
     if (diagnostic.code === 'ignored-preview') continue;
     const level: FindingLevel = diagnostic.severity === 'error' ? 'error' : 'warn';
+    const isUnexpectedFile =
+      diagnostic.code === 'unexpected-guid-directory-file' ||
+      diagnostic.code === 'entries-outside-guid-directory';
     finding(
       level,
-      `PARSER_${diagnostic.code.toUpperCase().replaceAll('-', '_')}`,
+      isUnexpectedFile ? 'UNEXPECTED_FILE' : `PARSER_${diagnostic.code.toUpperCase().replaceAll('-', '_')}`,
       diagnostic.message,
       diagnostic.path,
     );
@@ -76,14 +74,6 @@ export async function verify(packagePath: string, opts: VerifyOptions = {}): Pro
     if (analysisFinding.code === 'parser-diagnostic') continue;
     const mappedFinding = mapAnalysisFinding(analysisFinding);
     finding(mappedFinding.level, mappedFinding.code, mappedFinding.message, mappedFinding.entry);
-  }
-
-  for (const tarFile of listTarFiles(new Uint8Array(raw))) {
-    const [, filename, ...rest] = tarFile.path.split('/');
-    if (!filename || rest.length > 0) continue;
-    if (!['pathname', 'asset', 'asset.meta', 'preview.png', 'metaData'].includes(filename)) {
-      finding('warn', 'UNEXPECTED_FILE', `Unexpected file in GUID directory: ${filename}`, tarFile.path);
-    }
   }
 
   if (entries.length === 0) {
@@ -196,28 +186,4 @@ function output(packagePath: string, size: number, findings: Finding[], opts: Ve
   if (hasErrors) throw new CliError('Package has errors.', EXIT.ERROR);
   if (hasStrictWarnings) throw new CliError('Package has warnings.', EXIT.WARN);
   return result;
-}
-
-function listTarFiles(raw: Uint8Array): TarFile[] {
-  const data = gunzipSync(raw);
-  const files: TarFile[] = [];
-  let offset = 0;
-
-  while (offset + 512 <= data.length) {
-    const header = data.subarray(offset, offset + 512);
-    if (header.every(b => b === 0)) break;
-
-    const name = new TextDecoder().decode(header.subarray(0, 100)).replace(/\0/g, '').trim();
-    const sizeStr = new TextDecoder().decode(header.subarray(124, 136)).replace(/\0/g, '').trim();
-    const size = parseInt(sizeStr, 8);
-    offset += 512;
-
-    if (name && !Number.isNaN(size) && offset + size <= data.length && !name.endsWith('/')) {
-      files.push({ path: name, content: data.subarray(offset, offset + size) });
-    }
-
-    offset += Number.isNaN(size) ? 0 : Math.ceil(size / 512) * 512;
-  }
-
-  return files;
 }
