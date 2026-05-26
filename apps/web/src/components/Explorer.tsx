@@ -8,7 +8,6 @@ import {
   FolderOpen,
   Locate,
 } from 'lucide-react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   formatBytes,
   getFolderRecordIds,
@@ -22,6 +21,7 @@ import {
 } from '../packageModel';
 import { getFileIconDescriptor } from '../fileIcons';
 import { useRowSweepSelection } from '../hooks/useRowSweepSelection';
+import { useVirtualizerCompat } from '../hooks/useVirtualizerCompat';
 
 interface ExplorerProps {
   groupingMode: GroupingMode;
@@ -178,14 +178,14 @@ function VirtualTree({
   keyboardRangeBaseIds: Set<string> | null;
   onSetKeyboardRangeBase: (base: Set<string> | null) => void;
 }) {
+  'use no memo';
   const dragSelection = useRowSweepSelection({
     orderedRecordIds,
     selectedIds,
     scrollRef: viewportRef,
     onReplaceSelection,
   });
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizerCompat({
     count: rows.length,
     getScrollElement: () => viewportRef.current,
     estimateSize: () => 38,
@@ -487,6 +487,7 @@ function ExtensionList({
   keyboardRangeBaseIds: Set<string> | null;
   onSetKeyboardRangeBase: (base: Set<string> | null) => void;
 }) {
+  'use no memo';
   const parentRef = useRef<HTMLDivElement | null>(null);
   const dragSelection = useRowSweepSelection({
     orderedRecordIds,
@@ -507,8 +508,7 @@ function ExtensionList({
     return flat;
   }, [groups]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizerCompat({
     count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {

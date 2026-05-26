@@ -8,7 +8,6 @@ import {
   Info,
   Search,
 } from 'lucide-react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
@@ -24,6 +23,7 @@ import {
   type RecordCategory,
 } from '../packageModel';
 import { highlightCode, findQueryMatches, splitLineTokensForMatches, type HighlightedCode, type HighlightedToken } from '../syntaxHighlight';
+import { useVirtualizerCompat } from '../hooks/useVirtualizerCompat';
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -353,12 +353,12 @@ function AudioPreview({ record, blobUrl }: { record: PackageFileRecord; blobUrl:
 }
 
 function HexPreview({ record }: { record: PackageFileRecord }) {
+  'use no memo';
   const bytes = record.content;
   const rowCount = Math.ceil(bytes.length / 16);
   const parentRef = useRef<HTMLDivElement | null>(null);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const rowVirtualizer = useVirtualizer({
+  const rowVirtualizer = useVirtualizerCompat({
     count: rowCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 20,
@@ -481,6 +481,7 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
 }
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
+  'use no memo';
   const [loadedLimit, setLoadedLimit] = useState(20000);
 
   const preview = useMemo(() => {
@@ -517,8 +518,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
 
   const linesCount = highlightedCode ? highlightedCode.lines.length : 0;
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const rowVirtualizer = useVirtualizer({
+  const rowVirtualizer = useVirtualizerCompat({
     count: linesCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 20,
@@ -534,23 +534,26 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     return findQueryMatches(linesText, findQuery);
   }, [linesText, findQuery]);
 
+  const boundedActiveMatchIdx = matches.length === 0 ? 0 : Math.min(activeMatchIdx, matches.length - 1);
+
   useEffect(() => {
-    setActiveMatchIdx(0);
+    const resetTimer = window.setTimeout(() => setActiveMatchIdx(0), 0);
     if (matches.length > 0) {
       rowVirtualizer.scrollToIndex(matches[0].lineIndex, { align: 'center' });
     }
+    return () => window.clearTimeout(resetTimer);
   }, [matches, rowVirtualizer]);
 
   const handleNextMatch = () => {
     if (matches.length === 0) return;
-    const nextIdx = (activeMatchIdx + 1) % matches.length;
+    const nextIdx = (boundedActiveMatchIdx + 1) % matches.length;
     setActiveMatchIdx(nextIdx);
     rowVirtualizer.scrollToIndex(matches[nextIdx].lineIndex, { align: 'center' });
   };
 
   const handlePrevMatch = () => {
     if (matches.length === 0) return;
-    const prevIdx = (activeMatchIdx - 1 + matches.length) % matches.length;
+    const prevIdx = (boundedActiveMatchIdx - 1 + matches.length) % matches.length;
     setActiveMatchIdx(prevIdx);
     rowVirtualizer.scrollToIndex(matches[prevIdx].lineIndex, { align: 'center' });
   };
@@ -635,7 +638,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
             }}
           />
           <span style={{ fontSize: '0.78rem', color: 'var(--muted)', minWidth: '55px', textAlign: 'center' }}>
-            {matches.length > 0 ? `${activeMatchIdx + 1} of ${matches.length}` : '0 of 0'}
+            {matches.length > 0 ? `${boundedActiveMatchIdx + 1} of ${matches.length}` : '0 of 0'}
           </span>
           <button
             type="button"
@@ -688,7 +691,7 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
             const displayTokens = splitLineTokensForMatches(
               originalLine,
               lineMatches,
-              matches[activeMatchIdx] ? matches[activeMatchIdx].globalIndex : null
+              matches[boundedActiveMatchIdx] ? matches[boundedActiveMatchIdx].globalIndex : null
             );
 
             return (

@@ -82,5 +82,6 @@ Auto-memoizes React components at build time — equivalent to inserting correct
 - ESLint rule (`eslint-plugin-react-compiler`) catches violations pre-build: impure components, prop mutation, conditional hooks
 - Remove existing `useMemo`/`useCallback` incrementally after verifying with React DevTools "Memo ✨" badge
 - Does NOT cover hooks that directly mutate DOM element properties (use `scrollElementNearEdge` helper pattern instead)
+- TanStack Virtual integration is intentionally wrapped by `useVirtualizerCompat`; components that render virtual rows use `'use no memo'` because compiler optimization can prevent rows from rendering
 
 **Cost:** ~10% slower builds due to Babel pass, ~20KB added to final bundle (compiler runtime).

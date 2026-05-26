@@ -8,7 +8,7 @@ const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../
 async function selectFileByName(page: import('@playwright/test').Page, fileName: string): Promise<void> {
   await page.getByPlaceholder('Search files by name or path').fill(fileName);
   const row = page.locator('.file-row').filter({
-    has: page.locator('.file-name').filter({ hasText: new RegExp(`^${fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }),
+    has: page.locator('.file-name').filter({ hasText: new RegExp(`^${RegExp.escape(fileName)}$`) }),
   }).first();
   await row.getByRole('checkbox', { disabled: false }).click();
 }

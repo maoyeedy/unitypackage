@@ -22,6 +22,8 @@ bun run smoke                     # ad-hoc smoke tests (inspect, verify, diff, e
 bun run test:core                 # vitest --project core
 bun run test:cli                  # vitest --project cli
 bun run test:web                  # vitest --project web
+bun run typecheck:scripts         # typecheck root scripts/*.ts with NodeNext + erasableSyntaxOnly
+bun run typecheck:stable          # direct tsc -p projects with --stableTypeOrdering
 bun run knip                      # detect unused deps/exports/files
 bun run test:knip                 # alias
 bun run test:web                  # vitest --project web (unit + RTL)
@@ -51,12 +53,15 @@ All contexts (dev, CI, published): Node ≥24.
 - **core module layout**: `model.ts`, `guid.ts`, `pathname.ts`, `meta.ts`, `sidecar.ts`, `parse.ts`, `create.ts`, `summary.ts`, `analyze.ts`, `classify.ts`, `component.ts`, `glob.ts`, `tar.ts` (private helpers). Tests co-located: `parse.test.ts`, `create.test.ts`, etc.
 - **core build**: `tsconfig.json` omits `moduleResolution` intentionally. Build writes `printf '{"type":"module"}' > dist/esm/package.json` (load-bearing). Do not place non-test helpers under `packages/core/src`.
 - **CLI imports**: all relative `.ts` imports use `.js` extension (NodeNext).
+- **Node-only TS target**: CLI, fixtures, web node config, and `scripts/*.ts` typecheck against ES2025. Core and browser app runtime stay conservative unless browser support/polyfills are explicitly handled.
+- **Root scripts typecheck**: `tsconfig.scripts.json` covers `scripts/*.ts` with NodeNext, `types: ["node"]`, and `erasableSyntaxOnly` so scripts remain compatible with native Node TS stripping.
 - **CLI parse**: use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage`. Web uses entry-aware parsing via parse worker and `apps/web/src/packageModel.ts`.
 - **Build order**: `build:cli` chains `build:web` then copies assets. Never run `scripts/copy-web-assets.ts` standalone.
 - **`apps/web` typecheck**: `tsc -b` (not `--noEmit` — skips project ref resolution).
 - **`apps/web` English-only**: no translations, language selectors, or `language` URL state.
 - **`apps/web` Pack mode**: shell only. `.unitypackage` export disabled. ZIP remains Extract-mode.
 - **`apps/web` has React Compiler**: enabled via `@rolldown/plugin-babel` + `reactCompilerPreset` in `vite.config.ts`. Auto-memoizes components at build time. Manual `useMemo`/`useCallback`/`React.memo` can be removed incrementally after verifying via React DevTools "Memo ✨" badge. Does not apply to hooks that mutate DOM props directly (use `scrollElementNearEdge` helper pattern).
+- **TanStack Virtual + React Compiler**: components that call `useVirtualizerCompat` need a local `'use no memo'` directive. Hiding `useVirtualizer` behind a custom hook removes lint noise, but component-level compiler opt-out is required or virtual rows can fail to render in E2E.
 - **`PackageFileRecord` has no `kind`**: use `extension` + `isUnityPreview` primitives, or `getRecordCategory(record)` for a single discriminator. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.

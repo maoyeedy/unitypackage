@@ -6,17 +6,18 @@ import { ModeTabs } from './ModeTabs';
 
 describe('ModeTabs', () => {
   it('renders both mode buttons', () => {
-    render(<ModeTabs mode="extract" onModeChange={() => {}} />);
+    render(<ModeTabs mode="extract" onModeChange={vi.fn()} />);
     expect(screen.getByRole('button', { name: /extract/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /pack/i })).toBeInTheDocument();
   });
 
   it('highlights the active mode', () => {
-    const { rerender } = render(<ModeTabs mode="extract" onModeChange={() => {}} />);
+    const onModeChange = vi.fn();
+    const { rerender } = render(<ModeTabs mode="extract" onModeChange={onModeChange} />);
     expect(screen.getByRole('button', { name: /extract/i })).toHaveClass('active');
     expect(screen.getByRole('button', { name: /pack/i })).not.toHaveClass('active');
 
-    rerender(<ModeTabs mode="pack" onModeChange={() => {}} />);
+    rerender(<ModeTabs mode="pack" onModeChange={onModeChange} />);
     expect(screen.getByRole('button', { name: /pack/i })).toHaveClass('active');
     expect(screen.getByRole('button', { name: /extract/i })).not.toHaveClass('active');
   });
