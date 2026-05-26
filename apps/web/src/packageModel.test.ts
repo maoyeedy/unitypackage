@@ -2139,4 +2139,60 @@ describe('P2 tree ergonomics helpers', () => {
       }
     });
   });
+
+  describe('real archive entries-to-records', () => {
+    const archiveUrl = new URL('../../../fixtures/static/archives/Polytope_URP.unitypackage', import.meta.url);
+
+    it('parses Polytope_URP into well-shaped records with known entries', () => {
+      const pkgBytes = readFileSync(archiveUrl);
+      const { entries, diagnostics } = parseUnityPackageEntries(pkgBytes);
+      const records = entriesToRecords(entries, diagnostics);
+
+      expect(records.length).toBeGreaterThan(50);
+      expect(getRecordCategory(records[0])).toBeOneOf(['asset', 'meta', 'preview']);
+
+      for (const record of records) {
+        expect(record.id).toBeTruthy();
+        expect(record.guid).toMatch(/^[0-9a-f]{32}$/);
+        expect(record.pathname).toBeTruthy();
+        expect(record.virtualPath).toBeTruthy();
+        expect(record.extension).toBeTruthy();
+        expect(typeof record.byteLength).toBe('number');
+        expect(typeof record.isUnityPreview).toBe('boolean');
+      }
+
+      const shader = records.find(r =>
+        r.pathname.endsWith('PT_Rock_Shader.shader') && !r.isUnityPreview
+      );
+      expect(shader).toBeDefined();
+      expect(shader!.extension).toBe('shader');
+      expect(shader!.mimeType).toBe('text/plain;charset=utf-8');
+      expect(shader!.syntaxLanguage).toBe('shaderlab');
+
+      const shaderMeta = records.find(r =>
+        r.virtualPath.endsWith('PT_Rock_Shader.shader.meta')
+      );
+      expect(shaderMeta).toBeDefined();
+      expect(shaderMeta!.extension).toBe('meta');
+      expect(shaderMeta!.isUnityPreview).toBe(false);
+      expect(shaderMeta!.previewKind).toBe('text');
+      expect(shaderMeta!.syntaxLanguage).toBe('yaml');
+
+      const mat = records.find(r =>
+        r.pathname.endsWith('PT_mat.mat') && !r.isUnityPreview
+      );
+      expect(mat).toBeDefined();
+      expect(mat!.extension).toBe('mat');
+      expect(mat!.previewKind).toBe('text');
+      expect(mat!.syntaxLanguage).toBe('yaml');
+
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'fbx')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'prefab')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'unity')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'cs')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'cginc')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'asset')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'terrainlayer')).toBe(true);
+    });
+  });
 });
