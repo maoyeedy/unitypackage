@@ -24,7 +24,7 @@ core break. No deprecation aliases.
 - `packages/core/src/*` cleanup, API consolidation, new shared helpers.
 - `packages/cli/src/*` consumer updates and `verify` simplification.
 - `apps/web/src/*` consumer updates and record-shape refactor.
-- Tests, README updates, and `docs/reference/format.md` updates that follow
+- Tests, README updates, and `docs/reference/archive-format-spec.md` updates that follow
   from API renames.
 
 ### Out
@@ -56,7 +56,7 @@ in the same PR.
 
 - `docs/plans/core/review-followups.md` is the immediate predecessor and
   stays in place as historical record.
-- After P3 lands, `docs/reference/format.md` must drop references to
+- After P3 lands, `docs/reference/archive-format-spec.md` must drop references to
   `parseUnityPackageStreamed` and update the `parseUnityPackageStream` entry
   (rename or sharpened docstring -- see P3 "Open call").
 

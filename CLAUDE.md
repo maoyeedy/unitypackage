@@ -44,9 +44,9 @@ bun packages/cli/dist/bin.js extract "fixtures/static/editor-packed.unitypackage
 
 ## Reference
 
-- `docs/reference/format.md` — `.unitypackage` format spec
+- `docs/reference/archive-format-spec.md` — `.unitypackage` format spec
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
-- `docs/reference/publishing.md` — publishing checklist
+- `docs/reference/release.md` — publishing checklist
 - `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features
 
@@ -68,7 +68,7 @@ E2E testing via `@playwright/test`. Do not use `playwright-cli` or `@playwright/
 - CLI must use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage` (flat alias). `apps/web` also uses entry-aware parsing through its parse worker and derives `PackageFileRecord` values in `apps/web/src/packageModel.ts`.
 - `apps/web` is English-only. Do not reintroduce translation files, language selectors, or `language` URL state.
 - Web Extract selection lives in `apps/web/src/App.tsx` plus pure helpers in `apps/web/src/packageModel.ts`; keep checkbox, drag-sweep, folder select-all, and extension select-all behavior scoped to filtered visible records.
-- **`PackageFileRecord` has no `kind` field**: removed because `extension` + `isUnityPreview: boolean` already discriminate every case. Internally, derive the category with `getRecordCategory(record)` → `'asset' | 'meta' | 'preview'` when you need a single discriminator (e.g., grouping, switch-on-category logic). For predicates prefer the primitives directly: `extension === 'meta'` for meta sidecars, `isUnityPreview` for synthetic thumbnails extracted from `entry.preview`, `!isUnityPreview && extension !== 'meta'` for real assets. Do not reintroduce a `kind` field, do not derive mime/syntax/preview by branching on category (extension is authoritative — see `docs/reference/file-mapping.md`), and do not surface a per-record "Kind" label in the UI (the `.meta` / `.preview.png` suffix in the path conveys it). `RecordCategory` is exported only for the helper's return type and tests.
+- **`PackageFileRecord` has no `kind` field**: removed because `extension` + `isUnityPreview: boolean` already discriminate every case. Internally, derive the category with `getRecordCategory(record)` → `'asset' | 'meta' | 'preview'` when you need a single discriminator (e.g., grouping, switch-on-category logic). For predicates prefer the primitives directly: `extension === 'meta'` for meta sidecars, `isUnityPreview` for synthetic thumbnails extracted from `entry.preview`, `!isUnityPreview && extension !== 'meta'` for real assets. Do not reintroduce a `kind` field, do not derive mime/syntax/preview by branching on category (extension is authoritative — see `docs/reference/extension-map.md`), and do not surface a per-record "Kind" label in the UI (the `.meta` / `.preview.png` suffix in the path conveys it). `RecordCategory` is exported only for the helper's return type and tests.
 - Keep web drag-sweep selection constrained to the middle explorer pane and file rows; do not reintroduce Shift-click range selection unless product behavior changes explicitly.
 - Web Pack mode is currently a shell: keep `.unitypackage` export disabled until `docs/plans/web/new-api.md` wires the final browser creation API. ZIP downloads remain Extract-mode behavior.
 - Web PWA setup uses `vite-plugin-pwa`, `virtual:pwa-register`, and `workbox-window`; keep service worker registration in the app entrypoint.

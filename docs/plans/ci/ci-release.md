@@ -10,10 +10,10 @@ metadata completeness.
 
 | ID | Title | Goal | Parallel with | Depends on | Files | Subagent |
 |----|-------|------|---------------|------------|-------|----------|
-| P1 | CI, publish, and Pages workflows | Add GitHub Actions for matrix CI, tag publishing, and web deployment. | P2 | - | `.github/workflows/*.yml`, `docs/reference/publishing.md`, `package.json` | worker |
-| P2 | Dependency and version automation | Add Dependabot and Changesets configuration for the monorepo. | P1 | - | `.github/dependabot.yml`, `.changeset/config.json`, `package.json`, `bun.lock`, `docs/reference/publishing.md` | worker |
+| P1 | CI, publish, and Pages workflows | Add GitHub Actions for matrix CI, tag publishing, and web deployment. | P2 | - | `.github/workflows/*.yml`, `docs/reference/release.md`, `package.json` | worker |
+| P2 | Dependency and version automation | Add Dependabot and Changesets configuration for the monorepo. | P1 | - | `.github/dependabot.yml`, `.changeset/config.json`, `package.json`, `bun.lock`, `docs/reference/release.md` | worker |
 | P3 | Playwright smoke | Add a browser smoke test that loads the web app, drops a generated package, and asserts the workspace tree, batch selection, and preview pane render. | - | P1, P2 | `apps/web/**/*`, `fixtures/**/*`, `package.json`, `bun.lock` | worker |
-| P4 | Package metadata and release verification | Ensure CLI package includes a license and run the release dry-run gate. | - | P3 | `packages/cli/LICENSE`, `packages/cli/package.json`, `docs/reference/publishing.md` | worker |
+| P4 | Package metadata and release verification | Ensure CLI package includes a license and run the release dry-run gate. | - | P3 | `packages/cli/LICENSE`, `packages/cli/package.json`, `docs/reference/release.md` | worker |
 
 ### P1 - CI, publish, and Pages workflows
 

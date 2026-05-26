@@ -19,7 +19,7 @@ not actually stream gzip or tar. Drop the misleading `bytesRead` /
   `parseUnityPackageEntries` (since the streamed / entries split is gone).
   P1 has already removed the try/catch fallback.
 - `packages/core/README.md` -- update the three function-reference sections.
-- `docs/reference/format.md` -- update the parser bullet that lists the
+- `docs/reference/archive-format-spec.md` -- update the parser bullet that lists the
   four parse functions.
 
 ## Surface
@@ -74,7 +74,7 @@ fall back to the kept-name option and add the docstring instead.
    `parseUnityPackageEntries` directly. The worker's progress reporting
    was not consuming `bytesRead`, so no UI change.
 
-6. Update `packages/core/README.md` and `docs/reference/format.md` to
+6. Update `packages/core/README.md` and `docs/reference/archive-format-spec.md` to
    reflect three parse entry points: `parseUnityPackage` (flat alias),
    `parseUnityPackageEntries`, `iterUnityPackageEntries`.
 
@@ -88,7 +88,7 @@ fall back to the kept-name option and add the docstring instead.
   open-call fallback was chosen).
 - `StreamParseProgressEvent` (renamed to e.g. `IterEntriesProgressEvent`)
   has only an `entryCount` field.
-- `packages/core/README.md` and `docs/reference/format.md` match the new
+- `packages/core/README.md` and `docs/reference/archive-format-spec.md` match the new
   API; no broken references.
 - A `parseUnityPackageEntries(bytes, { chunkSize: 8 })` test exists and
   asserts the same result as the default-chunkSize call against the same
