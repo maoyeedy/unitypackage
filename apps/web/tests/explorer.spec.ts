@@ -15,16 +15,16 @@ test.describe('explorer interactions', () => {
     const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
     const initial = await recordCount.textContent();
     expect(initial).toMatch(/\d+ visible records/);
-    await page.getByPlaceholder('Filter name or GUID').fill('xyznotexist');
+    await page.getByPlaceholder('Search files by name or path').fill('xyznotexist');
     await expect(recordCount).toContainText('0 visible records');
   });
 
   test('clearing search restores all records', async ({ page }) => {
     const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
     const initial = await recordCount.textContent();
-    await page.getByPlaceholder('Filter name or GUID').fill('xyznotexist');
+    await page.getByPlaceholder('Search files by name or path').fill('xyznotexist');
     await expect(recordCount).toContainText('0 visible records');
-    await page.getByPlaceholder('Filter name or GUID').clear();
+    await page.getByPlaceholder('Search files by name or path').clear();
     await expect(recordCount).toHaveText(initial ?? '');
   });
 
@@ -69,6 +69,45 @@ test.describe('explorer interactions', () => {
     await expect(toolbar.getByRole('button')).toHaveCount(7);
   });
 
+  test.describe('Show preview records setting', () => {
+    test('preview rows are hidden by default in tree view', async ({ page }) => {
+      const previewCheckbox = page.getByRole('checkbox', { name: 'Show preview records' });
+      await expect(previewCheckbox).not.toBeChecked();
+      const tree = page.getByRole('tree', { name: 'Package file tree' });
+      // No treeitem should show a .preview.png filename when the toggle is off
+      const previewItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.preview\.png/ });
+      await expect(previewItems.first()).not.toBeVisible();
+    });
+
+    test('preview rows appear in tree view when Show preview records is on', async ({ page }) => {
+      const previewCheckbox = page.getByRole('checkbox', { name: 'Show preview records' });
+      await previewCheckbox.check();
+      await expect(previewCheckbox).toBeChecked();
+      // Filter to preview.png to bring them into viewport
+      await page.getByPlaceholder('Search files by name or path').fill('.preview.png');
+      const tree = page.getByRole('tree', { name: 'Package file tree' });
+      // At least one preview row should now be visible
+      const previewItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.preview\.png/ });
+      await expect(previewItems.first()).toBeVisible();
+    });
+
+    test('searching .preview.png shows 0 visible records when Show preview records is off', async ({ page }) => {
+      // Previews hidden by default -- searching for them should yield 0 visible records
+      const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
+      await page.getByPlaceholder('Search files by name or path').fill('.preview.png');
+      await expect(recordCount).toContainText('0 visible records');
+    });
+
+    test('searching .preview.png shows records when Show preview records is on', async ({ page }) => {
+      const previewCheckbox = page.getByRole('checkbox', { name: 'Show preview records' });
+      await previewCheckbox.check();
+      const recordCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/\d+ visible records/);
+      await page.getByPlaceholder('Search files by name or path').fill('.preview.png');
+      // Records should now be visible (fixture has 82 preview records)
+      await expect(recordCount).not.toContainText('0 visible records');
+    });
+  });
+
   test.describe('Include .meta with assets setting', () => {
     test('meta rows are hidden in tree view when setting is off (default)', async ({ page }) => {
       // The setting defaults to unchecked -- meta rows should not appear in the tree
@@ -103,7 +142,7 @@ test.describe('explorer interactions', () => {
       const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
       await metaCheckbox.check();
       // Filter to .meta files to bring it to the top/viewport
-      await page.getByPlaceholder('Filter name or GUID').fill('.meta');
+      await page.getByPlaceholder('Search files by name or path').fill('.meta');
       // Switch to extension grouping
       await page.getByRole('button', { name: 'Extension', exact: true }).click();
       const explorerPanel = page.getByRole('region', { name: 'Package explorer' });

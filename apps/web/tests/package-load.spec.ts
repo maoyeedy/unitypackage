@@ -48,12 +48,14 @@ test.describe('package loading', () => {
     await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
 
     // Verify recents list contains the package
+    await page.getByRole('button', { name: 'Recent packages' }).click();
     await expect(page.locator('.recent-item')).toContainText('editor-packed.unitypackage');
 
     // Reload page
     await page.reload();
 
     // Verify it is still in recents and tree is empty
+    await page.getByRole('button', { name: 'Recent packages' }).click();
     await expect(page.locator('.recent-item')).toContainText('editor-packed.unitypackage');
     await expect(page.getByRole('heading', { name: 'No records loaded' })).toBeVisible();
 

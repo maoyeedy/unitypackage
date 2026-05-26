@@ -34,6 +34,7 @@ import {
   parseSize,
   resolveMetaSidecarSelection,
   routeAnalysisFindings,
+  simpleMatchRecord,
   sortRecords,
   toSidecarSelectableRecords,
   validatePackDraft,
@@ -1505,6 +1506,48 @@ describe('package model helpers', () => {
       });
     });
 
+    describe('simpleMatchRecord', () => {
+      const record = {
+        fileName: 'Player.cs',
+        virtualPath: 'Assets/Scripts/Player.cs',
+        guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+      } as Parameters<typeof simpleMatchRecord>[0];
+
+      it('returns true for empty query', () => {
+        expect(simpleMatchRecord(record, '', false, false)).toBe(true);
+        expect(simpleMatchRecord(record, '   ', false, false)).toBe(true);
+      });
+
+      it('matches by file name substring', () => {
+        expect(simpleMatchRecord(record, 'Player', false, false)).toBe(true);
+        expect(simpleMatchRecord(record, 'Enemy', false, false)).toBe(false);
+      });
+
+      it('matches by path segment not in file name', () => {
+        expect(simpleMatchRecord(record, 'Scripts', false, false)).toBe(true);
+        expect(simpleMatchRecord(record, 'Textures', false, false)).toBe(false);
+      });
+
+      it('AND-of-terms: all terms must match (name or path each)', () => {
+        expect(simpleMatchRecord(record, 'Player Scripts', false, false)).toBe(true);
+        expect(simpleMatchRecord(record, 'Player Enemy', false, false)).toBe(false);
+      });
+
+      it('case-sensitive mode respects casing', () => {
+        expect(simpleMatchRecord(record, 'player', true, false)).toBe(false);
+        expect(simpleMatchRecord(record, 'Player', true, false)).toBe(true);
+      });
+
+      it('case-insensitive mode ignores casing', () => {
+        expect(simpleMatchRecord(record, 'PLAYER', false, false)).toBe(true);
+      });
+
+      it('glob mode matches against name and path', () => {
+        expect(simpleMatchRecord(record, '**/*.cs', false, true)).toBe(true);
+        expect(simpleMatchRecord(record, '**/*.png', false, true)).toBe(false);
+      });
+    });
+
     describe('filterRecords', () => {
       const makeRecords = () => entriesToRecords([
         {
@@ -1522,14 +1565,11 @@ describe('package model helpers', () => {
 
       const baseOptions = {
         query: '',
-        matchMode: 'filename' as const,
         caseSensitive: false,
         globMode: false,
-        categories: new Set<'asset' | 'meta' | 'preview'>(),
-        sizeMin: '',
-        sizeMax: '',
         diagCodes: new Set<string>(),
         includeMetaSidecars: true,
+        showPreviews: true,
       };
 
       it('passes all records with empty options', () => {
@@ -1543,30 +1583,24 @@ describe('package model helpers', () => {
         expect(result.every(r => r.extension !== 'meta')).toBe(true);
       });
 
-      it('category chip filters Assets only', () => {
+      it('query matches by file name substring', () => {
         const records = makeRecords();
-        const result = filterRecords(records, { ...baseOptions, categories: new Set(['asset' as const]) });
-        expect(result.every(r => getRecordCategory(r) === 'asset')).toBe(true);
+        const result = filterRecords(records, { ...baseOptions, query: 'Player' });
+        expect(result.every(r => r.virtualPath.includes('Player'))).toBe(true);
         expect(result.length).toBeGreaterThan(0);
       });
 
-      it('category chip filters Meta only', () => {
+      it('query matches by path segment not in file name', () => {
         const records = makeRecords();
-        const result = filterRecords(records, { ...baseOptions, categories: new Set(['meta' as const]) });
-        expect(result.every(r => r.extension === 'meta')).toBe(true);
+        const result = filterRecords(records, { ...baseOptions, query: 'Scripts' });
+        expect(result.every(r => r.virtualPath.includes('Scripts'))).toBe(true);
+        expect(result.length).toBeGreaterThan(0);
       });
 
-      it('size range filters by bytes', () => {
+      it('query with no match returns empty list', () => {
         const records = makeRecords();
-        // All records in the fixture are very small; filter min=1k excludes them
-        const result = filterRecords(records, { ...baseOptions, sizeMin: '1k' });
-        expect(result.every(r => r.byteLength >= 1024)).toBe(true);
-      });
-
-      it('size range max excludes large records', () => {
-        const records = makeRecords();
-        const result = filterRecords(records, { ...baseOptions, sizeMax: '0' });
-        expect(result.every(r => r.byteLength <= 0)).toBe(true);
+        const result = filterRecords(records, { ...baseOptions, query: 'xyznotexist' });
+        expect(result).toHaveLength(0);
       });
 
       it('diagCode filter matches records with that code', () => {
@@ -1595,6 +1629,58 @@ describe('package model helpers', () => {
           r.diagnostics.some(d => d.code === 'meta-missing') ||
           r.findings.some(f => f.code === 'meta-missing')
         )).toBe(true);
+      });
+
+      it('hides preview records when showPreviews is false (default)', () => {
+        const records = entriesToRecords([
+          {
+            guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+            pathname: 'Assets/Texture.png',
+            asset: encoder.encode('png'),
+            meta: encoder.encode('meta'),
+            preview: encoder.encode('preview bytes'),
+          },
+        ], []);
+
+        const withPreviews = records.filter(r => r.isUnityPreview);
+        expect(withPreviews).toHaveLength(1);
+
+        const result = filterRecords(records, { ...baseOptions, showPreviews: false });
+        expect(result.every(r => !r.isUnityPreview)).toBe(true);
+        const previewsInResult = result.filter(r => r.isUnityPreview);
+        expect(previewsInResult).toHaveLength(0);
+      });
+
+      it('shows preview records when showPreviews is true', () => {
+        const records = entriesToRecords([
+          {
+            guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+            pathname: 'Assets/Texture.png',
+            asset: encoder.encode('png'),
+            meta: encoder.encode('meta'),
+            preview: encoder.encode('preview bytes'),
+          },
+        ], []);
+
+        const result = filterRecords(records, { ...baseOptions, showPreviews: true });
+        const previewsInResult = result.filter(r => r.isUnityPreview);
+        expect(previewsInResult).toHaveLength(1);
+      });
+
+      it('showPreviews does not affect non-preview records', () => {
+        const records = entriesToRecords([
+          {
+            guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+            pathname: 'Assets/Scripts/Player.cs',
+            asset: encoder.encode('code'),
+            meta: encoder.encode('meta'),
+          },
+        ], []);
+
+        const withoutPreviews = filterRecords(records, { ...baseOptions, showPreviews: false });
+        const withPreviews = filterRecords(records, { ...baseOptions, showPreviews: true });
+        // No preview records in either case -- result lengths should be equal
+        expect(withoutPreviews.length).toBe(withPreviews.length);
       });
     });
 

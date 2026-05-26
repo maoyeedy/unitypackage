@@ -29,17 +29,6 @@ export type FilterMatchMode = 'filename' | 'path' | 'guid';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-export interface FilterState {
-  query: string;
-  matchMode: FilterMatchMode;
-  caseSensitive: boolean;
-  globMode: boolean;
-  categories: ReadonlySet<RecordCategory>;
-  sizeMin: string;
-  sizeMax: string;
-  diagCodes: ReadonlySet<string>;
-}
-
 export interface PackageFileRecord {
   id: string;
   guid: string;
@@ -462,6 +451,40 @@ export function matchGlob(pattern: string, path: string): boolean {
 
 /**
  * Returns true when the record matches all space-separated terms in the query
+ * against either the file name or the full virtual path (OR across fields,
+ * AND across terms).
+ *
+ * Terms are split on whitespace. An empty query always matches.
+ * When globMode is true each term is treated as a glob pattern matched against
+ * the full path value. Otherwise a simple substring test is used against both
+ * file name and virtual path.
+ */
+export function simpleMatchRecord(
+  record: PackageFileRecord,
+  query: string,
+  caseSensitive: boolean,
+  globMode: boolean,
+): boolean {
+  const rawQuery = query.trim();
+  if (!rawQuery) return true;
+
+  const terms = rawQuery.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const nameField = caseSensitive ? record.fileName : record.fileName.toLowerCase();
+  const pathField = caseSensitive ? record.virtualPath : record.virtualPath.toLowerCase();
+
+  return terms.every(rawTerm => {
+    const term = caseSensitive ? rawTerm : rawTerm.toLowerCase();
+    if (globMode) {
+      return matchGlob(term, nameField) || matchGlob(term, pathField);
+    }
+    return nameField.includes(term) || pathField.includes(term);
+  });
+}
+
+/**
+ * Returns true when the record matches all space-separated terms in the query
  * against the active match field.
  *
  * Terms are split on whitespace. An empty query always matches.
@@ -500,29 +523,24 @@ export function matchRecord(
 
 export interface RecordFilterOptions {
   query: string;
-  matchMode: FilterMatchMode;
   caseSensitive: boolean;
   globMode: boolean;
-  /** When empty Set, all categories pass. */
-  categories: ReadonlySet<RecordCategory>;
-  /** Raw string input; empty string means no min bound. */
-  sizeMin: string;
-  /** Raw string input; empty string means no max bound. */
-  sizeMax: string;
   /** When empty Set, all diagnostic codes pass. */
   diagCodes: ReadonlySet<string>;
   includeMetaSidecars: boolean;
+  /** When false (default), synthetic Unity preview records are hidden. */
+  showPreviews: boolean;
 }
 
 /**
  * Applies all active filters to a record list.
  *
  * Ordering:
- * 1. Text query (AND-of-terms, respects matchMode / caseSensitive / globMode)
- * 2. Category chips (Assets, Meta, Previews)
- * 3. Size range (sizeMin / sizeMax in parsed bytes)
- * 4. Diagnostic-code chips (record must carry at least one matching code)
- * 5. Meta-sidecar visibility (includeMetaSidecars)
+ * 1. Preview visibility (showPreviews) -- synthetic Unity preview records hidden by default
+ * 2. Meta-sidecar visibility (includeMetaSidecars)
+ * 3. Text query -- AND-of-terms matched against file name OR full path
+ *    (respects caseSensitive / globMode)
+ * 4. Diagnostic-code filter (record must carry at least one matching code)
  */
 export function filterRecords(
   records: PackageFileRecord[],
@@ -530,36 +548,26 @@ export function filterRecords(
 ): PackageFileRecord[] {
   const {
     query,
-    matchMode,
     caseSensitive,
     globMode,
-    categories,
-    sizeMin,
-    sizeMax,
     diagCodes,
     includeMetaSidecars,
+    showPreviews,
   } = options;
 
-  const minBytes = parseSize(sizeMin);
-  const maxBytes = parseSize(sizeMax);
-  const hasCategories = categories.size > 0;
   const hasDiagCodes = diagCodes.size > 0;
 
   return records.filter(record => {
-    // 1. Meta-sidecar visibility
+    // 1. Preview visibility (synthetic Unity thumbnails)
+    if (!showPreviews && record.isUnityPreview) return false;
+
+    // 2. Meta-sidecar visibility
     if (!includeMetaSidecars && record.extension === 'meta') return false;
 
-    // 2. Text query
-    if (!matchRecord(record, query, matchMode, caseSensitive, globMode)) return false;
+    // 3. Text query (name OR path)
+    if (!simpleMatchRecord(record, query, caseSensitive, globMode)) return false;
 
-    // 3. Category chips
-    if (hasCategories && !categories.has(getRecordCategory(record))) return false;
-
-    // 4. Size range
-    if (minBytes !== null && record.byteLength < minBytes) return false;
-    if (maxBytes !== null && record.byteLength > maxBytes) return false;
-
-    // 5. Diagnostic-code chips
+    // 4. Diagnostic-code filter
     if (hasDiagCodes) {
       const allCodes = [
         ...record.diagnostics.map(d => d.code),
