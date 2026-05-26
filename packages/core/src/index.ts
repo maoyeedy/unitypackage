@@ -8,6 +8,7 @@ export {
   guidFromPath,
   isValidGuid,
 } from './guid';
+export { matchGlob } from './glob';
 export type {
   PathnameCollision,
   PathnameRejectionReason,
@@ -37,6 +38,7 @@ export {
   detectMetaImporterType,
   readDeclaredMetaImporter,
   readMetaGuid,
+  writeMetaGuid,
 } from './meta';
 export type {
   PreviewKind,

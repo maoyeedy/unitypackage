@@ -9,6 +9,7 @@ import {
   detectMetaImporterType,
   readDeclaredMetaImporter,
   readMetaGuid,
+  writeMetaGuid,
 } from './index';
 
 const textureMeta = new URL('../../../fixtures/static/texture_02.png.meta', import.meta.url);
@@ -261,3 +262,56 @@ describe('createMinimalMeta backward compat', () => {
     expect(result).not.toContain('TextScriptImporter:');
   });
 });
+
+// ---------------------------------------------------------------------------
+// writeMetaGuid
+// ---------------------------------------------------------------------------
+
+describe('writeMetaGuid', () => {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const validGuid = 'abcdef0123456789abcdef0123456789';
+
+  it('updates the GUID line in normal meta contents', () => {
+    const originalText = 'fileFormatVersion: 2\nguid: 00000000000000000000000000000000\nDefaultImporter:\n';
+    const bytes = encoder.encode(originalText);
+    const updatedBytes = writeMetaGuid(bytes, validGuid);
+    const updatedText = decoder.decode(updatedBytes);
+
+    expect(updatedText).toBe('fileFormatVersion: 2\nguid: abcdef0123456789abcdef0123456789\nDefaultImporter:\n');
+  });
+
+  it('prepends guid line if no guid line exists in the original meta', () => {
+    const originalText = 'fileFormatVersion: 2\nDefaultImporter:\n';
+    const bytes = encoder.encode(originalText);
+    const updatedBytes = writeMetaGuid(bytes, validGuid);
+    const updatedText = decoder.decode(updatedBytes);
+
+    expect(updatedText).toBe('guid: abcdef0123456789abcdef0123456789\nfileFormatVersion: 2\nDefaultImporter:\n');
+  });
+
+  it('preserves indentation of the original guid line', () => {
+    const originalText = 'fileFormatVersion: 2\n  guid: 00000000000000000000000000000000\nDefaultImporter:\n';
+    const bytes = encoder.encode(originalText);
+    const updatedBytes = writeMetaGuid(bytes, validGuid);
+    const updatedText = decoder.decode(updatedBytes);
+
+    expect(updatedText).toBe('fileFormatVersion: 2\n  guid: abcdef0123456789abcdef0123456789\nDefaultImporter:\n');
+  });
+
+  it('preserves CR line endings for updated guid line', () => {
+    const originalText = 'fileFormatVersion: 2\r\nguid: 00000000000000000000000000000000\r\nDefaultImporter:\r\n';
+    const bytes = encoder.encode(originalText);
+    const updatedBytes = writeMetaGuid(bytes, validGuid);
+    const updatedText = decoder.decode(updatedBytes);
+
+    expect(updatedText).toBe('fileFormatVersion: 2\r\nguid: abcdef0123456789abcdef0123456789\r\nDefaultImporter:\r\n');
+  });
+
+  it('throws for an invalid GUID', () => {
+    const originalText = 'fileFormatVersion: 2\nguid: 00000000000000000000000000000000\nDefaultImporter:\n';
+    const bytes = encoder.encode(originalText);
+    expect(() => writeMetaGuid(bytes, 'not-a-guid')).toThrow();
+  });
+});
+

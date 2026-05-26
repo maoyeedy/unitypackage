@@ -2,6 +2,7 @@ import path from 'node:path';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import {
   entriesToComponentRecords,
+  matchGlob,
   parseUnityPackageEntries,
   resolveMetaSidecarSelection,
   type ParseUnityPackageOptions,
@@ -13,7 +14,7 @@ import {
 } from 'unitypackage-core';
 import { sanitizeFsPath, isInside } from '../util/path.js';
 import { ensureDir } from '../util/fs.js';
-import { matchesGlob } from '../util/glob.js';
+
 import { info, progress, warn } from '../util/logger.js';
 import { CliError, EXIT } from '../util/exit.js';
 import { readPackageBytes } from '../util/package.js';
@@ -172,7 +173,7 @@ export async function extract(packagePath: string, outputDir?: string, opts: Ext
   } else {
 
     for (const entry of entries) {
-      if (opts.filter && !matchesGlob(entry.pathname, opts.filter)) {
+      if (opts.filter && !matchGlob(opts.filter, entry.pathname)) {
         continue;
       }
 

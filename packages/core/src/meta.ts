@@ -64,6 +64,32 @@ export function readMetaGuid(meta: Uint8Array | string): string | null {
   return null;
 }
 
+export function writeMetaGuid(meta: Uint8Array, newGuid: string): Uint8Array {
+  if (!isValidGuid(newGuid)) {
+    throw new Error(`writeMetaGuid: invalid GUID "${newGuid}" -- must be exactly 32 lowercase hexadecimal characters`);
+  }
+  const text = textDecoder.decode(meta);
+  const lines = text.split('\n');
+  let found = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (GUID_LINE_PATTERN.test(trimmed)) {
+      const matchIndent = /^\s*/.exec(line);
+      const indent = matchIndent ? matchIndent[0] : '';
+      const hasCR = line.endsWith('\r');
+      lines[i] = `${indent}guid: ${newGuid}${hasCR ? '\r' : ''}`;
+      found = true;
+      break;
+    }
+  }
+
+  const updatedText = found ? lines.join('\n') : `guid: ${newGuid}\n` + text;
+  return new TextEncoder().encode(updatedText);
+}
+
+
 export function readDeclaredMetaImporter(meta: Uint8Array | string): DeclaredMetaImporter | null {
   const text = metaToString(meta);
   let importerName: string | null = null;
