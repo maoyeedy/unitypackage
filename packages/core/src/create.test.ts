@@ -256,6 +256,25 @@ describe('tryCreateUnityPackage', () => {
     expect(result.bytes).not.toBeNull();
   });
 
+  it('normalizes uppercase GUID to lowercase on create -- round-trip preserves identity', () => {
+    const upperGuid = 'ABCDEF1234567890ABCDEF1234567890';
+    const lowerGuid = upperGuid.toLowerCase();
+    const result = tryCreateUnityPackage([
+      {
+        guid: upperGuid,
+        pathname: 'Assets/UpperGuid.cs',
+        asset: encoder.encode('class UpperGuid {}'),
+        meta: encoder.encode('guid: abcdef1234567890abcdef1234567890'),
+      },
+    ]);
+    expect(result.bytes).not.toBeNull();
+
+    // Round-trip: parsed entry.guid must equal the lowercase form
+    const { entries: parsed } = parseUnityPackageEntries(result.bytes!);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].guid).toBe(lowerGuid);
+  });
+
   it('returns bytes: null and oversized-pathname diagnostic when pathname exceeds 200 chars', () => {
     const guid = 'dddddddddddddddddddddddddddddddd';
     const longPathname = 'Assets/' + 'X'.repeat(195);

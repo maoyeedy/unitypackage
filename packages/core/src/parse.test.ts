@@ -997,6 +997,38 @@ describe('parseUnityPackageStream', () => {
     expect(parseUnityPackageStreamed(pkg).entries).toHaveLength(1);
     expect(() => parseUnityPackageStreamed(pkg, { maxOutputBytes: 50, chunkSize: 8 })).toThrow(DecompressionBombError);
   });
+
+  // -------------------------------------------------------------------------
+  // gunzipBounded fires before tar work: zero-block bomb
+  // -------------------------------------------------------------------------
+  it('throws DecompressionBombError before tar work when gzip expands to ~64 KiB of zeroes', async () => {
+    // A gzip of 64 KiB of zeroes; maxOutputBytes is 1 KiB -- the bomb must
+    // fire during decompression, before any tar header parsing runs.
+    const zeroes = new Uint8Array(64 * 1024);
+    const bombGzip = gzipSync(zeroes);
+
+    // parseUnityPackageEntries
+    let entryThrown: unknown;
+    try {
+      parseUnityPackageEntries(bombGzip, { maxOutputBytes: 1024 });
+    } catch (err) {
+      entryThrown = err;
+    }
+    expect(entryThrown).toBeInstanceOf(DecompressionBombError);
+    expect((entryThrown as DecompressionBombError).kind).toBe('output-bytes');
+    expect((entryThrown as DecompressionBombError).observed).toBeGreaterThan(1024);
+
+    // parseUnityPackageStream
+    let streamThrown: unknown;
+    try {
+      for (const _ of parseUnityPackageStream(bombGzip, { maxOutputBytes: 1024 })) void _;
+    } catch (err) {
+      streamThrown = err;
+    }
+    expect(streamThrown).toBeInstanceOf(DecompressionBombError);
+    expect((streamThrown as DecompressionBombError).kind).toBe('output-bytes');
+    expect((streamThrown as DecompressionBombError).observed).toBeGreaterThan(1024);
+  });
 });
 
 // ---------------------------------------------------------------------------

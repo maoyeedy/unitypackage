@@ -1,4 +1,4 @@
-import { Gunzip, gunzipSync } from 'fflate';
+import { Gunzip } from 'fflate';
 import type { ExtractedFileContent, UnityPackageDiagnosticSeverity, UnityPackageEntry } from './model';
 import { BLOCK_SIZE, concatUint8Arrays, textDecoder } from './tar';
 
@@ -36,6 +36,25 @@ export const DEFAULT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024 * 1024;
 /** Default maximum number of parsed GUID entries. */
 export const DEFAULT_MAX_ENTRIES = 250_000;
 
+/**
+ * Thrown when a parse operation exceeds a configured decompression-bomb guard.
+ *
+ * ### `observed` semantics
+ * `observed` is the **cumulative total after the offending entry or chunk was
+ * processed**, so `observed > limit` is always true; `observed === limit` never
+ * triggers the guard.
+ *
+ * ### `kind` values
+ * - `'output-bytes'` -- the guard fired on raw decompressed size.
+ *   `observed` is the total decompressed byte count accumulated up to and
+ *   including the chunk that pushed it past the limit
+ *   (set via {@link ParseUnityPackageOptions.maxOutputBytes};
+ *   default {@link DEFAULT_MAX_OUTPUT_BYTES}).
+ * - `'entry-count'` -- the guard fired on the number of GUID entries.
+ *   `observed` is the entry count at the point the limit was exceeded
+ *   (set via {@link ParseUnityPackageOptions.maxEntries};
+ *   default {@link DEFAULT_MAX_ENTRIES}).
+ */
 export class DecompressionBombError extends Error {
   readonly kind: 'output-bytes' | 'entry-count';
   readonly observed: number;
@@ -101,7 +120,8 @@ export function parseUnityPackageEntries(
   data: Uint8Array,
   options?: ParseUnityPackageOptions,
 ): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
-  const decompressed = gunzipSync(data);
+  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const decompressed = gunzipBounded(data, maxOutputBytes);
   return parseUnityPackageTar(decompressed, options);
 }
 
@@ -109,7 +129,8 @@ export function* parseUnityPackageStream(
   bytes: Uint8Array,
   options?: StreamParseOptions,
 ): Generator<StreamedEntry | StreamedDiagnostic> {
-  const decompressed = gunzipSync(bytes);
+  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const decompressed = gunzipBounded(bytes, maxOutputBytes);
   const { entries, diagnostics } = parseUnityPackageTar(decompressed, options);
 
   for (const diagnostic of diagnostics) {
@@ -141,6 +162,21 @@ export function parseUnityPackageStreamed(
 ): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
   const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const chunkSize = options?.chunkSize ?? 64 * 1024;
+  const decompressed = gunzipBounded(data, maxOutputBytes, chunkSize);
+  return parseUnityPackageTar(decompressed, options);
+}
+
+/**
+ * Decompresses a gzip-compressed buffer in chunks, throwing
+ * {@link DecompressionBombError} the moment the running decompressed total
+ * exceeds `maxOutputBytes`.  All three sync/generator entry points call this
+ * so the guard fires before any tar work runs.
+ */
+function gunzipBounded(
+  data: Uint8Array,
+  maxOutputBytes: number,
+  chunkSize = 256 * 1024,
+): Uint8Array {
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   let thrown: unknown;
@@ -164,13 +200,16 @@ export function parseUnityPackageStreamed(
   const gunzip = new Gunzip(ondata);
   for (let offset = 0; offset < data.byteLength; offset += chunkSize) {
     if (thrown !== undefined) break;
-    gunzip.push(data.slice(offset, Math.min(data.byteLength, offset + chunkSize)), offset + chunkSize >= data.byteLength);
+    gunzip.push(
+      data.subarray(offset, Math.min(data.byteLength, offset + chunkSize)),
+      offset + chunkSize >= data.byteLength,
+    );
   }
 
   if (thrown !== undefined) {
-    throw thrown instanceof Error ? thrown : new Error('Streaming gunzip failed with a non-Error value.');
+    throw thrown instanceof Error ? thrown : new Error('Gunzip failed with a non-Error value.');
   }
-  return parseUnityPackageTar(concatUint8Arrays(chunks), options);
+  return concatUint8Arrays(chunks);
 }
 
 function parseUnityPackageTar(
@@ -188,7 +227,7 @@ function readTarMembers(data: Uint8Array, diagnostics: UnityPackageParseDiagnost
   let offset = 0;
 
   while (offset + BLOCK_SIZE <= data.length) {
-    const header = data.slice(offset, offset + BLOCK_SIZE);
+    const header = data.subarray(offset, offset + BLOCK_SIZE);
     if (header.every(byte => byte === 0)) break;
 
     const name = readTarString(header, 0, 100);
@@ -413,7 +452,7 @@ function validateTarMemberName(name: string, diagnostics: UnityPackageParseDiagn
 }
 
 function readTarString(header: Uint8Array, offset: number, length: number): string {
-  return textDecoder.decode(header.slice(offset, offset + length)).replace(/\0/g, '').trim();
+  return textDecoder.decode(header.subarray(offset, offset + length)).replace(/\0/g, '').trim();
 }
 
 function readTarOctal(header: Uint8Array, offset: number, length: number): number | null {

@@ -67,20 +67,23 @@ export function summarizePackage(
       totalPreviewBytes += entry.preview.byteLength;
     }
 
-    // Derive extension from the pathname (lower-cased, without the leading dot)
-    const dot = entry.pathname.lastIndexOf('.');
-    const slash = entry.pathname.lastIndexOf('/');
-    const extension = dot > slash && dot !== -1
-      ? entry.pathname.slice(dot + 1).toLowerCase()
-      : '';
+    // Folder entries (no asset) are excluded from byExtension.
+    if (entry.asset !== undefined) {
+      // Derive extension from the pathname (lower-cased, without the leading dot)
+      const dot = entry.pathname.lastIndexOf('.');
+      const slash = entry.pathname.lastIndexOf('/');
+      const extension = dot > slash && dot !== -1
+        ? entry.pathname.slice(dot + 1).toLowerCase()
+        : '';
 
-    const existing = extMap.get(extension);
-    const assetBytes = entry.asset?.byteLength ?? 0;
-    if (existing === undefined) {
-      extMap.set(extension, { count: 1, assetBytes });
-    } else {
-      existing.count += 1;
-      existing.assetBytes += assetBytes;
+      const existing = extMap.get(extension);
+      const assetBytes = entry.asset.byteLength;
+      if (existing === undefined) {
+        extMap.set(extension, { count: 1, assetBytes });
+      } else {
+        existing.count += 1;
+        existing.assetBytes += assetBytes;
+      }
     }
   }
 

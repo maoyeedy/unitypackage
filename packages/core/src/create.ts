@@ -78,25 +78,27 @@ export function tryCreateUnityPackage(
   const seenGuids = new Set<string>();
 
   for (const entry of entries) {
-    const { guid, pathname } = entry;
+    const { guid: rawGuid, pathname } = entry;
+    // Normalize to lowercase so tar paths and parse identities are stable
+    const guid = rawGuid.toLowerCase();
 
     // invalid-guid: not exactly 32 hex characters (case-insensitive)
-    if (!VALID_GUID_PATTERN.test(guid)) {
+    if (!VALID_GUID_PATTERN.test(rawGuid)) {
       diagnostics.push({
         code: 'invalid-guid',
-        message: `GUID is not exactly 32 hexadecimal characters: ${guid}`,
+        message: `GUID is not exactly 32 hexadecimal characters: ${rawGuid}`,
         severity: 'error',
-        guid,
+        guid: rawGuid,
       });
     }
 
-    // duplicate-guid
+    // duplicate-guid (compare normalized)
     if (seenGuids.has(guid)) {
       diagnostics.push({
         code: 'duplicate-guid',
-        message: `Duplicate GUID in package entries: ${guid}`,
+        message: `Duplicate GUID in package entries: ${rawGuid}`,
         severity: 'error',
-        guid,
+        guid: rawGuid,
       });
     } else {
       seenGuids.add(guid);
@@ -125,6 +127,7 @@ export function tryCreateUnityPackage(
     }
 
     // oversized-pathname (ustar 100-byte tar entry name limit)
+    // Use the normalized (lowercase) guid since that is what gets written to the tar
     const tarNames = [
       `${guid}/pathname`,
       `${guid}/asset.meta`,
@@ -150,15 +153,20 @@ export function tryCreateUnityPackage(
   // Build the tar archive
   const tarEntries: Uint8Array[] = [];
 
-  // Sort by GUID ascending for reproducible output
-  const sorted = entries.slice().sort((a, b) => (a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0));
+  // Sort by normalized (lowercase) GUID ascending for reproducible output
+  const sorted = entries.slice().sort((a, b) => {
+    const ga = a.guid.toLowerCase();
+    const gb = b.guid.toLowerCase();
+    return ga < gb ? -1 : ga > gb ? 1 : 0;
+  });
 
   for (const entry of sorted) {
-    tarEntries.push(createTarEntry(`${entry.guid}/pathname`, textEncoder.encode(entry.pathname)));
-    tarEntries.push(createTarEntry(`${entry.guid}/asset.meta`, entry.meta));
+    const g = entry.guid.toLowerCase();
+    tarEntries.push(createTarEntry(`${g}/pathname`, textEncoder.encode(entry.pathname)));
+    tarEntries.push(createTarEntry(`${g}/asset.meta`, entry.meta));
 
     if (entry.asset) {
-      tarEntries.push(createTarEntry(`${entry.guid}/asset`, entry.asset));
+      tarEntries.push(createTarEntry(`${g}/asset`, entry.asset));
     }
   }
 

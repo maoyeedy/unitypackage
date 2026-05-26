@@ -124,7 +124,7 @@ describe('resolveMetaSidecarSelection', () => {
     });
   });
 
-  it('falls back to matching a meta sidecar by pathname when guid does not match', () => {
+  it('falls back to matching a meta sidecar by pathname when guid does not match (single candidate)', () => {
     const records = [
       record('asset-a', 'asset', 'guid-a', 'Assets/A.png'),
       record('meta-other-guid', 'meta', 'guid-b', 'Assets/A.png.meta'),
@@ -135,6 +135,21 @@ describe('resolveMetaSidecarSelection', () => {
       explicitIds: ['asset-a'],
       implicitMetaIds: ['meta-other-guid'],
       missingMetaForAssetIds: [],
+    });
+  });
+
+  it('does not attach a mismatched-guid meta when multiple candidates share the same pathname', () => {
+    const records = [
+      record('asset-c', 'asset', 'guid-c', 'Assets/X'),
+      record('meta-a', 'meta', 'guid-a', 'Assets/X.meta'),
+      record('meta-b', 'meta', 'guid-b', 'Assets/X.meta'),
+    ];
+
+    expect(resolveMetaSidecarSelection(records, ['asset-c'])).toEqual({
+      ids: ['asset-c'],
+      explicitIds: ['asset-c'],
+      implicitMetaIds: [],
+      missingMetaForAssetIds: ['asset-c'],
     });
   });
 });

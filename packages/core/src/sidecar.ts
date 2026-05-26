@@ -24,7 +24,7 @@ export function resolveMetaSidecarSelection(
 ): ResolveMetaSidecarsResult {
   const recordById = new Map<string, SidecarSelectableRecord>();
   const metaByGuidPathname = new Map<string, SidecarSelectableRecord>();
-  const metaByPathname = new Map<string, SidecarSelectableRecord>();
+  const metaByPathname = new Map<string, SidecarSelectableRecord[]>();
 
   for (const record of records) {
     if (!recordById.has(record.id)) {
@@ -40,8 +40,11 @@ export function resolveMetaSidecarSelection(
       metaByGuidPathname.set(guidPathnameKey, record);
     }
 
-    if (!metaByPathname.has(record.pathname)) {
-      metaByPathname.set(record.pathname, record);
+    const existing = metaByPathname.get(record.pathname);
+    if (existing === undefined) {
+      metaByPathname.set(record.pathname, [record]);
+    } else {
+      existing.push(record);
     }
   }
 
@@ -65,7 +68,9 @@ export function resolveMetaSidecarSelection(
 
     const metaPathname = metaSidecarPathForAsset(record.pathname);
     const sameGuidMeta = metaByGuidPathname.get(keyForGuidPathname(record.guid, metaPathname));
-    const fallbackMeta = metaByPathname.get(metaPathname);
+    const fallbackCandidates = metaByPathname.get(metaPathname);
+    const fallbackMeta =
+      fallbackCandidates?.length === 1 ? fallbackCandidates[0] : undefined;
     const meta = sameGuidMeta ?? fallbackMeta;
 
     if (meta === undefined) {
