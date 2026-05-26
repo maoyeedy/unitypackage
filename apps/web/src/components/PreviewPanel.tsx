@@ -40,18 +40,22 @@ function downloadBlob(blob: Blob, fileName: string): void {
 
 export function PreviewPanel({
   record,
-  records,
-  includeMetaSidecars,
-  onDownloadZip,
-  onStatusWarning,
-  onRevealInTree,
-  onOpenSibling,
-  onOpenSiblingInExplorer,
-  showPreviews,
-  onSetShowPreviews,
-  includeMetaSidecarsForSibling,
-  onSetIncludeMetaSidecars,
-}: {
+  ...props
+}: PreviewPanelProps) {
+  if (!record) {
+    return (
+      <div className="preview-empty">
+        <Info aria-hidden="true" size={34} />
+        <h2>No file selected</h2>
+        <p>Select a file in the explorer to preview content and metadata.</p>
+      </div>
+    );
+  }
+
+  return <PreviewPanelContent key={record.id} record={record} {...props} />;
+}
+
+interface PreviewPanelProps {
   record: PackageFileRecord | null;
   records: PackageFileRecord[];
   includeMetaSidecars: boolean;
@@ -64,30 +68,37 @@ export function PreviewPanel({
   onSetShowPreviews?: (value: boolean) => void;
   includeMetaSidecarsForSibling?: boolean;
   onSetIncludeMetaSidecars?: (value: boolean) => void;
+}
+
+function PreviewPanelContent({
+  record,
+  records,
+  includeMetaSidecars,
+  onDownloadZip,
+  onStatusWarning,
+  onRevealInTree,
+  onOpenSibling,
+  onOpenSiblingInExplorer,
+  showPreviews,
+  onSetShowPreviews,
+  includeMetaSidecarsForSibling,
+  onSetIncludeMetaSidecars,
+}: Omit<PreviewPanelProps, 'record'> & {
+  record: PackageFileRecord;
 }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [blobUrl] = useState(() => {
+    return URL.createObjectURL(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }));
+  });
   const [copiedText, setCopiedText] = useState(false);
   const [copiedBase64, setCopiedBase64] = useState(false);
 
   useEffect(() => {
-    setCopiedText(false);
-    setCopiedBase64(false);
-    if (!record) {
-      setBlobUrl(null);
-      return undefined;
-    }
-
-    const blob = new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType });
-    const nextUrl = URL.createObjectURL(blob);
-    setBlobUrl(nextUrl);
-
     return () => {
-      URL.revokeObjectURL(nextUrl);
+      URL.revokeObjectURL(blobUrl);
     };
-  }, [record]);
+  }, [blobUrl]);
 
   const handlePreviewDownload = useCallback(() => {
-    if (!record) return;
     if (includeMetaSidecars && getRecordCategory(record) === 'asset') {
       const result = resolveMetaSidecarSelection(
         toSidecarSelectableRecords(records),
@@ -117,16 +128,6 @@ export function PreviewPanel({
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
   }, [handlePreviewDownload]);
-
-  if (!record) {
-    return (
-      <div className="preview-empty">
-        <Info aria-hidden="true" size={34} />
-        <h2>No file selected</h2>
-        <p>Select a file in the explorer to preview content and metadata.</p>
-      </div>
-    );
-  }
 
   const isTextual = record.previewKind === 'text';
   const isSmallRecord = record.content.byteLength <= 65536;
@@ -255,11 +256,6 @@ function ImagePreview({ record, blobUrl }: { record: PackageFileRecord; blobUrl:
   const [naturalDims, setNaturalDims] = useState<{ width: number; height: number } | null>(null);
   const [isFit, setIsFit] = useState(true);
 
-  useEffect(() => {
-    setNaturalDims(null);
-    setIsFit(true);
-  }, [record.id]);
-
   return (
     <div className="preview-frame media-frame image-preview-container" style={{ position: 'relative', overflow: isFit ? 'hidden' : 'auto' }}>
       <img
@@ -328,10 +324,6 @@ function formatDuration(seconds: number): string {
 
 function AudioPreview({ record, blobUrl }: { record: PackageFileRecord; blobUrl: string }) {
   const [duration, setDuration] = useState<number | null>(null);
-
-  useEffect(() => {
-    setDuration(null);
-  }, [record.id]);
 
   return (
     <div className="preview-frame audio-preview-container" style={{
@@ -435,7 +427,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'image') {
-    return <ImagePreview record={record} blobUrl={blobUrl} />;
+    return <ImagePreview key={record.id} record={record} blobUrl={blobUrl} />;
   }
 
   if (record.previewKind === 'pdf') {
@@ -449,7 +441,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'audio') {
-    return <AudioPreview record={record} blobUrl={blobUrl} />;
+    return <AudioPreview key={record.id} record={record} blobUrl={blobUrl} />;
   }
 
   if (record.previewKind === 'video') {
@@ -463,7 +455,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'text') {
-    return <TextPreview record={record} />;
+    return <TextPreview key={record.id} record={record} />;
   }
 
   return <HexPreview record={record} />;
@@ -490,10 +482,6 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
 function TextPreview({ record }: { record: PackageFileRecord }) {
   const [loadedLimit, setLoadedLimit] = useState(20000);
 
-  useEffect(() => {
-    setLoadedLimit(20000);
-  }, [record.id]);
-
   const preview = useMemo(() => {
     return textDecoder.decode(record.content.slice(0, loadedLimit));
   }, [record.content, loadedLimit]);
@@ -505,7 +493,6 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
 
   useEffect(() => {
     let cancelled = false;
-    setHighlightedCode(null);
 
     void highlightCode(preview, record.syntaxLanguage)
       .then(result => {
@@ -839,7 +826,6 @@ function MetaSidecarView({ siblingRecord }: { siblingRecord: PackageFileRecord }
 
   useEffect(() => {
     let cancelled = false;
-    setHighlightedCode(null);
 
     void highlightCode(metaText, 'yaml')
       .then(result => {
@@ -994,7 +980,7 @@ function MetaSidecarDisclosure({ siblingRecord }: { siblingRecord: PackageFileRe
   const isLong = lineCount > 20;
 
   if (!isLong) {
-    return <MetaSidecarView siblingRecord={siblingRecord} />;
+    return <MetaSidecarView key={siblingRecord.id} siblingRecord={siblingRecord} />;
   }
 
   return (
@@ -1003,7 +989,7 @@ function MetaSidecarDisclosure({ siblingRecord }: { siblingRecord: PackageFileRe
         <span>Meta sidecar</span>
         <span className="diag-badge">{lineCount.toString()} lines</span>
       </summary>
-      <MetaSidecarView siblingRecord={siblingRecord} />
+      <MetaSidecarView key={siblingRecord.id} siblingRecord={siblingRecord} />
     </details>
   );
 }

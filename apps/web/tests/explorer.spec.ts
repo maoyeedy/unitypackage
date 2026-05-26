@@ -106,6 +106,20 @@ test.describe('explorer interactions', () => {
       // Records should now be visible (fixture has 82 preview records)
       await expect(recordCount).not.toContainText('0 visible records');
     });
+
+    test('hiding preview rows clears selected preview records', async ({ page }) => {
+      const previewCheckbox = page.getByRole('checkbox', { name: 'Show preview records' });
+      await previewCheckbox.check();
+      await page.getByPlaceholder('Search files by name or path').fill('.preview.png');
+      await page.getByRole('checkbox', { name: /^Select .*\.preview\.png$/, disabled: false }).first().click();
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeEnabled();
+
+      await previewCheckbox.uncheck();
+
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
+      await previewCheckbox.check();
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
+    });
   });
 
   test.describe('Include .meta with assets setting', () => {
@@ -150,6 +164,20 @@ test.describe('explorer interactions', () => {
       await expect(explorerPanel.getByRole('heading', { level: 3, name: 'meta' })).toBeVisible();
     });
 
+    test('hiding meta rows clears selected meta records', async ({ page }) => {
+      const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
+      await metaCheckbox.check();
+      await page.getByPlaceholder('Search files by name or path').fill('.meta');
+      await page.locator('.file-row').first().getByRole('checkbox', { disabled: false }).click();
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeEnabled();
+
+      await metaCheckbox.uncheck();
+
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
+      await metaCheckbox.check();
+      await expect(page.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
+    });
+
     test('Selected ZIP download filename is selected_files.zip', async ({ page }) => {
       // Enable meta sidecars
       const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
@@ -167,11 +195,11 @@ test.describe('explorer interactions', () => {
       // Enable meta sidecars
       const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
       await metaCheckbox.check();
-      // Click a non-meta asset row to make it active in preview
-      const tree = page.getByRole('tree', { name: 'Package file tree' });
-      // Find a treeitem that does NOT end with .meta -- click the first one
-      const assetItem = tree.locator('[role="treeitem"]').filter({ hasNot: page.locator('.file-name').filter({ hasText: /\.meta$/ }) }).first();
-      await assetItem.click();
+      await page.getByPlaceholder('Search files by name or path').fill('Ground_Layer_01.terrainlayer');
+      const assetRow = page.locator('.file-row').filter({
+        has: page.locator('.file-name').filter({ hasText: /^Ground_Layer_01\.terrainlayer$/ }),
+      }).first();
+      await assetRow.click();
       // Click the preview download button
       const previewPanel = page.getByRole('complementary', { name: 'Preview and metadata' });
       const downloadPromise = page.waitForEvent('download');

@@ -5,6 +5,14 @@ import fs from 'node:fs';
 
 const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/archives/Polytope_URP.unitypackage');
 
+async function selectFileByName(page: import('@playwright/test').Page, fileName: string): Promise<void> {
+  await page.getByPlaceholder('Search files by name or path').fill(fileName);
+  const row = page.locator('.file-row').filter({
+    has: page.locator('.file-name').filter({ hasText: new RegExp(`^${fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }),
+  }).first();
+  await row.getByRole('checkbox', { disabled: false }).click();
+}
+
 test.describe('pack mode', () => {
   test('Pack tab shows pack panel heading', async ({ page }) => {
     await page.goto('/');
@@ -91,6 +99,9 @@ test.describe('pack mode', () => {
 
     await exportBtn.click();
     await expect(page.locator('.pack-status.success')).toBeVisible({ timeout: 15_000 });
+
+    await page.locator('#export-filename').fill('changed-name.unitypackage');
+    await expect(page.locator('.pack-status.success')).not.toBeVisible();
   });
 
   test('Reloading the page restores draft state, and Clear draft wipes it', async ({ page }) => {
@@ -99,8 +110,8 @@ test.describe('pack mode', () => {
     await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
 
     // Stage two valid assets (without preview files to keep validation ready)
-    await page.getByRole('checkbox', { name: 'Select Changelog.md' }).click();
-    await page.getByRole('checkbox', { name: 'Select README.md' }).click();
+    await selectFileByName(page, 'Ground_Layer_01.terrainlayer');
+    await selectFileByName(page, 'Ground_Layer_02.terrainlayer');
     await page.getByRole('button', { name: 'Stage for pack' }).click();
 
     // Now in Pack tab, change gzipLevel and output filename
@@ -146,8 +157,8 @@ test.describe('pack mode', () => {
     await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
 
     // Stage two valid assets (without preview files to keep validation ready)
-    await page.getByRole('checkbox', { name: 'Select Changelog.md' }).click();
-    await page.getByRole('checkbox', { name: 'Select README.md' }).click();
+    await selectFileByName(page, 'Ground_Layer_01.terrainlayer');
+    await selectFileByName(page, 'Ground_Layer_02.terrainlayer');
     await page.getByRole('button', { name: 'Stage for pack' }).click();
 
     // Click Export and wait for download event
@@ -170,8 +181,8 @@ test.describe('pack mode', () => {
 
     // Verify GUIDs, pathnames, and contents match the selected assets
     const expectedPaths = [
-      'Assets/FronkonGames/Artistic/OneBit/Changelog.md',
-      'Assets/FronkonGames/Artistic/OneBit/Demo/README.md'
+      'Assets/Plugins/Polytope Studio/Lowpoly_Demos/Environment_Free/Helpers/Ground_Layer_01.terrainlayer',
+      'Assets/Plugins/Polytope Studio/Lowpoly_Demos/Environment_Free/Helpers/Ground_Layer_02.terrainlayer'
     ];
     for (const pathStr of expectedPaths) {
       const parsed = entries.find(e => e.pathname === pathStr);

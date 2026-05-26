@@ -66,7 +66,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **`PARSER_IGNORED_PREVIEW` silently skipped** in verify — normal for every `preview.png`.
 - **ESLint in CLI excludes `*.test.ts`** — they lack `@types/node` in tsconfig scope.
 - **Generated fixtures**: `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, `truncated`. Static fixtures cover common Unity file types. Archive: `fixtures/static/archives/Polytope_URP.unitypackage`.
-- **`react-hooks/set-state-in-effect` globally disabled** — eslint-plugin-react-hooks v7+ bundles React Compiler rules. Suppressed in `eslint.config.mjs` because the codebase uses `useEffect` for derived-state resets. New code should avoid `setState` in effects; re-enable after a refactor pass.
+- **React effect state**: `react-hooks/set-state-in-effect` is enabled via the React Hooks recommended config. Do not use effects for derived-state or prop-change resets; derive during render or remount keyed children. Keep effects for external sync, subscriptions, timers, async callbacks, and cleanup.
 - **`bun run test` chains project-based commands** — `bun run test:core && bun run test:cli && bun run test:web`. Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
 
 ## Testing
@@ -78,6 +78,8 @@ All contexts (dev, CI, published): Node ≥24.
 - **E2E tests are ESM**: use `path.dirname(fileURLToPath(import.meta.url))`, not `__dirname`.
 - **E2E fixture path from `apps/web/tests/`**: `path.join(..., '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
 - **`getByRole` name matching is substring**: use `exact: true` when label is a substring of another (e.g., `'Pack'` matches "Stage for pack").
+- **E2E explorer rows are virtualized**: search/filter before selecting named rows that may be offscreen. Use file-row selectors or exact file checkbox names when you need a file; broad `getByRole('checkbox', { name: /^Select/ }).first()` can hit folder scope toggles and select many records.
+- **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `Changelog.md` or `README.md` exist.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
 

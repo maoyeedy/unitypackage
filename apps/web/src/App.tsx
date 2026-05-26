@@ -41,6 +41,7 @@ import {
   validatePackDraft,
   getMimeType,
   getPreviewKind,
+  getRecordCategory,
   getSyntaxLanguage,
   computeHeadHash,
   getRecentPackages,
@@ -324,7 +325,7 @@ function AppContent() {
   const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
-  const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(() => {
+  const [rawStagedRecordIds, setStagedRecordIds] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem(packDraftStorageKey);
       if (saved) {
@@ -424,7 +425,7 @@ function AppContent() {
     }
     return getDefaultFilename();
   });
-  const [successExport, setSuccessExport] = useState<{ bytes: Uint8Array; filename: string } | null>(null);
+  const [successExport, setSuccessExport] = useState<{ bytes: Uint8Array; filename: string; draftKey: string } | null>(null);
   const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
   const [importedRecords, setImportedRecords] = useState<PackageFileRecord[]>(() => {
     try {
@@ -469,6 +470,15 @@ function AppContent() {
     }
     return [];
   });
+
+  const stagedRecordIds = useMemo(() => {
+    if (records.length === 0) return rawStagedRecordIds;
+
+    const recordIds = new Set(records.map(record => record.id));
+    const filteredIds = [...rawStagedRecordIds].filter(id => recordIds.has(id));
+    if (filteredIds.length === rawStagedRecordIds.size) return rawStagedRecordIds;
+    return new Set(filteredIds);
+  }, [records, rawStagedRecordIds]);
 
   const addToast = useCallback((message: string, kind: Toast['kind'] = 'success') => {
     toastCounterRef.current += 1;
@@ -534,23 +544,6 @@ function AppContent() {
       console.warn('Failed to persist pack draft:', err);
     }
   }, [stagedRecordIds, importedRecords, gzipLevel, exportFilename]);
-
-  useEffect(() => {
-    if (records.length > 0) {
-      setStagedRecordIds(prev => {
-        const next = new Set<string>();
-        let changed = false;
-        for (const id of prev) {
-          if (records.some(r => r.id === id)) {
-            next.add(id);
-          } else {
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }
-  }, [records]);
 
   useEffect(() => {
     localStorage.setItem('unitypackage-groupingMode', groupingMode);
@@ -695,9 +688,20 @@ function AppContent() {
     });
   }, [stagedRecords, records]);
 
-  useEffect(() => {
-    setSuccessExport(null);
+  const exportDraftKey = useMemo(() => {
+    return JSON.stringify({
+      filename: exportFilename,
+      gzipLevel,
+      entries: stagedEntries.map(entry => ({
+        guid: entry.guid,
+        pathname: entry.pathname,
+        assetBytes: entry.asset?.byteLength ?? 0,
+        metaBytes: entry.meta.byteLength,
+      })),
+    });
   }, [stagedEntries, gzipLevel, exportFilename]);
+
+  const visibleSuccessExport = successExport?.draftKey === exportDraftKey ? successExport : null;
 
   const estimatedSize = useMemo(() => {
     if (stagedEntries.length === 0) return 0;
@@ -733,6 +737,11 @@ function AppContent() {
       const result = await parsePackageInWorker(await file.arrayBuffer());
       const elapsed = Math.round(performance.now() - startedAt);
       routeAnalysisFindings(result.records, result.analysis);
+      const resultRecordIds = new Set(result.records.map(record => record.id));
+      setStagedRecordIds(previous => {
+        const next = new Set([...previous].filter(id => resultRecordIds.has(id)));
+        return next.size === previous.size ? previous : next;
+      });
       setRecords(result.records);
       setDiagnostics(result.diagnostics);
       setAnalysis(result.analysis);
@@ -836,7 +845,7 @@ function AppContent() {
     setSortKey('name');
     setSortDirection('asc');
     setMaintainStructure(true);
-    setShowPreviews(false);
+    handleShowPreviewsChange(false);
   };
 
   const handlePathnameChange = useCallback((id: string, newPathname: string) => {
@@ -1064,6 +1073,7 @@ function AppContent() {
       setSuccessExport({
         bytes: result.bytes,
         filename: result.filename,
+        draftKey: exportDraftKey,
       });
       const blob = new Blob([result.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
       downloadBlob(blob, result.filename);
@@ -1182,74 +1192,60 @@ function AppContent() {
     }, 50);
   }, [records]);
 
-  // When meta sidecars are hidden (via includeMetaSidecars or category filter), remove
-  // hidden meta IDs from selection and re-home the active record if it points at a
-  // now-hidden meta row.
-  useEffect(() => {
-    if (includeMetaSidecars) return;
-
-    const hiddenMetaIds = new Set(
-      records.filter(record => record.extension === 'meta').map(record => record.id),
-    );
-    if (hiddenMetaIds.size === 0) return;
+  const removeHiddenRecordsFromSelection = useCallback((hiddenIds: ReadonlySet<string>) => {
+    if (hiddenIds.size === 0) return;
 
     setSelectedRecordIds(previous => {
-      const hasHidden = [...previous].some(id => hiddenMetaIds.has(id));
-      if (!hasHidden) return previous;
+      if (![...previous].some(id => hiddenIds.has(id))) return previous;
       const next = new Set(previous);
-      for (const id of hiddenMetaIds) next.delete(id);
+      for (const id of hiddenIds) next.delete(id);
       return next;
     });
+  }, []);
+
+  const rehomeHiddenActiveRecord = useCallback((
+    hiddenIds: ReadonlySet<string>,
+    nextIncludeMetaSidecars: boolean,
+    nextShowPreviews: boolean,
+  ) => {
+    if (hiddenIds.size === 0) return;
+
+    const isVisibleWithSettings = (record: PackageFileRecord) => {
+      if (!nextIncludeMetaSidecars && record.extension === 'meta') return false;
+      if (!nextShowPreviews && record.isUnityPreview) return false;
+      return true;
+    };
 
     setActiveRecordId(previous => {
-      if (previous === null || !hiddenMetaIds.has(previous)) return previous;
-      // Try to find the same-GUID asset record
+      if (previous === null || !hiddenIds.has(previous)) return previous;
       const hiddenRecord = records.find(record => record.id === previous);
       if (hiddenRecord) {
         const sameGuidAsset = records.find(
-          record => record.guid === hiddenRecord.guid && record.extension !== 'meta' && !record.isUnityPreview,
+          record => record.guid === hiddenRecord.guid && getRecordCategory(record) === 'asset' && isVisibleWithSettings(record),
         );
         if (sameGuidAsset) return sameGuidAsset.id;
       }
-      // Fall back to the first visible (non-meta) record
-      const firstVisible = records.find(record => record.extension !== 'meta');
-      return firstVisible?.id ?? null;
+      return records.find(isVisibleWithSettings)?.id ?? null;
     });
-  }, [includeMetaSidecars, records]);
+  }, [records]);
 
-  // When previews are hidden, remove hidden preview IDs from selection and re-home
-  // the active record to the same-GUID asset or the first visible record.
-  useEffect(() => {
-    if (showPreviews) return;
+  const handleShowPreviewsChange = useCallback((nextShowPreviews: boolean) => {
+    setShowPreviews(nextShowPreviews);
+    if (nextShowPreviews) return;
 
-    const hiddenPreviewIds = new Set(
-      records.filter(record => record.isUnityPreview).map(record => record.id),
-    );
-    if (hiddenPreviewIds.size === 0) return;
+    const hiddenIds = new Set(records.filter(record => record.isUnityPreview).map(record => record.id));
+    removeHiddenRecordsFromSelection(hiddenIds);
+    rehomeHiddenActiveRecord(hiddenIds, includeMetaSidecars, nextShowPreviews);
+  }, [records, includeMetaSidecars, removeHiddenRecordsFromSelection, rehomeHiddenActiveRecord]);
 
-    setSelectedRecordIds(previous => {
-      const hasHidden = [...previous].some(id => hiddenPreviewIds.has(id));
-      if (!hasHidden) return previous;
-      const next = new Set(previous);
-      for (const id of hiddenPreviewIds) next.delete(id);
-      return next;
-    });
+  const handleIncludeMetaSidecarsChange = useCallback((nextIncludeMetaSidecars: boolean) => {
+    setIncludeMetaSidecars(nextIncludeMetaSidecars);
+    if (nextIncludeMetaSidecars) return;
 
-    setActiveRecordId(previous => {
-      if (previous === null || !hiddenPreviewIds.has(previous)) return previous;
-      // Try to find the same-GUID asset record
-      const hiddenRecord = records.find(record => record.id === previous);
-      if (hiddenRecord) {
-        const sameGuidAsset = records.find(
-          record => record.guid === hiddenRecord.guid && !record.isUnityPreview && record.extension !== 'meta',
-        );
-        if (sameGuidAsset) return sameGuidAsset.id;
-      }
-      // Fall back to the first visible non-preview record
-      const firstVisible = records.find(record => !record.isUnityPreview);
-      return firstVisible?.id ?? null;
-    });
-  }, [showPreviews, records]);
+    const hiddenIds = new Set(records.filter(record => record.extension === 'meta').map(record => record.id));
+    removeHiddenRecordsFromSelection(hiddenIds);
+    rehomeHiddenActiveRecord(hiddenIds, nextIncludeMetaSidecars, showPreviews);
+  }, [records, showPreviews, removeHiddenRecordsFromSelection, rehomeHiddenActiveRecord]);
 
   const stageSelection = () => {
     const selectedRecords = records.filter(record => selectedRecordIds.has(record.id));
@@ -1366,7 +1362,7 @@ function AppContent() {
               type="checkbox"
               checked={showPreviews}
               onChange={event => {
-                setShowPreviews(event.target.checked);
+                handleShowPreviewsChange(event.target.checked);
               }}
             />
             Show preview records
@@ -1376,7 +1372,7 @@ function AppContent() {
               type="checkbox"
               checked={includeMetaSidecars}
               onChange={event => {
-                setIncludeMetaSidecars(event.target.checked);
+                handleIncludeMetaSidecarsChange(event.target.checked);
               }}
             />
             Include .meta with assets
@@ -1592,11 +1588,11 @@ function AppContent() {
               exportFilename={exportFilename}
               setExportFilename={setExportFilename}
               estimatedSize={estimatedSize}
-              successExport={successExport}
+              successExport={visibleSuccessExport}
               onDownloadAgain={() => {
-                if (successExport) {
-                  const blob = new Blob([successExport.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
-                  downloadBlob(blob, successExport.filename);
+                if (visibleSuccessExport) {
+                  const blob = new Blob([visibleSuccessExport.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
+                  downloadBlob(blob, visibleSuccessExport.filename);
                 }
               }}
               onShowInList={(recordId) => {
@@ -1641,9 +1637,9 @@ function AppContent() {
               revealPathInTree(siblingId);
             }}
             showPreviews={showPreviews}
-            onSetShowPreviews={setShowPreviews}
+            onSetShowPreviews={handleShowPreviewsChange}
             includeMetaSidecarsForSibling={includeMetaSidecars}
-            onSetIncludeMetaSidecars={setIncludeMetaSidecars}
+            onSetIncludeMetaSidecars={handleIncludeMetaSidecarsChange}
           />
         </aside>
       </section>
