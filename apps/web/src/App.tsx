@@ -1,19 +1,28 @@
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
 import {
   AlertTriangle,
   Archive,
+  ArrowDownUp,
+  ArrowUpDown,
   Boxes,
+  CaseSensitive,
+  Check,
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
+  Copy,
   Download,
   File,
   FileArchive,
+  Filter,
   Folder,
   FolderOpen,
   Info,
   ListTree,
+  Locate,
   PackagePlus,
   RefreshCw,
   Search,
@@ -29,29 +38,47 @@ import type { DownloadZipResponse, ParsePackageResponse } from './workerTypes';
 import {
   buildExtensionGroups,
   buildTreeRows,
+  collectDiagCodes,
+  expandAncestors,
+  filterRecords,
   formatBytes,
+  getAllFolderPaths,
   getDeclaredMetaInfoForRecord,
   getExpectedImporterTypeForRecord,
   getExtensionFileRecordIds,
   getFolderRecordIds,
   getRecordCategory,
   getRangeRecordIds,
+  getKeyboardRangeSelection,
   getSelectionState,
   getTreeFileRecordIds,
   resolveMetaSidecarSelection,
   routeAnalysisFindings,
+  sortRecords,
   toSidecarSelectableRecords,
   validatePackDraft,
+  readMetaGuid,
+  readDeclaredMetaImporter,
+  computeHeadHash,
+  getRecentPackages,
+  addRecentPackage,
+  removeRecentPackage,
   type ExtensionGroup,
+  type FilterMatchMode,
   type GroupingMode,
   type PackageFileRecord,
   type PreviewKind,
+  type RecordCategory,
   type SelectionState,
+  type SortDirection,
+  type SortKey,
   type TreeRow,
   type UnityPackageAnalysisFinding,
   type WorkspaceMode,
+  type RecentPackage,
+  type FileSystemFileHandle,
 } from './packageModel';
-import { highlightCode, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
+import { highlightCode, findQueryMatches, splitLineTokensForMatches, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
 
 interface ParseResult {
   records: PackageFileRecord[];
@@ -59,12 +86,26 @@ interface ParseResult {
   analysis: UnityPackageAnalysisFinding[];
 }
 
+interface LaunchParams {
+  readonly targetURL?: string;
+  readonly files: readonly FileSystemFileHandle[];
+}
+
+interface LaunchQueue {
+  setConsumer(consumer: (launchParams: LaunchParams) => void | Promise<void>): void;
+}
+
+declare global {
+  interface Window {
+    launchQueue?: LaunchQueue;
+  }
+}
+
 interface AppErrorBoundaryState {
   hasError: boolean;
 }
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
-const textPreviewByteLimit = 20000;
 const dragSelectionThresholdPx = 4;
 const dragAutoScrollEdgePx = 32;
 const dragAutoScrollStepPx = 18;
@@ -176,7 +217,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryS
 
 function AppContent() {
   const [mode, setMode] = useState<WorkspaceMode>('extract');
-  const [groupingMode, setGroupingMode] = useState<GroupingMode>('tree');
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(() => {
+    const val = localStorage.getItem('unitypackage-groupingMode');
+    return (val === 'tree' || val === 'extension') ? val : 'tree';
+  });
   const [records, setRecords] = useState<PackageFileRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<UnityPackageParseDiagnostic[]>([]);
   const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
@@ -185,10 +229,54 @@ function AppContent() {
   const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(new Set());
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
-  const [maintainStructure, setMaintainStructure] = useState(true);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [keyboardRangeBaseIds, setKeyboardRangeBaseIds] = useState<Set<string> | null>(null);
+  const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
+  const [maintainStructure, setMaintainStructure] = useState<boolean>(() => {
+    const stored = localStorage.getItem('unitypackage-maintainStructure');
+    return stored === null ? true : stored === 'true';
+  });
   const [includeMetaSidecars, setIncludeMetaSidecars] = useState(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [matchMode, setMatchMode] = useState<FilterMatchMode>('filename');
+  const [caseSensitive, setCaseSensitive] = useState<boolean>(() => {
+    return localStorage.getItem('unitypackage-caseSensitive') === 'true';
+  });
+  const [globMode, setGlobMode] = useState<boolean>(() => {
+    return localStorage.getItem('unitypackage-globMode') === 'true';
+  });
+  const [categoryFilter, setCategoryFilter] = useState<Set<RecordCategory>>(() => {
+    const val = localStorage.getItem('unitypackage-categoryFilter');
+    if (!val) return new Set();
+    try {
+      const arr = JSON.parse(val) as unknown;
+      if (Array.isArray(arr)) {
+        return new Set(arr.filter((c): c is RecordCategory => c === 'asset' || c === 'meta' || c === 'preview'));
+      }
+    } catch {
+      // Ignore
+    }
+    return new Set();
+  });
+  const [sizeMin, setSizeMin] = useState('');
+  const [sizeMax, setSizeMax] = useState('');
+  const [diagCodeFilter, setDiagCodeFilter] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    const val = localStorage.getItem('unitypackage-sortKey');
+    return (val === 'name' || val === 'size' || val === 'extension' || val === 'guid') ? val : 'name';
+  });
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
+    const val = localStorage.getItem('unitypackage-sortDirection');
+    return (val === 'asc' || val === 'desc') ? val : 'asc';
+  });
+  const [theme, setTheme] = useState<'auto' | 'light' | 'dark'>(() => {
+    const val = localStorage.getItem('unitypackage-theme');
+    return (val === 'auto' || val === 'light' || val === 'dark') ? val : 'auto';
+  });
+  const [recents, setRecents] = useState<RecentPackage[]>([]);
+  const [recentToPrompt, setRecentToPrompt] = useState<RecentPackage | null>(null);
   const [packageName, setPackageName] = useState<string | null>(null);
   const [status, setStatus] = useState('Open a .unitypackage to inspect its contents.');
   const [error, setError] = useState<string | null>(null);
@@ -199,23 +287,111 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const filteredRecords = useMemo(() => {
-    const normalizedQuery = debouncedQuery.trim().toLowerCase();
-    if (!normalizedQuery || !/[a-z0-9]/i.test(normalizedQuery)) return records;
-    return records.filter(record =>
-      record.fileName.toLowerCase().includes(normalizedQuery) ||
-      record.guid.toLowerCase().includes(normalizedQuery)
-    );
-  }, [debouncedQuery, records]);
+  useEffect(() => {
+    localStorage.setItem('unitypackage-groupingMode', groupingMode);
+  }, [groupingMode]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-sortKey', sortKey);
+  }, [sortKey]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-sortDirection', sortDirection);
+  }, [sortDirection]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-categoryFilter', JSON.stringify([...categoryFilter]));
+  }, [categoryFilter]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-globMode', String(globMode));
+  }, [globMode]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-caseSensitive', String(caseSensitive));
+  }, [caseSensitive]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-maintainStructure', String(maintainStructure));
+  }, [maintainStructure]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-theme', theme);
+    const root = document.documentElement;
+    if (theme === 'auto') {
+      root.removeAttribute('data-theme');
+    } else {
+      root.setAttribute('data-theme', theme);
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    void getRecentPackages().then(setRecents);
+  }, []);
 
   const visibleRecords = useMemo(() => {
-    if (includeMetaSidecars) return filteredRecords;
-    return filteredRecords.filter(record => record.extension !== 'meta');
-  }, [filteredRecords, includeMetaSidecars]);
+    const filtered = filterRecords(records, {
+      query: debouncedQuery,
+      matchMode,
+      caseSensitive,
+      globMode,
+      categories: categoryFilter,
+      sizeMin,
+      sizeMax,
+      diagCodes: diagCodeFilter,
+      includeMetaSidecars,
+    });
+    return sortRecords(filtered, sortKey, sortDirection);
+  }, [
+    records, debouncedQuery, matchMode, caseSensitive, globMode,
+    categoryFilter, sizeMin, sizeMax, diagCodeFilter, includeMetaSidecars,
+    sortKey, sortDirection,
+  ]);
+
+  const visibleExtensions = useMemo(() => {
+    const exts = new Set<string>();
+    for (const record of visibleRecords) {
+      exts.add(record.extension || 'no extension');
+    }
+    return [...exts].sort();
+  }, [visibleRecords]);
+
+  const invertSelection = useCallback(() => {
+    setSelectedRecordIds(previous => {
+      const next = new Set(previous);
+      for (const record of visibleRecords) {
+        if (next.has(record.id)) {
+          next.delete(record.id);
+        } else {
+          next.add(record.id);
+        }
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const selectByExtension = useCallback((ext: string) => {
+    setSelectedRecordIds(previous => {
+      const next = new Set(previous);
+      for (const record of visibleRecords) {
+        const recordExt = record.extension || 'no extension';
+        if (recordExt === ext) {
+          next.add(record.id);
+        }
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const activateRecord = useCallback((id: string) => {
+    setActiveRecordId(id);
+    setFocusedRowId(id);
+    setSelectionAnchorId(id);
+  }, []);
 
   const activeRecord = useMemo(() => {
-    return records.find(record => record.id === activeRecordId) ?? filteredRecords[0] ?? null;
-  }, [activeRecordId, filteredRecords, records]);
+    return records.find(record => record.id === activeRecordId) ?? visibleRecords[0] ?? null;
+  }, [activeRecordId, visibleRecords, records]);
 
   const stagedRecords = useMemo(() => {
     return records.filter(record => stagedRecordIds.has(record.id));
@@ -228,7 +404,7 @@ function AppContent() {
   const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
   const packValidation = useMemo(() => validatePackDraft(stagedRecords), [stagedRecords]);
 
-  const handlePackageFile = async (file: File) => {
+  const handlePackageFileWithHandle = async (file: File, fileHandle: FileSystemFileHandle | null) => {
     setIsLoading(true);
     setError(null);
     setPackageName(file.name);
@@ -241,6 +417,9 @@ function AppContent() {
     setStagedRecordIds(new Set());
     setActiveRecordId(null);
     setCollapsedFolders(new Set());
+    setQuery('');
+    setDebouncedQuery('');
+    setDiagCodeFilter(new Set());
 
     try {
       const startedAt = performance.now();
@@ -252,6 +431,18 @@ function AppContent() {
       setAnalysis(result.analysis);
       setActiveRecordId(result.records[0]?.id ?? null);
       setStatus(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms.`);
+
+      const headHash = await computeHeadHash(file);
+      const recentKey = `${file.name}|${file.size.toString()}|${headHash}`;
+      await addRecentPackage({
+        key: recentKey,
+        name: file.name,
+        size: file.size,
+        headHash,
+        fileHandle,
+      });
+      const updatedRecents = await getRecentPackages();
+      setRecents(updatedRecents);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to parse package';
       setError(message);
@@ -259,6 +450,56 @@ function AppContent() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePackageFile = (file: File) => {
+    void handlePackageFileWithHandle(file, null);
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'launchQueue' in window && window.launchQueue) {
+      window.launchQueue.setConsumer(async (launchParams) => {
+        if (launchParams.files && launchParams.files.length > 0) {
+          const fileHandle = launchParams.files[0];
+          if (fileHandle) {
+            try {
+              const file = await fileHandle.getFile();
+              void handlePackageFileWithHandle(file, fileHandle);
+            } catch (err) {
+              console.error('Failed to open file from launchQueue:', err);
+            }
+          }
+        }
+      });
+    }
+  }, []);
+
+  const handleRecentClick = async (recent: RecentPackage) => {
+    if (recent.fileHandle) {
+      try {
+        const handle = recent.fileHandle;
+        const options = { mode: 'read' as const };
+        let permission = await handle.queryPermission(options);
+        if (permission !== 'granted') {
+          permission = await handle.requestPermission(options);
+        }
+        if (permission === 'granted') {
+          const file = await handle.getFile();
+          void handlePackageFileWithHandle(file, handle);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to access file handle:', err);
+      }
+    }
+    setRecentToPrompt(recent);
+  };
+
+  const handleRemoveRecent = async (key: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    await removeRecentPackage(key);
+    const updatedRecents = await getRecentPackages();
+    setRecents(updatedRecents);
   };
 
   const handleDownload = async (targetRecords: PackageFileRecord[], fileName: string, recordIds?: string[]) => {
@@ -278,6 +519,7 @@ function AppContent() {
   };
 
   const toggleRecordSelection = useCallback((recordId: string) => {
+    setSelectionAnchorId(recordId);
     setSelectedRecordIds(previous => {
       const next = new Set(previous);
       if (next.has(recordId)) next.delete(recordId);
@@ -310,6 +552,9 @@ function AppContent() {
   }, []);
 
   const toggleFolder = useCallback((path: string) => {
+    const rowId = `folder:${path}`;
+    setFocusedRowId(rowId);
+    setSelectionAnchorId(rowId);
     setCollapsedFolders(previous => {
       const next = new Set(previous);
       if (next.has(path)) next.delete(path);
@@ -318,8 +563,57 @@ function AppContent() {
     });
   }, []);
 
-  // When meta sidecars are hidden, remove hidden meta IDs from selection and
-  // re-home the active record if it points at a now-hidden meta row.
+  const expandAll = useCallback(() => {
+    setCollapsedFolders(previous => {
+      const next = new Set(previous);
+      for (const folder of getAllFolderPaths(visibleRecords)) {
+        next.delete(folder);
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const collapseAll = useCallback(() => {
+    setCollapsedFolders(previous => {
+      const next = new Set(previous);
+      for (const folder of getAllFolderPaths(visibleRecords)) {
+        next.add(folder);
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const [scrollToRow, setScrollToRow] = useState<{ id: string; key: number } | null>(null);
+
+  // Ref to the virtual-tree scroll container so we can scroll rows into view.
+  const treeViewportRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Switches to tree mode, expands ancestors of the record or folder path,
+   * and queues a scroll to the matching row after the next paint.
+   */
+  const revealPathInTree = useCallback((pathOrId: string) => {
+    const record = records.find(r => r.id === pathOrId || r.virtualPath === pathOrId);
+    const path = record ? record.virtualPath : pathOrId;
+    const rowId = record ? record.id : `folder:${pathOrId}`;
+
+    setGroupingMode('tree');
+    setCollapsedFolders(prev => expandAncestors(path, prev));
+    if (record) {
+      setActiveRecordId(record.id);
+    }
+    setFocusedRowId(rowId);
+    setSelectionAnchorId(rowId);
+    setScrollToRow({ id: rowId, key: Date.now() });
+
+    setTimeout(() => {
+      treeViewportRef.current?.focus();
+    }, 50);
+  }, [records]);
+
+  // When meta sidecars are hidden (via includeMetaSidecars or category filter), remove
+  // hidden meta IDs from selection and re-home the active record if it points at a
+  // now-hidden meta row.
   useEffect(() => {
     if (includeMetaSidecars) return;
 
@@ -403,6 +697,101 @@ function AppContent() {
               }}
             />
           </div>
+          <div className="segmented-control" aria-label="Match mode">
+            <button type="button" id="match-mode-filename" className={matchMode === 'filename' ? 'active' : ''} onClick={() => { setMatchMode('filename'); }}>Name</button>
+            <button type="button" id="match-mode-path" className={matchMode === 'path' ? 'active' : ''} onClick={() => { setMatchMode('path'); }}>Path</button>
+            <button type="button" id="match-mode-guid" className={matchMode === 'guid' ? 'active' : ''} onClick={() => { setMatchMode('guid'); }}>GUID</button>
+          </div>
+          <div className="filter-toggles">
+            <button
+              type="button"
+              id="toggle-case-sensitive"
+              className={`icon-button filter-toggle-btn${caseSensitive ? ' active' : ''}`}
+              aria-pressed={caseSensitive}
+              title="Case sensitive"
+              aria-label="Toggle case sensitivity"
+              onClick={() => { setCaseSensitive(v => !v); }}
+            >
+              <CaseSensitive aria-hidden="true" size={16} />
+            </button>
+            <button
+              type="button"
+              id="toggle-glob-mode"
+              className={`icon-button filter-toggle-btn${globMode ? ' active' : ''}`}
+              aria-pressed={globMode}
+              title="Glob mode (e.g. **/*.shader)"
+              aria-label="Toggle glob mode"
+              onClick={() => { setGlobMode(v => !v); }}
+            >
+              <Filter aria-hidden="true" size={16} />
+            </button>
+          </div>
+          <div className="chip-group" aria-label="Category filter">
+            {(['asset', 'meta', 'preview'] as RecordCategory[]).map(cat => (
+              <button
+                key={cat}
+                type="button"
+                id={`category-chip-${cat}`}
+                className={`chip${categoryFilter.has(cat) ? ' active' : ''}`}
+                aria-pressed={categoryFilter.has(cat)}
+                onClick={() => {
+                  setCategoryFilter(prev => {
+                    const next = new Set(prev);
+                    if (next.has(cat)) next.delete(cat);
+                    else next.add(cat);
+                    return next;
+                  });
+                }}
+              >
+                {cat.charAt(0).toUpperCase() + cat.slice(1)}s
+              </button>
+            ))}
+          </div>
+          <div className="size-range">
+            <label htmlFor="size-min" className="size-range-label">Size</label>
+            <input
+              id="size-min"
+              type="text"
+              className="size-input"
+              placeholder="min (e.g. 100k)"
+              aria-label="Minimum size"
+              value={sizeMin}
+              onChange={event => { setSizeMin(event.target.value); }}
+            />
+            <span className="size-range-sep">&ndash;</span>
+            <input
+              id="size-max"
+              type="text"
+              className="size-input"
+              placeholder="max (e.g. 2m)"
+              aria-label="Maximum size"
+              value={sizeMax}
+              onChange={event => { setSizeMax(event.target.value); }}
+            />
+          </div>
+          {collectDiagCodes(records).length > 0 ? (
+            <div className="chip-group" aria-label="Diagnostic code filter">
+              {collectDiagCodes(records).map(code => (
+                <button
+                  key={code}
+                  type="button"
+                  id={`diag-chip-${code}`}
+                  className={`chip chip-diag${diagCodeFilter.has(code) ? ' active' : ''}`}
+                  aria-pressed={diagCodeFilter.has(code)}
+                  onClick={() => {
+                    setDiagCodeFilter(prev => {
+                      const next = new Set(prev);
+                      if (next.has(code)) next.delete(code);
+                      else next.add(code);
+                      return next;
+                    });
+                  }}
+                >
+                  {code}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="segmented-control" aria-label="Explorer grouping">
             <button type="button" className={groupingMode === 'tree' ? 'active' : ''} onClick={() => { setGroupingMode('tree'); }}>
               <ListTree aria-hidden="true" size={16} />
@@ -434,6 +823,64 @@ function AppContent() {
             Include .meta with assets
           </label>
           <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} diagnostics={diagnostics} analysis={analysis} />
+          {recents.length > 0 && (
+            <div className="recents-container">
+              <h4 className="recents-title">
+                <FolderOpen aria-hidden="true" size={15} />
+                <span>Recent packages</span>
+              </h4>
+              <ul className="recents-list">
+                {recents.map(recent => (
+                  <li
+                    key={recent.key}
+                    className="recent-item"
+                    onClick={() => void handleRecentClick(recent)}
+                    title={recent.name}
+                  >
+                    <div className="recent-item-info">
+                      <span className="recent-name">{recent.name}</span>
+                      <span className="recent-meta">{formatBytes(recent.size)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="recent-remove-btn"
+                      onClick={(e) => void handleRemoveRecent(recent.key, e)}
+                      title="Remove from recents"
+                      aria-label={`Remove ${recent.name} from recents`}
+                    >
+                      &times;
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="theme-toggle-container">
+            <span className="theme-toggle-label">Theme</span>
+            <div className="segmented-control" aria-label="Theme mode" style={{ margin: 0 }}>
+              <button
+                type="button"
+                className={theme === 'auto' ? 'active' : ''}
+                onClick={() => setTheme('auto')}
+              >
+                Auto
+              </button>
+              <button
+                type="button"
+                className={theme === 'light' ? 'active' : ''}
+                onClick={() => setTheme('light')}
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                className={theme === 'dark' ? 'active' : ''}
+                onClick={() => setTheme('dark')}
+              >
+                Dark
+              </button>
+            </div>
+          </div>
         </aside>
 
         <section className="main-panel" aria-label="Package explorer">
@@ -441,17 +888,86 @@ function AppContent() {
             <>
               <div className="panel-toolbar">
                 <div>
-                  <h2>Extract</h2>
-                  <p>
-                    {visibleRecords.length.toString()} visible records
-                    {selectedRecordIds.size > 0 ? `, ${[...selectedRecordIds].filter(id => visibleRecords.some(r => r.id === id)).length.toString()} selected` : ''}
-                  </p>
+                <h2>Extract</h2>
+                <p>
+                  {visibleRecords.length.toString()} visible records
+                  {selectedRecordIds.size > 0 ? `, ${[...selectedRecordIds].filter(id => visibleRecords.some(r => r.id === id)).length.toString()} selected` : ''}
+                </p>
+              </div>
+              <div className="button-row">
+                <div className="sort-control">
+                  <label htmlFor="sort-key" className="sort-label">Sort</label>
+                  <select
+                    id="sort-key"
+                    className="sort-select"
+                    value={sortKey}
+                    onChange={event => { setSortKey(event.target.value as SortKey); }}
+                  >
+                    <option value="name">Name</option>
+                    <option value="size">Size</option>
+                    <option value="extension">Extension</option>
+                    <option value="guid">GUID</option>
+                  </select>
+                  <button
+                    type="button"
+                    id="sort-direction-toggle"
+                    className="icon-button"
+                    aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                    title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                    onClick={() => { setSortDirection(d => d === 'asc' ? 'desc' : 'asc'); }}
+                  >
+                    {sortDirection === 'asc'
+                      ? <ArrowUpDown aria-hidden="true" size={15} />
+                      : <ArrowDownUp aria-hidden="true" size={15} />}
+                  </button>
                 </div>
-                <div className="button-row">
                   <button type="button" disabled={selectedRecordIds.size === 0} onClick={clearSelection}>
                     <RefreshCw aria-hidden="true" size={16} />
                     <span>Clear selection</span>
                   </button>
+                  <button
+                    type="button"
+                    disabled={visibleRecords.length === 0}
+                    onClick={invertSelection}
+                  >
+                    <RefreshCw aria-hidden="true" size={16} />
+                    <span>Invert selection</span>
+                  </button>
+                  <div className="select-by-ext-container">
+                    <button
+                      type="button"
+                      disabled={visibleRecords.length === 0}
+                      onClick={() => { setIsExtPickerOpen(prev => !prev); }}
+                      aria-label="Select by extension"
+                      aria-expanded={isExtPickerOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <Filter aria-hidden="true" size={16} />
+                      <span>Select by extension</span>
+                    </button>
+                    {isExtPickerOpen && (
+                      <div className="ext-picker-dropdown" role="listbox" aria-label="Available extensions">
+                        {visibleExtensions.length === 0 ? (
+                          <div className="ext-picker-item empty">No extensions</div>
+                        ) : (
+                          visibleExtensions.map(ext => (
+                            <button
+                              key={ext}
+                              type="button"
+                              className="ext-picker-item"
+                              role="option"
+                              onClick={() => {
+                                selectByExtension(ext);
+                                setIsExtPickerOpen(false);
+                              }}
+                            >
+                              .{ext}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <button type="button" disabled={selectedRecordIds.size === 0} onClick={stageSelection}>
                     <PackagePlus aria-hidden="true" size={16} />
                     <span>Stage for pack</span>
@@ -496,11 +1012,22 @@ function AppContent() {
                 selectedIds={selectedRecordIds}
                 activeId={activeRecord?.id ?? null}
                 collapsedFolders={collapsedFolders}
+                treeViewportRef={treeViewportRef}
+                scrollToRow={scrollToRow}
                 onToggleFolder={toggleFolder}
-                onActivate={setActiveRecordId}
+                onExpandAll={expandAll}
+                onCollapseAll={collapseAll}
+                onActivate={activateRecord}
                 onToggleSelected={toggleRecordSelection}
                 onScopeSelect={selectScope}
                 onReplaceSelection={replaceRecordSelection}
+                onRevealInTree={revealPathInTree}
+                focusedRowId={focusedRowId}
+                onFocusRow={setFocusedRowId}
+                selectionAnchorId={selectionAnchorId}
+                onSetAnchor={setSelectionAnchorId}
+                keyboardRangeBaseIds={keyboardRangeBaseIds}
+                onSetKeyboardRangeBase={setKeyboardRangeBaseIds}
               />
             </>
           ) : (
@@ -528,6 +1055,7 @@ function AppContent() {
             includeMetaSidecars={includeMetaSidecars}
             onDownloadZip={(zipRecords, fileName, recordIds) => void handleDownload(zipRecords, fileName, recordIds)}
             onStatusWarning={setStatus}
+            onRevealInTree={revealPathInTree}
           />
         </aside>
       </section>
@@ -538,7 +1066,20 @@ function AppContent() {
           analysis={analysis}
           records={records}
           onNavigate={(recordId) => {
-            setActiveRecordId(recordId);
+            const targetRecord = records.find(r => r.id === recordId);
+            if (targetRecord) {
+              setQuery(targetRecord.virtualPath);
+              setMatchMode('path');
+              setGlobMode(false);
+              setCategoryFilter(new Set());
+              setDiagCodeFilter(new Set());
+              setSizeMin('');
+              setSizeMax('');
+              setGroupingMode('tree');
+              setCollapsedFolders(prev => expandAncestors(targetRecord.virtualPath, prev));
+              setActiveRecordId(targetRecord.id);
+              setFocusedRowId(targetRecord.id);
+            }
             setIsDiagnosticsOpen(false);
           }}
           onClose={() => { setIsDiagnosticsOpen(false); }}
@@ -557,11 +1098,74 @@ function AppContent() {
             type="button"
             className="status-diagnostics-toggle"
             onClick={() => { setIsDiagnosticsOpen(open => !open); }}
+            aria-expanded={isDiagnosticsOpen}
+            aria-label="Toggle diagnostics drawer"
           >
             <Info aria-hidden="true" size={15} />
             {(diagnostics.length + analysis.length).toString()} findings
           </button>
         ) : null}
+      {recentToPrompt && (
+        <div className="modal-overlay" onClick={() => setRecentToPrompt(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reopen Recent Package</h3>
+              <button
+                type="button"
+                className="recent-remove-btn"
+                style={{ width: '24px', height: '24px', fontSize: '1.2rem', minHeight: '24px' }}
+                onClick={() => setRecentToPrompt(null)}
+                aria-label="Close dialog"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="modal-body">
+              <p>
+                Direct file access is not available for <strong>{recentToPrompt.name}</strong>.
+                Please select the file or drop it below to reopen.
+              </p>
+              <div
+                className="modal-dropzone"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files[0];
+                  if (file?.name === recentToPrompt.name) {
+                    void handlePackageFileWithHandle(file, null);
+                    setRecentToPrompt(null);
+                  } else if (file) {
+                    setError(`Dropped file "${file.name}" does not match "${recentToPrompt.name}".`);
+                  }
+                }}
+              >
+                <span>Drop <strong>{recentToPrompt.name}</strong> here</span>
+                <label className="file-open-button" style={{ marginTop: '8px' }}>
+                  <span>Choose File</span>
+                  <input
+                    type="file"
+                    accept=".unitypackage"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file?.name === recentToPrompt.name) {
+                        void handlePackageFileWithHandle(file, null);
+                        setRecentToPrompt(null);
+                      } else if (file) {
+                        setError(`Selected file "${file.name}" does not match "${recentToPrompt.name}".`);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" onClick={() => setRecentToPrompt(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       </footer>
     </main>
   );
@@ -648,41 +1252,92 @@ function Stats({
   const warnCount = (diagnostics.filter(d => d.severity === 'warning').length + analysis.filter(f => f.severity === 'warning').length);
   const infoCount = (diagnostics.filter(d => d.severity === 'info').length + analysis.filter(f => f.severity === 'info').length);
 
+  const extStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const sizes: Record<string, number> = {};
+    for (const r of records) {
+      const ext = r.extension ? `.${r.extension}` : '(none)';
+      counts[ext] = (counts[ext] ?? 0) + 1;
+      sizes[ext] = (sizes[ext] ?? 0) + r.byteLength;
+    }
+    const byCount = Object.entries(counts)
+      .map(([ext, count]) => ({ ext, count }))
+      .sort((a, b) => b.count - a.count || a.ext.localeCompare(b.ext))
+      .slice(0, 5);
+    const bySize = Object.entries(sizes)
+      .map(([ext, size]) => ({ ext, size }))
+      .sort((a, b) => b.size - a.size || a.ext.localeCompare(b.ext))
+      .slice(0, 5);
+    return { byCount, bySize };
+  }, [records]);
+
   return (
-    <dl className="stats-grid">
-      <div>
-        <dt>Records</dt>
-        <dd>{filteredCount.toString()} / {records.length.toString()}</dd>
-      </div>
-      <div>
-        <dt>Assets</dt>
-        <dd>{assetCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Meta</dt>
-        <dd>{metaCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Previews</dt>
-        <dd>{previewCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Bytes</dt>
-        <dd>{formatBytes(totalBytes)}</dd>
-      </div>
-      <div>
-        <dt>Errors</dt>
-        <dd>{errorCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Warnings</dt>
-        <dd>{warnCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Info</dt>
-        <dd>{infoCount.toString()}</dd>
-      </div>
-    </dl>
+    <div className="stats-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
+      <dl className="stats-grid">
+        <div>
+          <dt>Records</dt>
+          <dd>{filteredCount.toString()} / {records.length.toString()}</dd>
+        </div>
+        <div>
+          <dt>Assets</dt>
+          <dd>{assetCount.toString()}</dd>
+        </div>
+        <div>
+          <dt>Meta</dt>
+          <dd>{metaCount.toString()}</dd>
+        </div>
+        <div>
+          <dt>Previews</dt>
+          <dd>{previewCount.toString()}</dd>
+        </div>
+        <div>
+          <dt>Bytes</dt>
+          <dd>{formatBytes(totalBytes)}</dd>
+        </div>
+        <div>
+          <dt>Errors</dt>
+          <dd>{errorCount.toString()}</dd>
+        </div>
+        <div>
+          <dt>Warnings</dt>
+          <dd>{warnCount.toString()}</dd>
+        </div>
+        <div>
+          <dt>Info</dt>
+          <dd>{infoCount.toString()}</dd>
+        </div>
+      </dl>
+
+      {records.length > 0 && (
+        <div className="top-extensions-section" style={{ borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+          <h4 style={{ margin: '0 0 8px 0', fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>Top Extensions</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <h5 style={{ margin: '0 0 6px 0', fontSize: '0.75rem', fontWeight: 600, color: 'var(--muted)' }}>By Count</h5>
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {extStats.byCount.map(({ ext, count }) => (
+                  <li key={ext} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text)' }}>
+                    <code style={{ fontSize: '0.72rem' }}>{ext}</code>
+                    <span>{count.toString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h5 style={{ margin: '0 0 6px 0', fontSize: '0.75rem', fontWeight: 600, color: 'var(--muted)' }}>By Size</h5>
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {extStats.bySize.map(({ ext, size }) => (
+                  <li key={ext} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text)' }}>
+                    <code style={{ fontSize: '0.72rem' }}>{ext}</code>
+                    <span className="text-muted" style={{ color: 'var(--muted)' }}>{formatBytes(size)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -696,11 +1351,22 @@ function Explorer({
   selectedIds,
   activeId,
   collapsedFolders,
+  treeViewportRef,
+  scrollToRow,
   onToggleFolder,
+  onExpandAll,
+  onCollapseAll,
   onActivate,
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
+  onRevealInTree,
+  focusedRowId,
+  onFocusRow,
+  selectionAnchorId,
+  onSetAnchor,
+  keyboardRangeBaseIds,
+  onSetKeyboardRangeBase,
 }: {
   groupingMode: GroupingMode;
   records: PackageFileRecord[];
@@ -711,11 +1377,22 @@ function Explorer({
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
   collapsedFolders: ReadonlySet<string>;
+  treeViewportRef: RefObject<HTMLDivElement | null>;
+  scrollToRow: { id: string; key: number } | null;
   onToggleFolder: (path: string) => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
+  onRevealInTree: (recordId: string) => void;
+  focusedRowId: string | null;
+  onFocusRow: (id: string | null) => void;
+  selectionAnchorId: string | null;
+  onSetAnchor: (id: string | null) => void;
+  keyboardRangeBaseIds: Set<string> | null;
+  onSetKeyboardRangeBase: (base: Set<string> | null) => void;
 }) {
   if (records.length === 0) {
     return (
@@ -735,11 +1412,21 @@ function Explorer({
       selectedIds={selectedIds}
       activeId={activeId}
       collapsedFolders={collapsedFolders}
+      viewportRef={treeViewportRef}
+      scrollToRow={scrollToRow}
       onToggleFolder={onToggleFolder}
+      onExpandAll={onExpandAll}
+      onCollapseAll={onCollapseAll}
       onActivate={onActivate}
       onToggleSelected={onToggleSelected}
       onScopeSelect={onScopeSelect}
       onReplaceSelection={onReplaceSelection}
+      focusedRowId={focusedRowId}
+      onFocusRow={onFocusRow}
+      selectionAnchorId={selectionAnchorId}
+      onSetAnchor={onSetAnchor}
+      keyboardRangeBaseIds={keyboardRangeBaseIds}
+      onSetKeyboardRangeBase={onSetKeyboardRangeBase}
     />
   ) : (
     <ExtensionList
@@ -751,6 +1438,13 @@ function Explorer({
       onToggleSelected={onToggleSelected}
       onScopeSelect={onScopeSelect}
       onReplaceSelection={onReplaceSelection}
+      onRevealInTree={onRevealInTree}
+      focusedRowId={focusedRowId}
+      onFocusRow={onFocusRow}
+      selectionAnchorId={selectionAnchorId}
+      onSetAnchor={onSetAnchor}
+      keyboardRangeBaseIds={keyboardRangeBaseIds}
+      onSetKeyboardRangeBase={onSetKeyboardRangeBase}
     />
   );
 }
@@ -762,11 +1456,21 @@ function VirtualTree({
   selectedIds,
   activeId,
   collapsedFolders,
+  viewportRef,
+  scrollToRow,
   onToggleFolder,
+  onExpandAll,
+  onCollapseAll,
   onActivate,
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
+  focusedRowId,
+  onFocusRow,
+  selectionAnchorId,
+  onSetAnchor,
+  keyboardRangeBaseIds,
+  onSetKeyboardRangeBase,
 }: {
   rows: TreeRow[];
   records: PackageFileRecord[];
@@ -774,94 +1478,292 @@ function VirtualTree({
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
   collapsedFolders: ReadonlySet<string>;
+  viewportRef: RefObject<HTMLDivElement | null>;
+  scrollToRow: { id: string; key: number } | null;
   onToggleFolder: (path: string) => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
+  focusedRowId: string | null;
+  onFocusRow: (id: string | null) => void;
+  selectionAnchorId: string | null;
+  onSetAnchor: (id: string | null) => void;
+  keyboardRangeBaseIds: Set<string> | null;
+  onSetKeyboardRangeBase: (base: Set<string> | null) => void;
 }) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
   const dragSelection = useRowSweepSelection({
     orderedRecordIds,
     selectedIds,
-    scrollRef: parentRef,
+    scrollRef: viewportRef,
     onReplaceSelection,
   });
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => viewportRef.current,
     estimateSize: () => 38,
     overscan: 10,
   });
 
-  return (
-    <div
-      ref={parentRef}
-      className={`explorer-viewport${dragSelection.isDragging ? ' selecting-range' : ''}`}
-      role="tree"
-      aria-label="Package file tree"
-    >
-      <div className="virtual-spacer" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-        {virtualizer.getVirtualItems().map(virtualRow => {
-          const row = rows[virtualRow.index];
-          const style: CSSProperties = {
-            height: `${virtualRow.size}px`,
-            transform: `translateY(${virtualRow.start}px)`,
-          };
+  useEffect(() => {
+    if (!scrollToRow) return;
+    const index = rows.findIndex(row => row.id === scrollToRow.id);
+    if (index === -1) return;
 
-          if (row.type === 'folder') {
-            const collapsed = collapsedFolders.has(row.path);
-            const folderRecordIds = getFolderRecordIds(records, row.path);
-            const selectionState = getSelectionState(folderRecordIds, selectedIds);
-            return (
-              <div
-                key={row.id}
-                className="tree-row folder-row"
-                style={{ ...style, paddingLeft: `${12 + row.depth * 18}px` }}
-                onClick={() => { onToggleFolder(row.path); }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onToggleFolder(row.path);
-                  }
-                }}
-                role="treeitem"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-              >
-                <SelectionToggle
-                  state={selectionState}
-                  disabled={folderRecordIds.length === 0}
-                  label={`${selectionState === 'all' ? 'Deselect' : 'Select'} ${row.name}`}
-                  onSelect={() => { onScopeSelect(folderRecordIds, selectionState); }}
-                />
-                {collapsed ? <ChevronRight aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
-                {collapsed ? <Folder aria-hidden="true" size={17} /> : <FolderOpen aria-hidden="true" size={17} />}
-                <span>{row.name}</span>
-                <small>{row.fileCount.toString()}</small>
-              </div>
-            );
+    virtualizer.scrollToIndex(index, { align: 'auto' });
+  }, [scrollToRow, rows, virtualizer]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const visibleRowIds = rows.map(r => r.id);
+    if (visibleRowIds.length === 0) return;
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      const allFileIds = rows.flatMap(row => row.type === 'file' ? [row.record.id] : []);
+      onReplaceSelection(new Set(allFileIds));
+      return;
+    }
+
+    const key = event.key;
+    let nextFocusedId: string | null = null;
+    let nextIndex = -1;
+
+    const currentIndex = focusedRowId ? visibleRowIds.indexOf(focusedRowId) : -1;
+
+    if (key === 'ArrowDown') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.min(visibleRowIds.length - 1, currentIndex + 1);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'ArrowUp') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.max(0, currentIndex - 1);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'Home') {
+      event.preventDefault();
+      nextIndex = 0;
+      nextFocusedId = visibleRowIds[0] ?? null;
+    } else if (key === 'End') {
+      event.preventDefault();
+      nextIndex = visibleRowIds.length - 1;
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'PageDown') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.min(visibleRowIds.length - 1, currentIndex + 15);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'PageUp') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.max(0, currentIndex - 15);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'ArrowLeft') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const currentRow = rows.find(r => r.id === focusedRowId);
+        if (currentRow) {
+          if (currentRow.type === 'folder' && !collapsedFolders.has(currentRow.path)) {
+            onToggleFolder(currentRow.path);
+          } else {
+            const parts = (currentRow.type === 'folder' ? currentRow.path : currentRow.record.virtualPath).split('/').filter(Boolean);
+            if (parts.length > 1) {
+              const parentPath = parts.slice(0, -1).join('/');
+              const parentId = `folder:${parentPath}`;
+              if (visibleRowIds.includes(parentId)) {
+                onFocusRow(parentId);
+                onSetAnchor(parentId);
+                onSetKeyboardRangeBase(null);
+                const parentIdx = visibleRowIds.indexOf(parentId);
+                if (parentIdx !== -1) {
+                  virtualizer.scrollToIndex(parentIdx, { align: 'auto' });
+                }
+              }
+            }
           }
+        }
+      }
+      return;
+    } else if (key === 'ArrowRight') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const currentRow = rows.find(r => r.id === focusedRowId);
+        if (currentRow) {
+          if (currentRow.type === 'folder') {
+            if (collapsedFolders.has(currentRow.path)) {
+              onToggleFolder(currentRow.path);
+            } else {
+              if (currentIndex !== -1 && currentIndex + 1 < visibleRowIds.length) {
+                const nextRow = rows[currentIndex + 1];
+                if (nextRow) {
+                  onFocusRow(nextRow.id);
+                  onSetAnchor(nextRow.id);
+                  onSetKeyboardRangeBase(null);
+                  virtualizer.scrollToIndex(currentIndex + 1, { align: 'auto' });
+                }
+              }
+            }
+          }
+        }
+      }
+      return;
+    } else if (key === ' ') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const currentRow = rows.find(r => r.id === focusedRowId);
+        if (currentRow) {
+          if (currentRow.type === 'file') {
+            onToggleSelected(currentRow.record.id);
+          } else {
+            const folderRecordIds = getFolderRecordIds(records, currentRow.path);
+            const selectionState = getSelectionState(folderRecordIds, selectedIds);
+            onScopeSelect(folderRecordIds, selectionState);
+          }
+        }
+      }
+      return;
+    } else if (key === 'Enter') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const currentRow = rows.find(r => r.id === focusedRowId);
+        if (currentRow) {
+          if (currentRow.type === 'file') {
+            onActivate(currentRow.record.id);
+          } else {
+            onToggleFolder(currentRow.path);
+          }
+        }
+      }
+      return;
+    }
 
-          return (
-            <FileRow
-              key={row.id}
-              record={row.record}
-              active={activeId === row.record.id}
-              selected={selectedIds.has(row.record.id)}
-              depth={row.depth}
-              style={style}
-              onActivate={onActivate}
-              onToggleSelected={onToggleSelected}
-              onPointerDown={dragSelection.onPointerDown}
-              shouldSuppressClick={dragSelection.shouldSuppressClick}
-            />
-          );
-        })}
+    if (nextFocusedId && nextIndex !== -1) {
+      onFocusRow(nextFocusedId);
+      virtualizer.scrollToIndex(nextIndex, { align: 'auto' });
+
+      if (event.shiftKey) {
+        const validFileIdsSet = new Set(orderedRecordIds);
+        let currentRangeBase = keyboardRangeBaseIds;
+        if (!currentRangeBase) {
+          currentRangeBase = new Set(selectedIds);
+          onSetKeyboardRangeBase(currentRangeBase);
+        }
+        const anchor = selectionAnchorId ?? focusedRowId ?? visibleRowIds[0] ?? null;
+        const mode = anchor && currentRangeBase.has(anchor) ? 'remove' : 'add';
+        const nextSelection = getKeyboardRangeSelection(
+          visibleRowIds,
+          anchor,
+          nextFocusedId,
+          validFileIdsSet,
+          currentRangeBase,
+          mode
+        );
+        onReplaceSelection(nextSelection);
+      } else {
+        onSetKeyboardRangeBase(null);
+        onSetAnchor(nextFocusedId);
+      }
+    }
+  };
+
+  const hasFolders = rows.some(r => r.type === 'folder');
+
+  return (
+    <>
+      {hasFolders && (
+        <div className="tree-toolbar">
+          <button type="button" className="tree-toolbar-btn" onClick={onExpandAll} aria-label="Expand all folders">
+            <ChevronsDown aria-hidden="true" size={15} />
+            <span>Expand all</span>
+          </button>
+          <button type="button" className="tree-toolbar-btn" onClick={onCollapseAll} aria-label="Collapse all folders">
+            <ChevronsUp aria-hidden="true" size={15} />
+            <span>Collapse all</span>
+          </button>
+        </div>
+      )}
+      <div
+        ref={viewportRef}
+        className={`explorer-viewport${dragSelection.isDragging ? ' selecting-range' : ''}`}
+        role="tree"
+        aria-label="Package file tree"
+        tabIndex={0}
+        aria-activedescendant={focusedRowId ?? undefined}
+        onKeyDown={handleKeyDown}
+        style={{ outline: 'none' }}
+      >
+        <div className="virtual-spacer" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+          {virtualizer.getVirtualItems().map(virtualRow => {
+            const row = rows[virtualRow.index];
+            const style: CSSProperties = {
+              height: `${virtualRow.size}px`,
+              transform: `translateY(${virtualRow.start}px)`,
+            };
+
+            if (!row) return null;
+
+            if (row.type === 'folder') {
+              const collapsed = collapsedFolders.has(row.path);
+              const folderRecordIds = getFolderRecordIds(records, row.path);
+              const selectionState = getSelectionState(folderRecordIds, selectedIds);
+              return (
+                <FolderRow
+                  key={row.id}
+                  id={row.id}
+                  name={row.name}
+                  path={row.path}
+                  depth={row.depth}
+                  collapsed={collapsed}
+                  fileCount={folderRecordIds.length}
+                  selectionState={selectionState}
+                  focused={focusedRowId === row.id}
+                  style={style}
+                  onClick={() => {
+                    viewportRef.current?.focus();
+                    onFocusRow(row.id);
+                    onSetAnchor(row.id);
+                    onSetKeyboardRangeBase(null);
+                    onToggleFolder(row.path);
+                  }}
+                  onSelect={() => {
+                    onScopeSelect(folderRecordIds, selectionState);
+                  }}
+                />
+              );
+            }
+
+            return (
+              <FileRow
+                key={row.id}
+                id={row.id}
+                record={row.record}
+                active={activeId === row.record.id}
+                selected={selectedIds.has(row.record.id)}
+                focused={focusedRowId === row.id}
+                depth={row.depth}
+                style={style}
+                onActivate={onActivate}
+                onToggleSelected={onToggleSelected}
+                onPointerDown={(recordId, event) => {
+                  viewportRef.current?.focus();
+                  onFocusRow(row.id);
+                  onSetAnchor(row.id);
+                  onSetKeyboardRangeBase(null);
+                  dragSelection.onPointerDown(recordId, event);
+                }}
+                shouldSuppressClick={dragSelection.shouldSuppressClick}
+              />
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
+
+// Flat item list for the virtualized extension list.
+// Each item is either a group header or a file row.
+type ExtListItem =
+  | { kind: 'header'; group: ExtensionGroup }
+  | { kind: 'file'; record: PackageFileRecord; group: ExtensionGroup };
 
 function ExtensionList({
   groups,
@@ -872,6 +1774,13 @@ function ExtensionList({
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
+  onRevealInTree,
+  focusedRowId,
+  onFocusRow,
+  selectionAnchorId,
+  onSetAnchor,
+  keyboardRangeBaseIds,
+  onSetKeyboardRangeBase,
 }: {
   groups: ExtensionGroup[];
   orderedRecordIds: string[];
@@ -881,6 +1790,13 @@ function ExtensionList({
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
+  onRevealInTree: (recordId: string) => void;
+  focusedRowId: string | null;
+  onFocusRow: (id: string | null) => void;
+  selectionAnchorId: string | null;
+  onSetAnchor: (id: string | null) => void;
+  keyboardRangeBaseIds: Set<string> | null;
+  onSetKeyboardRangeBase: (base: Set<string> | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const dragSelection = useRowSweepSelection({
@@ -890,40 +1806,208 @@ function ExtensionList({
     onReplaceSelection,
   });
 
+  // Flatten groups into a single item list for virtualization.
+  const items = useMemo<ExtListItem[]>(() => {
+    const flat: ExtListItem[] = [];
+    for (const group of groups) {
+      flat.push({ kind: 'header', group });
+      for (const record of group.records) {
+        flat.push({ kind: 'file', record, group });
+      }
+    }
+    return flat;
+  }, [groups]);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => {
+      const item = items[index];
+      return item?.kind === 'header' ? 44 : 38;
+    },
+    overscan: 10,
+  });
+
+  const visibleRowIds = useMemo(() => {
+    return items.map(item => item.kind === 'header' ? `hdr-${item.group.extension}` : item.record.id);
+  }, [items]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (visibleRowIds.length === 0) return;
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      const allFileIds = items.flatMap(item => item.kind === 'file' ? [item.record.id] : []);
+      onReplaceSelection(new Set(allFileIds));
+      return;
+    }
+
+    const key = event.key;
+    let nextFocusedId: string | null = null;
+    let nextIndex = -1;
+
+    const currentIndex = focusedRowId ? visibleRowIds.indexOf(focusedRowId) : -1;
+
+    if (key === 'ArrowDown') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.min(visibleRowIds.length - 1, currentIndex + 1);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'ArrowUp') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.max(0, currentIndex - 1);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'Home') {
+      event.preventDefault();
+      nextIndex = 0;
+      nextFocusedId = visibleRowIds[0] ?? null;
+    } else if (key === 'End') {
+      event.preventDefault();
+      nextIndex = visibleRowIds.length - 1;
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'PageDown') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.min(visibleRowIds.length - 1, currentIndex + 15);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === 'PageUp') {
+      event.preventDefault();
+      nextIndex = currentIndex === -1 ? 0 : Math.max(0, currentIndex - 15);
+      nextFocusedId = visibleRowIds[nextIndex] ?? null;
+    } else if (key === ' ') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const item = items[currentIndex];
+        if (item) {
+          if (item.kind === 'file') {
+            onToggleSelected(item.record.id);
+          } else {
+            const recordIds = item.group.records.map(r => r.id);
+            const selectionState = getSelectionState(recordIds, selectedIds);
+            onScopeSelect(recordIds, selectionState);
+          }
+        }
+      }
+      return;
+    } else if (key === 'Enter') {
+      event.preventDefault();
+      if (focusedRowId) {
+        const item = items[currentIndex];
+        if (item?.kind === 'file') {
+          onActivate(item.record.id);
+        }
+      }
+      return;
+    }
+
+    if (nextFocusedId && nextIndex !== -1) {
+      onFocusRow(nextFocusedId);
+      virtualizer.scrollToIndex(nextIndex, { align: 'auto' });
+
+      if (event.shiftKey) {
+        const validFileIdsSet = new Set(orderedRecordIds);
+        let currentRangeBase = keyboardRangeBaseIds;
+        if (!currentRangeBase) {
+          currentRangeBase = new Set(selectedIds);
+          onSetKeyboardRangeBase(currentRangeBase);
+        }
+        const anchor = selectionAnchorId ?? focusedRowId ?? visibleRowIds[0] ?? null;
+        const mode = anchor && currentRangeBase.has(anchor) ? 'remove' : 'add';
+        const nextSelection = getKeyboardRangeSelection(
+          visibleRowIds,
+          anchor,
+          nextFocusedId,
+          validFileIdsSet,
+          currentRangeBase,
+          mode
+        );
+        onReplaceSelection(nextSelection);
+      } else {
+        onSetKeyboardRangeBase(null);
+        onSetAnchor(nextFocusedId);
+      }
+    }
+  };
+
   return (
-    <div ref={parentRef} className={`extension-list${dragSelection.isDragging ? ' selecting-range' : ''}`}>
-      {groups.map(group => (
-        <section className="extension-group" key={group.extension}>
-          <header>
-            <div className="extension-title">
-              <SelectionToggle
-                state={getSelectionState(group.records.map(record => record.id), selectedIds)}
-                disabled={group.records.length === 0}
-                label={`${getSelectionState(group.records.map(record => record.id), selectedIds) === 'all' ? 'Deselect' : 'Select'} ${group.extension}`}
-                onSelect={() => {
-                  const recordIds = group.records.map(record => record.id);
-                  onScopeSelect(recordIds, getSelectionState(recordIds, selectedIds));
+    <div
+      ref={parentRef}
+      className={`explorer-viewport extension-list-viewport${dragSelection.isDragging ? ' selecting-range' : ''}`}
+      role="tree"
+      aria-label="Package file extensions"
+      tabIndex={0}
+      aria-activedescendant={focusedRowId ?? undefined}
+      onKeyDown={handleKeyDown}
+      style={{ outline: 'none' }}
+    >
+      <div className="virtual-spacer" style={{ height: `${virtualizer.getTotalSize()}px` }}>
+        {virtualizer.getVirtualItems().map(virtualRow => {
+          const item = items[virtualRow.index];
+          const style: CSSProperties = {
+            height: `${virtualRow.size}px`,
+            transform: `translateY(${virtualRow.start}px)`,
+          };
+
+          if (!item) return null;
+
+          if (item.kind === 'header') {
+            const { group } = item;
+            const recordIds = group.records.map(r => r.id);
+            const selState = getSelectionState(recordIds, selectedIds);
+            const firstId = group.records[0]?.id;
+            const hdrId = `hdr-${group.extension}`;
+            return (
+              <ExtensionHeaderRow
+                key={hdrId}
+                id={hdrId}
+                extension={group.extension}
+                selectionState={selState}
+                fileCount={group.records.length}
+                totalBytes={group.totalBytes}
+                focused={focusedRowId === hdrId}
+                style={style}
+                onClick={() => {
+                  parentRef.current?.focus();
+                  onFocusRow(hdrId);
+                  onSetAnchor(hdrId);
+                  onSetKeyboardRangeBase(null);
                 }}
+                onSelect={() => {
+                  onScopeSelect(recordIds, selState);
+                }}
+                onReveal={
+                  firstId !== undefined
+                    ? () => {
+                        onRevealInTree(firstId);
+                      }
+                    : undefined
+                }
               />
-              <h3>{group.extension}</h3>
-            </div>
-            <span>{group.records.length.toString()} files, {formatBytes(group.totalBytes)}</span>
-          </header>
-          {group.records.map(record => (
+            );
+          }
+
+          return (
             <FileRow
-              key={record.id}
-              record={record}
-              active={activeId === record.id}
-              selected={selectedIds.has(record.id)}
+              key={item.record.id}
+              id={item.record.id}
+              record={item.record}
+              active={activeId === item.record.id}
+              selected={selectedIds.has(item.record.id)}
+              focused={focusedRowId === item.record.id}
               depth={0}
+              style={style}
               onActivate={onActivate}
               onToggleSelected={onToggleSelected}
-              onPointerDown={dragSelection.onPointerDown}
+              onPointerDown={(recordId, event) => {
+                parentRef.current?.focus();
+                onFocusRow(recordId);
+                onSetAnchor(recordId);
+                onSetKeyboardRangeBase(null);
+                dragSelection.onPointerDown(recordId, event);
+              }}
               shouldSuppressClick={dragSelection.shouldSuppressClick}
             />
-          ))}
-        </section>
-      ))}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1089,10 +2173,157 @@ function useRowSweepSelection({
   };
 }
 
-function FileRow({
+interface FolderRowProps {
+  id: string;
+  name: string;
+  path: string;
+  depth: number;
+  collapsed: boolean;
+  fileCount: number;
+  selectionState: SelectionState;
+  focused: boolean;
+  style?: CSSProperties;
+  onClick: () => void;
+  onSelect: () => void;
+}
+
+const FolderRow = memo(({
+  id,
+  name,
+  depth,
+  collapsed,
+  fileCount,
+  selectionState,
+  focused,
+  style,
+  onClick,
+  onSelect,
+}: FolderRowProps) => {
+  return (
+    <div
+      id={id}
+      data-row-id={id}
+      className={`tree-row folder-row${focused ? ' focused' : ''}`}
+      style={{ ...style, paddingLeft: `${12 + depth * 18}px` }}
+      onClick={onClick}
+      role="treeitem"
+      tabIndex={-1}
+      aria-expanded={!collapsed}
+    >
+      <SelectionToggle
+        state={selectionState}
+        disabled={fileCount === 0}
+        label={`${selectionState === 'all' ? 'Deselect' : 'Select'} ${name}`}
+        onSelect={onSelect}
+      />
+      {collapsed ? <ChevronRight aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
+      {collapsed ? <Folder aria-hidden="true" size={17} /> : <FolderOpen aria-hidden="true" size={17} />}
+      <span>{name}</span>
+      <small>{fileCount.toString()}</small>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.name === nextProps.name &&
+    prevProps.path === nextProps.path &&
+    prevProps.depth === nextProps.depth &&
+    prevProps.collapsed === nextProps.collapsed &&
+    prevProps.fileCount === nextProps.fileCount &&
+    prevProps.selectionState === nextProps.selectionState &&
+    prevProps.focused === nextProps.focused &&
+    prevProps.style?.height === nextProps.style?.height &&
+    prevProps.style?.transform === nextProps.style?.transform &&
+    prevProps.onClick === nextProps.onClick &&
+    prevProps.onSelect === nextProps.onSelect
+  );
+});
+
+interface ExtensionHeaderRowProps {
+  id: string;
+  extension: string;
+  selectionState: SelectionState;
+  fileCount: number;
+  totalBytes: number;
+  focused: boolean;
+  style?: CSSProperties;
+  onClick: () => void;
+  onSelect: () => void;
+  onReveal: (() => void) | undefined;
+}
+
+const ExtensionHeaderRow = memo(({
+  id,
+  extension,
+  selectionState,
+  fileCount,
+  totalBytes,
+  focused,
+  style,
+  onClick,
+  onSelect,
+  onReveal,
+}: ExtensionHeaderRowProps) => {
+  return (
+    <div
+      id={id}
+      className={`ext-group-header${focused ? ' focused' : ''}`}
+      style={style}
+      onClick={onClick}
+      role="treeitem"
+      tabIndex={-1}
+    >
+      <div className="extension-title">
+        <SelectionToggle
+          state={selectionState}
+          disabled={fileCount === 0}
+          label={`${selectionState === 'all' ? 'Deselect' : 'Select'} ${extension}`}
+          onSelect={onSelect}
+        />
+        <h3>{extension}</h3>
+      </div>
+      <div className="ext-group-header-right">
+        <span>{fileCount.toString()} files, {formatBytes(totalBytes)}</span>
+        {onReveal !== undefined && (
+          <button
+            type="button"
+            className="reveal-in-tree-btn"
+            aria-label={`Reveal ${extension} in tree`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onReveal();
+            }}
+          >
+            <Locate aria-hidden="true" size={14} />
+            <span>Reveal</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.extension === nextProps.extension &&
+    prevProps.selectionState === nextProps.selectionState &&
+    prevProps.fileCount === nextProps.fileCount &&
+    prevProps.totalBytes === nextProps.totalBytes &&
+    prevProps.focused === nextProps.focused &&
+    prevProps.style?.height === nextProps.style?.height &&
+    prevProps.style?.transform === nextProps.style?.transform &&
+    prevProps.onClick === nextProps.onClick &&
+    prevProps.onSelect === nextProps.onSelect &&
+    prevProps.onReveal === nextProps.onReveal &&
+    (prevProps.onReveal === undefined) === (nextProps.onReveal === undefined)
+  );
+});
+
+const FileRow = memo(({
+  id,
   record,
   active,
   selected,
+  focused,
   depth,
   style,
   onActivate,
@@ -1100,26 +2331,30 @@ function FileRow({
   onPointerDown,
   shouldSuppressClick,
 }: {
+  id: string;
   record: PackageFileRecord;
   active: boolean;
   selected: boolean;
+  focused: boolean;
   depth: number;
   style?: CSSProperties;
   onActivate: (recordId: string) => void;
   onToggleSelected: (recordId: string) => void;
   onPointerDown: (recordId: string, event: ReactPointerEvent<HTMLElement>) => void;
   shouldSuppressClick: () => boolean;
-}) {
+}) => {
   const { Icon, tone, label } = getFileIconDescriptor(record);
 
   return (
     <div
-      className={`tree-row file-row${active ? ' active' : ''}${selected ? ' selected' : ''}`}
+      id={id}
+      className={`tree-row file-row${active ? ' active' : ''}${selected ? ' selected' : ''}${focused ? ' focused' : ''}`}
       style={{ ...style, paddingLeft: `${12 + depth * 18}px` }}
       role="treeitem"
       aria-selected={selected}
-      tabIndex={0}
+      tabIndex={-1}
       data-record-id={record.id}
+      data-row-id={record.id}
       onPointerDown={(event) => { onPointerDown(record.id, event); }}
       onClick={(event) => {
         if (shouldSuppressClick()) {
@@ -1132,18 +2367,6 @@ function FileRow({
         }
 
         onActivate(record.id);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          onActivate(record.id);
-          return;
-        }
-
-        if (event.key === ' ') {
-          event.preventDefault();
-          onToggleSelected(record.id);
-        }
       }}
     >
       <SelectionToggle
@@ -1158,7 +2381,23 @@ function FileRow({
       <small>{formatBytes(record.byteLength)}</small>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.id === nextProps.id &&
+    prevProps.record === nextProps.record &&
+    prevProps.active === nextProps.active &&
+    prevProps.selected === nextProps.selected &&
+    prevProps.focused === nextProps.focused &&
+    prevProps.depth === nextProps.depth &&
+    prevProps.style?.height === nextProps.style?.height &&
+    prevProps.style?.transform === nextProps.style?.transform &&
+    prevProps.onActivate === nextProps.onActivate &&
+    prevProps.onToggleSelected === nextProps.onToggleSelected &&
+    prevProps.onPointerDown === nextProps.onPointerDown &&
+    prevProps.shouldSuppressClick === nextProps.shouldSuppressClick
+  );
+});
+
 
 function PreviewPanel({
   record,
@@ -1166,16 +2405,22 @@ function PreviewPanel({
   includeMetaSidecars,
   onDownloadZip,
   onStatusWarning,
+  onRevealInTree,
 }: {
   record: PackageFileRecord | null;
   records: PackageFileRecord[];
   includeMetaSidecars: boolean;
   onDownloadZip: (records: PackageFileRecord[], fileName: string, recordIds: string[]) => void;
   onStatusWarning: (message: string) => void;
+  onRevealInTree: (path: string) => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useState(false);
+  const [copiedBase64, setCopiedBase64] = useState(false);
 
   useEffect(() => {
+    setCopiedText(false);
+    setCopiedBase64(false);
     if (!record) {
       setBlobUrl(null);
       return undefined;
@@ -1190,6 +2435,38 @@ function PreviewPanel({
     };
   }, [record]);
 
+  const handlePreviewDownload = useCallback(() => {
+    if (!record) return;
+    if (includeMetaSidecars && getRecordCategory(record) === 'asset') {
+      const result = resolveMetaSidecarSelection(
+        toSidecarSelectableRecords(records),
+        [record.id],
+      );
+      if (result.missingMetaForAssetIds.length > 0) {
+        downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+        onStatusWarning(`Downloaded ${record.fileName}. No .meta sidecar found in this package.`);
+      } else {
+        const zipFileName = `${record.fileName}.zip`;
+        onDownloadZip(records, zipFileName, result.ids);
+      }
+      return;
+    }
+    downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+  }, [record, includeMetaSidecars, records, onStatusWarning, onDownloadZip]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        handlePreviewDownload();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [handlePreviewDownload]);
+
   if (!record) {
     return (
       <div className="preview-empty">
@@ -1200,24 +2477,33 @@ function PreviewPanel({
     );
   }
 
-  const handlePreviewDownload = () => {
-    if (includeMetaSidecars && getRecordCategory(record) === 'asset') {
-      const result = resolveMetaSidecarSelection(
-        toSidecarSelectableRecords(records),
-        [record.id],
-      );
-      if (result.missingMetaForAssetIds.length > 0) {
-        // No meta exists: download raw asset and warn
-        downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
-        onStatusWarning(`Downloaded ${record.fileName}. No .meta sidecar found in this package.`);
-      } else {
-        // Meta exists: create a ZIP named after the asset file
-        const zipFileName = `${record.fileName}.zip`;
-        onDownloadZip(records, zipFileName, result.ids);
-      }
-      return;
+  const isTextual = record.previewKind === 'text';
+  const isSmallRecord = record.content.byteLength <= 65536;
+
+  const handleCopyText = async () => {
+    const text = textDecoder.decode(record.content);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(true);
+      setTimeout(() => { setCopiedText(false); }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text', err);
     }
-    downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+  };
+
+  const handleCopyBase64 = async () => {
+    let binary = '';
+    for (const byte of record.content) {
+      binary += String.fromCharCode(byte);
+    }
+    const base64 = window.btoa(binary);
+    try {
+      await navigator.clipboard.writeText(base64);
+      setCopiedBase64(true);
+      setTimeout(() => { setCopiedBase64(false); }, 2000);
+    } catch (err) {
+      console.error('Failed to copy base64', err);
+    }
   };
 
   return (
@@ -1225,19 +2511,259 @@ function PreviewPanel({
       <header className="preview-header">
         <div>
           <h2>{record.fileName}</h2>
-          <p>{record.virtualPath}</p>
+          <Breadcrumb virtualPath={record.virtualPath} onRevealInTree={onRevealInTree} />
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={`Download ${record.fileName}`}
-          onClick={handlePreviewDownload}
-        >
-          <Download aria-hidden="true" size={18} />
-        </button>
+        <div className="preview-header-actions" style={{ display: 'flex', gap: '6px' }}>
+          {isTextual && (
+            <button
+              type="button"
+              className="icon-button"
+              title={copiedText ? "Copied!" : "Copy text"}
+              aria-label="Copy text"
+              onClick={() => { void handleCopyText(); }}
+            >
+              {copiedText ? <Check aria-hidden="true" size={17} /> : <Copy aria-hidden="true" size={17} />}
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-button"
+            disabled={!isSmallRecord}
+            title={
+              !isSmallRecord
+                ? "Base64 copy only supported for files under 64 KB"
+                : copiedBase64
+                ? "Copied!"
+                : "Copy as Base64"
+            }
+            aria-label="Copy as base64"
+            onClick={() => { void handleCopyBase64(); }}
+          >
+            {copiedBase64 ? <Check aria-hidden="true" size={17} /> : <Archive aria-hidden="true" size={17} />}
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Download ${record.fileName}`}
+            title="Download file (Alt+D)"
+            onClick={handlePreviewDownload}
+          >
+            <Download aria-hidden="true" size={18} />
+          </button>
+        </div>
       </header>
       <PreviewBody record={record} blobUrl={blobUrl} />
       <Metadata record={record} records={records} />
+    </div>
+  );
+}
+
+function Breadcrumb({
+  virtualPath,
+  onRevealInTree,
+}: {
+  virtualPath: string;
+  onRevealInTree: (path: string) => void;
+}) {
+  const parts = virtualPath.split('/').filter(Boolean);
+
+  return (
+    <p className="preview-breadcrumb" aria-label="File path breadcrumb">
+      {parts.map((part, index) => {
+        const isLast = index === parts.length - 1;
+        const segmentPath = parts.slice(0, index + 1).join('/');
+        return (
+          <span key={segmentPath} className="breadcrumb-segment">
+            {index > 0 && <span className="breadcrumb-sep" aria-hidden="true">/</span>}
+            <button
+              type="button"
+              className={isLast ? "breadcrumb-btn breadcrumb-leaf" : "breadcrumb-btn"}
+              title={`Reveal ${segmentPath} in tree`}
+              onClick={() => { onRevealInTree(segmentPath); }}
+            >
+              {part}
+            </button>
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function ImagePreview({ record, blobUrl }: { record: PackageFileRecord; blobUrl: string }) {
+  const [naturalDims, setNaturalDims] = useState<{ width: number; height: number } | null>(null);
+  const [isFit, setIsFit] = useState(true);
+
+  useEffect(() => {
+    setNaturalDims(null);
+    setIsFit(true);
+  }, [record.id]);
+
+  return (
+    <div className="preview-frame media-frame image-preview-container" style={{ position: 'relative', overflow: isFit ? 'hidden' : 'auto' }}>
+      <img
+        src={blobUrl}
+        alt={`${record.fileName} preview`}
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          setNaturalDims({ width: img.naturalWidth, height: img.naturalHeight });
+        }}
+        style={isFit ? {
+          maxWidth: '100%',
+          maxHeight: '100%',
+          objectFit: 'contain',
+        } : {
+          maxWidth: 'none',
+          maxHeight: 'none',
+        }}
+      />
+      <div className="media-controls-overlay" style={{
+        position: 'absolute',
+        bottom: '8px',
+        right: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        backgroundColor: 'rgba(0, 0, 0, 0.65)',
+        color: '#fff',
+        padding: '4px 8px',
+        borderRadius: '6px',
+        fontSize: '0.78rem',
+        backdropFilter: 'blur(4px)',
+        zIndex: 10,
+      }}>
+        {naturalDims && (
+          <span style={{ color: '#ffffff' }}>{naturalDims.width} × {naturalDims.height}</span>
+        )}
+        <button
+          type="button"
+          onClick={() => { setIsFit(f => !f); }}
+          style={{
+            background: 'rgba(255, 255, 255, 0.2)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            color: '#fff',
+            cursor: 'pointer',
+            padding: '2px 8px',
+            fontSize: '0.75rem',
+            borderRadius: '4px',
+            minHeight: '22px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {isFit ? '1:1' : 'Fit'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function AudioPreview({ record, blobUrl }: { record: PackageFileRecord; blobUrl: string }) {
+  const [duration, setDuration] = useState<number | null>(null);
+
+  useEffect(() => {
+    setDuration(null);
+  }, [record.id]);
+
+  return (
+    <div className="preview-frame audio-preview-container" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '12px',
+      padding: '24px',
+    }}>
+      <audio
+        controls
+        src={blobUrl}
+        onLoadedMetadata={(e) => {
+          setDuration(e.currentTarget.duration);
+        }}
+      >
+        <a href={blobUrl} download={record.fileName}>Download audio</a>
+      </audio>
+      {duration !== null && (
+        <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+          Duration: {formatDuration(duration)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function HexPreview({ record }: { record: PackageFileRecord }) {
+  const bytes = record.content;
+  const rowCount = Math.ceil(bytes.length / 16);
+  const parentRef = useRef<HTMLDivElement | null>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 20,
+    overscan: 20,
+  });
+
+  return (
+    <div ref={parentRef} className="preview-frame hex-frame" style={{ overflow: 'auto' }}>
+      <div className="virtual-spacer" style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+        {rowVirtualizer.getVirtualItems().map(virtualRow => {
+          const rowIndex = virtualRow.index;
+          const start = rowIndex * 16;
+          const end = Math.min(start + 16, bytes.length);
+          const rowBytes = bytes.slice(start, end);
+          
+          const offsetStr = start.toString(16).padStart(8, '0').toUpperCase();
+          
+          const hexParts: string[] = [];
+          for (let j = 0; j < 16; j++) {
+            if (j < rowBytes.length) {
+              hexParts.push(rowBytes[j].toString(16).padStart(2, '0').toUpperCase());
+            } else {
+              hexParts.push('  ');
+            }
+          }
+          const hexStrLeft = hexParts.slice(0, 8).join(' ');
+          const hexStrRight = hexParts.slice(8, 16).join(' ');
+          const hexStr = `${hexStrLeft}  ${hexStrRight}`;
+          
+          let asciiStr = '';
+          for (const b of rowBytes) {
+            asciiStr += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+          }
+
+          return (
+            <div
+              key={rowIndex}
+              className="hex-row"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+                display: 'flex',
+                fontFamily: 'monospace',
+                whiteSpace: 'pre',
+                fontSize: '0.82rem',
+                lineHeight: `${virtualRow.size}px`,
+              }}
+            >
+              <span className="hex-offset" style={{ opacity: 0.5, marginRight: '16px' }}>{offsetStr}</span>
+              <span className="hex-bytes" style={{ marginRight: '24px' }}>{hexStr}</span>
+              <span className="hex-ascii">{asciiStr}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1248,11 +2774,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'image') {
-    return (
-      <div className="preview-frame media-frame">
-        <img src={blobUrl} alt={`${record.fileName} preview`} />
-      </div>
-    );
+    return <ImagePreview record={record} blobUrl={blobUrl} />;
   }
 
   if (record.previewKind === 'pdf') {
@@ -1266,13 +2788,7 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
   }
 
   if (record.previewKind === 'audio') {
-    return (
-      <div className="preview-frame">
-        <audio controls src={blobUrl}>
-          <a href={blobUrl} download={record.fileName}>Download audio</a>
-        </audio>
-      </div>
-    );
+    return <AudioPreview record={record} blobUrl={blobUrl} />;
   }
 
   if (record.previewKind === 'video') {
@@ -1289,19 +2805,24 @@ function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: 
     return <TextPreview record={record} />;
   }
 
-  return (
-    <div className="preview-frame unsupported-frame">
-      <FileArchive aria-hidden="true" size={34} />
-      <h3>No native preview</h3>
-      <p>This file type can still be downloaded and staged for pack workflows.</p>
-    </div>
-  );
+  return <HexPreview record={record} />;
 }
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
+  const [loadedLimit, setLoadedLimit] = useState(20000);
   const themeMode = usePreferredSyntaxTheme();
-  const preview = useMemo(() => textDecoder.decode(record.content.slice(0, textPreviewByteLimit)), [record.content]);
-  const isTruncated = record.content.byteLength > textPreviewByteLimit;
+
+  useEffect(() => {
+    setLoadedLimit(20000);
+  }, [record.id]);
+
+  const preview = useMemo(() => {
+    return textDecoder.decode(record.content.slice(0, loadedLimit));
+  }, [record.content, loadedLimit]);
+
+  const hasMoreToLoad = record.content.byteLength > loadedLimit && loadedLimit < 262144;
+  const isHardCeiling = record.content.byteLength > 262144 && loadedLimit >= 262144;
+
   const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null);
 
   useEffect(() => {
@@ -1321,35 +2842,272 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     };
   }, [preview, record.syntaxLanguage, themeMode]);
 
+  const [isFindOpen, setIsFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
+
+  const linesCount = highlightedCode ? highlightedCode.lines.length : 0;
+
+  const rowVirtualizer = useVirtualizer({
+    count: linesCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 20,
+    overscan: 10,
+  });
+
+  const linesText = useMemo(() => {
+    if (!highlightedCode) return [];
+    return highlightedCode.lines.map(line => line.map(t => t.content).join(''));
+  }, [highlightedCode]);
+
+  const matches = useMemo(() => {
+    return findQueryMatches(linesText, findQuery);
+  }, [linesText, findQuery]);
+
+  useEffect(() => {
+    setActiveMatchIdx(0);
+    if (matches.length > 0) {
+      rowVirtualizer.scrollToIndex(matches[0].lineIndex, { align: 'center' });
+    }
+  }, [matches, rowVirtualizer]);
+
+  const handleNextMatch = () => {
+    if (matches.length === 0) return;
+    const nextIdx = (activeMatchIdx + 1) % matches.length;
+    setActiveMatchIdx(nextIdx);
+    rowVirtualizer.scrollToIndex(matches[nextIdx].lineIndex, { align: 'center' });
+  };
+
+  const handlePrevMatch = () => {
+    if (matches.length === 0) return;
+    const prevIdx = (activeMatchIdx - 1 + matches.length) % matches.length;
+    setActiveMatchIdx(prevIdx);
+    rowVirtualizer.scrollToIndex(matches[prevIdx].lineIndex, { align: 'center' });
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFindOpen) {
+        setIsFindOpen(false);
+        parentRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isFindOpen]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      setIsFindOpen(true);
+      setTimeout(() => {
+        findInputRef.current?.focus();
+        findInputRef.current?.select();
+      }, 0);
+    } else if (e.key === 'Escape' && isFindOpen) {
+      e.preventDefault();
+      setIsFindOpen(false);
+      parentRef.current?.focus();
+    }
+  };
+
+  const handleLoadMore = () => {
+    setLoadedLimit(Math.min(262144, record.content.byteLength));
+  };
+
   if (!highlightedCode) {
     return (
-      <pre className="preview-frame text-frame">
-        {formatTextPreview(preview, isTruncated)}
-      </pre>
+      <div className="preview-frame text-frame" style={{ padding: '12px' }}>
+        Loading preview...
+      </div>
     );
   }
 
   return (
-    <pre
-      className="preview-frame text-frame highlighted-text-frame"
-      style={{
-        backgroundColor: highlightedCode.background,
-        color: highlightedCode.foreground,
-      }}
-    >
-      <code>
-        {highlightedCode.lines.map((line, lineIndex) => (
-          <span className="code-line" key={lineIndex.toString()}>
-            {line.map((token, tokenIndex) => (
-              <span className="syntax-token" key={`${lineIndex.toString()}-${tokenIndex.toString()}`} style={tokenStyle(token)}>
-                {token.content}
-              </span>
-            ))}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }} onKeyDown={handleKeyDown}>
+      {isFindOpen && (
+        <div className="preview-find-bar" style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 12px',
+          borderBottom: '1px solid var(--border)',
+          backgroundColor: 'var(--panel-2)',
+        }}>
+          <Search size={16} className="text-muted" />
+          <input
+            ref={findInputRef}
+            type="text"
+            placeholder="Find..."
+            aria-label="Find in preview"
+            value={findQuery}
+            onChange={(e) => {
+              setFindQuery(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                  handlePrevMatch();
+                } else {
+                  handleNextMatch();
+                }
+              }
+            }}
+            style={{
+              flex: 1,
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              padding: '2px 6px',
+              fontSize: '0.85rem',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+            }}
+          />
+          <span style={{ fontSize: '0.78rem', color: 'var(--muted)', minWidth: '55px', textAlign: 'center' }}>
+            {matches.length > 0 ? `${activeMatchIdx + 1} of ${matches.length}` : '0 of 0'}
           </span>
-        ))}
-        {isTruncated ? <span className="preview-truncation">[Preview truncated at 20 KB]</span> : null}
-      </code>
-    </pre>
+          <button
+            type="button"
+            onClick={handlePrevMatch}
+            disabled={matches.length === 0}
+            style={{ minHeight: '26px', padding: '0 6px', fontSize: '0.8rem' }}
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            onClick={handleNextMatch}
+            disabled={matches.length === 0}
+            style={{ minHeight: '26px', padding: '0 6px', fontSize: '0.8rem' }}
+          >
+            Next
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsFindOpen(false);
+              parentRef.current?.focus();
+            }}
+            style={{ minHeight: '26px', padding: '0 6px', fontSize: '0.8rem' }}
+          >
+            Close
+          </button>
+        </div>
+      )}
+      <div
+        ref={parentRef}
+        className="preview-frame text-frame highlighted-text-frame"
+        tabIndex={0}
+        style={{
+          backgroundColor: highlightedCode.background,
+          color: highlightedCode.foreground,
+          overflow: 'auto',
+          margin: '12px',
+          outline: 'none',
+          position: 'relative',
+        }}
+      >
+        <div className="virtual-spacer" style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+          {rowVirtualizer.getVirtualItems().map(virtualRow => {
+            const rowIndex = virtualRow.index;
+            const originalLine = highlightedCode.lines[rowIndex];
+            if (!originalLine) return null;
+
+            const lineMatches = matches.filter(m => m.lineIndex === rowIndex);
+            const displayTokens = splitLineTokensForMatches(
+              originalLine,
+              lineMatches,
+              matches[activeMatchIdx] ? matches[activeMatchIdx].globalIndex : null
+            );
+
+            return (
+              <div
+                key={rowIndex}
+                className="code-line"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  whiteSpace: 'pre',
+                  lineHeight: `${virtualRow.size}px`,
+                }}
+              >
+                {displayTokens.map((token, tokenIndex) => (
+                  <span
+                    className={
+                      token.isMatch
+                        ? token.isActiveMatch
+                          ? 'syntax-token preview-match active-match'
+                          : 'syntax-token preview-match'
+                        : 'syntax-token'
+                    }
+                    key={tokenIndex}
+                    style={{
+                      ...tokenStyle(token),
+                      ...(token.isMatch ? {
+                        backgroundColor: token.isActiveMatch ? 'var(--warning)' : 'rgba(253, 224, 71, 0.4)',
+                        color: '#000',
+                      } : {}),
+                    }}
+                  >
+                    {token.content}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {hasMoreToLoad && (
+        <div className="load-more-banner" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          margin: '0 12px 12px 12px',
+          border: '1px dashed var(--accent)',
+          borderRadius: '6px',
+          backgroundColor: 'color-mix(in srgb, var(--accent) 5%, transparent)',
+        }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+            Large file truncated at {formatBytes(loadedLimit)} (total size: {formatBytes(record.content.byteLength)}).
+          </span>
+          <button
+            type="button"
+            onClick={handleLoadMore}
+            style={{
+              minHeight: '26px',
+              padding: '0 10px',
+              borderColor: 'var(--accent)',
+              color: 'var(--accent)',
+              fontSize: '0.82rem',
+            }}
+          >
+            Load up to 256 KB
+          </button>
+        </div>
+      )}
+      {isHardCeiling && (
+        <div className="load-more-banner" style={{
+          padding: '8px 12px',
+          margin: '0 12px 12px 12px',
+          border: '1px solid var(--border)',
+          borderRadius: '6px',
+          backgroundColor: 'var(--panel-2)',
+          fontSize: '0.82rem',
+          color: 'var(--muted)',
+        }}>
+          This file exceeds the 256 KB preview limit. Truncated to preserve browser memory.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1376,10 +3134,6 @@ function getPreferredSyntaxTheme(): SyntaxThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function formatTextPreview(preview: string, isTruncated: boolean): string {
-  return isTruncated ? `${preview}\n\n[Preview truncated at 20 KB]` : preview;
-}
-
 function tokenStyle(token: HighlightedToken): CSSProperties {
   const style: CSSProperties = {
     color: token.color,
@@ -1396,6 +3150,129 @@ function tokenStyle(token: HighlightedToken): CSSProperties {
     ...style,
     ...token.htmlStyle,
   };
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="copy-btn"
+      onClick={() => { void handleCopy(); }}
+      title="Copy to clipboard"
+      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: '2px',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginLeft: '6px',
+        color: copied ? 'var(--success, #22c55e)' : 'var(--muted, #888)',
+        verticalAlign: 'middle',
+      }}
+    >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+}
+
+function MetaSidecarView({ siblingRecord }: { siblingRecord: PackageFileRecord }) {
+  const themeMode = usePreferredSyntaxTheme();
+  const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null);
+
+  const metaText = useMemo(() => {
+    return textDecoder.decode(siblingRecord.content);
+  }, [siblingRecord.content]);
+
+  const metaGuid = useMemo(() => readMetaGuid(siblingRecord.content), [siblingRecord.content]);
+  const metaImporter = useMemo(() => readDeclaredMetaImporter(siblingRecord.content), [siblingRecord.content]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHighlightedCode(null);
+
+    void highlightCode(metaText, 'yaml', themeMode)
+      .then(result => {
+        if (!cancelled) setHighlightedCode(result);
+      })
+      .catch(() => {
+        if (!cancelled) setHighlightedCode(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [metaText, themeMode]);
+
+  const importerString = metaImporter
+    ? metaImporter.kind === 'known'
+      ? metaImporter.type
+      : `Unknown (${metaImporter.name})`
+    : 'None';
+
+  return (
+    <div className="meta-sidecar-view" style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+      <h4 style={{ margin: '0 0 8px 0', fontSize: '0.85rem', fontWeight: 600 }}>Meta Sidecar Quick View</h4>
+      <div className="meta-sidecar-facts" style={{ fontSize: '0.78rem', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div>
+          <span style={{ color: 'var(--muted)' }}>Declared GUID: </span>
+          <code>{metaGuid ?? 'None'}</code>
+        </div>
+        <div>
+          <span style={{ color: 'var(--muted)' }}>Declared Importer: </span>
+          <code>{importerString}</code>
+        </div>
+      </div>
+      <div
+        className="preview-frame text-frame highlighted-text-frame"
+        style={{
+          backgroundColor: highlightedCode?.background ?? 'var(--panel-2)',
+          color: highlightedCode?.foreground ?? 'var(--text)',
+          overflow: 'auto',
+          maxHeight: '300px',
+          padding: '8px',
+          borderRadius: '4px',
+          fontSize: '0.78rem',
+          fontFamily: 'monospace',
+          border: '1px solid var(--border)',
+          whiteSpace: 'pre',
+          margin: 0,
+        }}
+      >
+        {highlightedCode ? (
+          highlightedCode.lines.map((line, lineIdx) => (
+            <div key={lineIdx} className="code-line" style={{ minHeight: '1.2em', whiteSpace: 'pre' }}>
+              {line.map((token, tokenIdx) => (
+                <span
+                  key={tokenIdx}
+                  className="syntax-token"
+                  style={tokenStyle(token)}
+                >
+                  {token.content}
+                </span>
+              ))}
+            </div>
+          ))
+        ) : (
+          <div>Loading meta sidecar...</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Metadata({ record, records }: { record: PackageFileRecord; records: PackageFileRecord[] }) {
@@ -1417,6 +3294,10 @@ function Metadata({ record, records }: { record: PackageFileRecord; records: Pac
     ['Expected importer', expectedImporter],
   ];
 
+  const siblingMetaRecord = record.extension !== 'meta' && !record.isUnityPreview
+    ? records.find(r => r.guid === record.guid && r.extension === 'meta')
+    : undefined;
+
   return (
     <section className="metadata">
       <h3>Metadata</h3>
@@ -1424,7 +3305,10 @@ function Metadata({ record, records }: { record: PackageFileRecord; records: Pac
         {rows.map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd>{value}</dd>
+            <dd style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+              <span style={{ overflowWrap: 'anywhere' }}>{value}</span>
+              {(label === 'Path' || label === 'GUID') && <CopyButton text={value} />}
+            </dd>
           </div>
         ))}
         {declaredMetaInfo.importer !== undefined ? (
@@ -1433,10 +3317,13 @@ function Metadata({ record, records }: { record: PackageFileRecord; records: Pac
             <dd>{declaredMetaInfo.importer}</dd>
           </div>
         ) : null}
-        {declaredMetaInfo.guid !== undefined ? (
+        {declaredMetaInfo.guid !== undefined && declaredMetaInfo.guid !== record.guid ? (
           <div key="Declared meta GUID">
             <dt>Declared meta GUID</dt>
-            <dd>{declaredMetaInfo.guid}</dd>
+            <dd style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+              <span style={{ overflowWrap: 'anywhere' }}>{declaredMetaInfo.guid}</span>
+              <CopyButton text={declaredMetaInfo.guid} />
+            </dd>
           </div>
         ) : null}
       </dl>
@@ -1459,6 +3346,7 @@ function Metadata({ record, records }: { record: PackageFileRecord; records: Pac
           </ul>
         </div>
       ) : null}
+      {siblingMetaRecord && <MetaSidecarView siblingRecord={siblingMetaRecord} />}
     </section>
   );
 }
@@ -1505,47 +3393,112 @@ function DiagnosticsDrawer({
   onNavigate: (recordId: string) => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
     <aside className="diagnostics-drawer" aria-label="Diagnostics">
       <div className="diagnostics-drawer-header">
-        <h2>Findings</h2>
-        <button type="button" className="icon-button" aria-label="Close diagnostics" onClick={onClose}>
-          <RefreshCw aria-hidden="true" size={16} />
+        <h2>Diagnostics & Findings</h2>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Close diagnostics"
+          onClick={onClose}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            color: 'var(--text)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.25rem',
+            lineHeight: 1,
+          }}
+        >
+          &times;
         </button>
       </div>
       <ul className="diagnostics-list">
-        {diagnostics.map((diagnostic, index) => (
-          <li key={`parser-${diagnostic.code}-${index.toString()}`} className={`diagnostic-row severity-${diagnostic.severity}`}>
-            <span className="diagnostic-badge">{severityLabel(diagnostic.severity)}</span>
-            <span className="diagnostic-code">{diagnostic.code}</span>
-            <span className="diagnostic-message">{diagnostic.message}</span>
-            {diagnostic.guid !== undefined && records.some(r => r.guid === diagnostic.guid) ? (
-              <button
-                type="button"
-                className="diagnostic-navigate"
-                onClick={() => {
-                  const record = records.find(r => r.guid === diagnostic.guid && !r.isUnityPreview && r.extension !== 'meta')
-                    ?? records.find(r => r.guid === diagnostic.guid);
-                  if (record) onNavigate(record.id);
-                }}
-              >
-                Go
-              </button>
-            ) : null}
-          </li>
-        ))}
-        {analysis.map((finding, index) => {
-          const target = findBestMatchingRecord(records, finding);
+        {diagnostics.map((diagnostic, index) => {
+          const target = diagnostic.guid !== undefined
+            ? (records.find(r => r.guid === diagnostic.guid && !r.isUnityPreview && r.extension !== 'meta')
+               ?? records.find(r => r.guid === diagnostic.guid))
+            : (diagnostic.path !== undefined
+               ? records.find(r => r.id.endsWith(`/${diagnostic.path}`) || r.id === diagnostic.path)
+               : undefined);
+          const pathToShow = target?.virtualPath ?? diagnostic.path;
+
           return (
-            <li key={`analysis-${finding.code}-${index.toString()}`} className={`diagnostic-row severity-${finding.severity}`}>
-              <span className="diagnostic-badge">{severityLabel(finding.severity)}</span>
-              <span className="diagnostic-code">{finding.code}</span>
-              <span className="diagnostic-message">{finding.message}</span>
-              {target !== undefined ? (
+            <li
+              key={`parser-${diagnostic.code}-${index.toString()}`}
+              className={`diagnostic-row severity-${diagnostic.severity}`}
+              style={{ cursor: target ? 'pointer' : 'default' }}
+              onClick={() => { if (target) onNavigate(target.id); }}
+            >
+              <div className="diagnostic-row-meta">
+                <span className="diagnostic-badge">{severityLabel(diagnostic.severity)}</span>
+                <span className="diagnostic-code">{diagnostic.code}</span>
+              </div>
+              <span className="diagnostic-message">{diagnostic.message}</span>
+              {pathToShow && (
+                <span className="diagnostic-path">
+                  <strong>Path:</strong> {pathToShow}
+                </span>
+              )}
+              {target ? (
                 <button
                   type="button"
                   className="diagnostic-navigate"
-                  onClick={() => { onNavigate(target.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(target.id);
+                  }}
+                >
+                  Go
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+        {analysis.map((finding, index) => {
+          const target = findBestMatchingRecord(records, finding);
+          const pathToShow = target?.virtualPath ?? finding.pathname ?? finding.path;
+
+          return (
+            <li
+              key={`analysis-${finding.code}-${index.toString()}`}
+              className={`diagnostic-row severity-${finding.severity}`}
+              style={{ cursor: target ? 'pointer' : 'default' }}
+              onClick={() => { if (target) onNavigate(target.id); }}
+            >
+              <div className="diagnostic-row-meta">
+                <span className="diagnostic-badge">{severityLabel(finding.severity)}</span>
+                <span className="diagnostic-code">{finding.code}</span>
+              </div>
+              <span className="diagnostic-message">{finding.message}</span>
+              {pathToShow && (
+                <span className="diagnostic-path">
+                  <strong>Path:</strong> {pathToShow}
+                </span>
+              )}
+              {target ? (
+                <button
+                  type="button"
+                  className="diagnostic-navigate"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate(target.id);
+                  }}
                 >
                   Go
                 </button>

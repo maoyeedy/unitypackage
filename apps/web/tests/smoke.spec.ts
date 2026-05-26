@@ -39,7 +39,7 @@ test('preview panel shows file content and metadata after clicking a record', as
   await tree.getByText('Changelog.md', { exact: true }).click();
   const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
   await expect(preview.getByText('[2.0.0]')).toBeVisible();
-  await expect(preview.getByText('af5e6a19cb4edd345ac8100ccb3a44b7')).toBeVisible();
+  await expect(preview.getByText('af5e6a19cb4edd345ac8100ccb3a44b7').first()).toBeVisible();
 });
 
 test('meta rows are not visible in tree when Include .meta with assets is off', async ({ page }) => {

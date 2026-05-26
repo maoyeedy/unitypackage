@@ -9,23 +9,39 @@ import { analyzeUnityPackageEntries, createMinimalMetaFor } from 'unitypackage-c
 import {
   buildExtensionGroups,
   buildTreeRows,
+  collectDiagCodes,
   entriesToRecords,
+  expandAncestors,
+  filterRecords,
+  findRecordByVirtualPath,
+  getAllFolderPaths,
+  getAncestorFolderPaths,
   getDeclaredMetaInfoForRecord,
   getExpectedImporterTypeForRecord,
   getExtensionFileRecordIds,
   getFolderRecordIds,
   getPreviewKind,
   getRangeRecordIds,
+  getKeyboardRangeSelection,
   getRecordCategory,
   getSelectionState,
   getSiblingMetaRecord,
   getSyntaxLanguage,
   getTreeFileRecordIds,
+  matchGlob,
+  matchRecord,
+  parseSize,
   resolveMetaSidecarSelection,
   routeAnalysisFindings,
+  sortRecords,
   toSidecarSelectableRecords,
   validatePackDraft,
+  computeHeadHash,
+  getRecentPackages,
+  addRecentPackage,
+  removeRecentPackage,
 } from './packageModel';
+
 import type { UnityPackageAnalysisFinding } from './packageModel';
 
 const encoder = new TextEncoder();
@@ -192,6 +208,46 @@ describe('package model helpers', () => {
     expect(assetsIds).toHaveLength(3);
     expect(getRangeRecordIds(treeIds, treeIds[0] ?? null, treeIds[2] ?? '')).toEqual(treeIds.slice(0, 3));
     expect(getRangeRecordIds(treeIds, 'missing', treeIds[2] ?? '')).toEqual([treeIds[2]]);
+  });
+
+  it('computes keyboard range selection correctly across navigable rows', () => {
+    const navigableRowIds = [
+      'folder:Assets',
+      'folder:Assets/Scripts',
+      'file_1',
+      'file_2',
+      'folder:Assets/Textures',
+      'file_3'
+    ];
+    const validFileIds = new Set(['file_1', 'file_2', 'file_3']);
+
+    // Select range adding elements
+    const baseSelected = new Set(['file_3']);
+    const selectedAdd = getKeyboardRangeSelection(
+      navigableRowIds,
+      'file_1',
+      'folder:Assets/Textures',
+      validFileIds,
+      baseSelected,
+      'add'
+    );
+    expect(Array.from(selectedAdd).sort()).toEqual(['file_1', 'file_2', 'file_3']);
+
+    // Select range removing elements
+    const baseSelected2 = new Set(['file_1', 'file_2', 'file_3']);
+    const selectedRemove = getKeyboardRangeSelection(
+      navigableRowIds,
+      'file_1',
+      'file_2',
+      validFileIds,
+      baseSelected2,
+      'remove'
+    );
+    expect(Array.from(selectedRemove).sort()).toEqual(['file_3']);
+
+    // Handle missing/invalid anchor
+    expect(getKeyboardRangeSelection(navigableRowIds, null, 'file_1', validFileIds, baseSelected, 'add')).toEqual(baseSelected);
+    expect(getKeyboardRangeSelection(navigableRowIds, 'missing', 'file_1', validFileIds, baseSelected, 'add')).toEqual(baseSelected);
   });
 
   it('reports selection state for group controls', () => {
@@ -576,6 +632,116 @@ describe('package model helpers', () => {
     const assetRecord = records.find(r => r.extension !== 'meta');
     expect(assetRecord?.findings).toHaveLength(1);
     expect(assetRecord?.findings[0]?.code).toBe('meta-missing');
+  });
+
+  describe('routing of specific finding codes (P5 requirements)', () => {
+    it('covers routing of meta-guid-mismatch to correct guid records', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta'),
+        },
+      ], []);
+      const findings: UnityPackageAnalysisFinding[] = [
+        {
+          code: 'meta-guid-mismatch',
+          severity: 'error',
+          message: 'Meta GUID mismatch',
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          path: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/asset.meta',
+        },
+      ];
+      routeAnalysisFindings(records, findings);
+      const guidRecords = records.filter(r => r.guid === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      expect(guidRecords).toHaveLength(2); // asset + meta
+      for (const r of guidRecords) {
+        expect(r.findings.some(f => f.code === 'meta-guid-mismatch')).toBe(true);
+      }
+    });
+
+    it('covers routing of meta-importer-mismatch to correct guid records', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          asset: encoder.encode('prefab'),
+          meta: encoder.encode('meta'),
+        },
+      ], []);
+      const findings: UnityPackageAnalysisFinding[] = [
+        {
+          code: 'meta-importer-mismatch',
+          severity: 'warning',
+          message: 'Meta importer mismatch',
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/A.prefab',
+          path: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/asset.meta',
+        },
+      ];
+      routeAnalysisFindings(records, findings);
+      const guidRecords = records.filter(r => r.guid === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      expect(guidRecords).toHaveLength(2); // asset + meta
+      for (const r of guidRecords) {
+        expect(r.findings.some(f => f.code === 'meta-importer-mismatch')).toBe(true);
+      }
+    });
+
+    it('covers routing of duplicate-pathname by fallback to pathname', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: 'Assets/Dup.cs',
+          asset: encoder.encode('a'),
+        },
+        {
+          guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          pathname: 'Assets/Dup.cs',
+          asset: encoder.encode('b'),
+        },
+      ], []);
+      const findings: UnityPackageAnalysisFinding[] = [
+        {
+          code: 'duplicate-pathname',
+          severity: 'error',
+          message: 'Duplicate pathname: Assets/Dup.cs',
+          pathname: 'Assets/Dup.cs',
+          path: 'Assets/Dup.cs',
+        },
+      ];
+      routeAnalysisFindings(records, findings);
+      const matched = records.filter(r => r.pathname === 'Assets/Dup.cs');
+      expect(matched).toHaveLength(2);
+      for (const r of matched) {
+        expect(r.findings.some(f => f.code === 'duplicate-pathname')).toBe(true);
+      }
+    });
+
+    it('covers routing of unsafe-pathname by guid match', () => {
+      const records = entriesToRecords([
+        {
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: '../Unsafe.cs',
+          asset: encoder.encode('unsafe'),
+        },
+      ], []);
+      const findings: UnityPackageAnalysisFinding[] = [
+        {
+          code: 'unsafe-pathname',
+          severity: 'error',
+          message: 'Unsafe pathname',
+          guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pathname: '../Unsafe.cs',
+          path: '../Unsafe.cs',
+        },
+      ];
+      routeAnalysisFindings(records, findings);
+      const matched = records.filter(r => r.guid === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      expect(matched).toHaveLength(1);
+      expect(matched[0]?.findings.some(f => f.code === 'unsafe-pathname')).toBe(true);
+    });
   });
 
   it('keeps pack export blocked until the creation API plan lands', () => {
@@ -1053,5 +1219,448 @@ describe('package model helpers', () => {
       const hasMismatch = records.some(r => r.findings.some(f => f.code === 'meta-importer-mismatch'));
       expect(hasMismatch).toBe(true);
     });
+  });
+
+  describe('P1 filter/sort helpers', () => {
+    describe('parseSize', () => {
+      it('returns null for empty string', () => {
+        expect(parseSize('')).toBeNull();
+        expect(parseSize('  ')).toBeNull();
+      });
+
+      it('returns null for invalid input', () => {
+        expect(parseSize('abc')).toBeNull();
+        expect(parseSize('1x')).toBeNull();
+      });
+
+      it('parses bare numbers as bytes', () => {
+        expect(parseSize('512')).toBe(512);
+        expect(parseSize('0')).toBe(0);
+      });
+
+      it('parses k/K suffix as kilobytes', () => {
+        expect(parseSize('100k')).toBe(102400);
+        expect(parseSize('1K')).toBe(1024);
+        expect(parseSize('1.5k')).toBe(1536);
+      });
+
+      it('parses m/M suffix as megabytes', () => {
+        expect(parseSize('2m')).toBe(2 * 1024 * 1024);
+        expect(parseSize('1M')).toBe(1024 * 1024);
+      });
+
+      it('parses g/G suffix as gigabytes', () => {
+        expect(parseSize('1g')).toBe(1024 * 1024 * 1024);
+        expect(parseSize('2G')).toBe(2 * 1024 * 1024 * 1024);
+      });
+    });
+
+    describe('matchGlob', () => {
+      it('matches exact strings', () => {
+        expect(matchGlob('Assets/Player.cs', 'Assets/Player.cs')).toBe(true);
+        expect(matchGlob('Assets/Player.cs', 'Assets/Enemy.cs')).toBe(false);
+      });
+
+      it('* matches within a single segment only', () => {
+        expect(matchGlob('*.cs', 'Player.cs')).toBe(true);
+        expect(matchGlob('*.cs', 'Assets/Player.cs')).toBe(false);
+      });
+
+      it('** matches zero or more path segments', () => {
+        expect(matchGlob('**/*.shader', 'Assets/Shaders/Lit.shader')).toBe(true);
+        expect(matchGlob('**/*.shader', 'Lit.shader')).toBe(true);
+        expect(matchGlob('**/*.shader', 'Assets/Shaders/Lit.cs')).toBe(false);
+      });
+
+      it('** at start matches root-level files too', () => {
+        expect(matchGlob('**/*.cs', 'Player.cs')).toBe(true);
+        expect(matchGlob('**/*.cs', 'Assets/Scripts/Player.cs')).toBe(true);
+      });
+
+      it('* does not match slashes (root-only pattern)', () => {
+        expect(matchGlob('*.cs', 'Assets/Player.cs')).toBe(false);
+      });
+
+      it('? matches exactly one character', () => {
+        expect(matchGlob('Player?.cs', 'Player1.cs')).toBe(true);
+        expect(matchGlob('Player?.cs', 'Player.cs')).toBe(false);
+      });
+
+      it('escapes regex special characters in literal parts', () => {
+        expect(matchGlob('Assets/A+B.cs', 'Assets/A+B.cs')).toBe(true);
+        expect(matchGlob('Assets/A+B.cs', 'Assets/AxB.cs')).toBe(false);
+      });
+    });
+
+    describe('matchRecord', () => {
+      const record = {
+        fileName: 'Player.cs',
+        virtualPath: 'Assets/Scripts/Player.cs',
+        guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+      } as Parameters<typeof matchRecord>[0];
+
+      it('returns true for empty query', () => {
+        expect(matchRecord(record, '', 'filename', false, false)).toBe(true);
+        expect(matchRecord(record, '   ', 'path', false, false)).toBe(true);
+      });
+
+      it('filename mode matches record.fileName substring', () => {
+        expect(matchRecord(record, 'Player', 'filename', false, false)).toBe(true);
+        expect(matchRecord(record, 'Enemy', 'filename', false, false)).toBe(false);
+      });
+
+      it('path mode matches record.virtualPath substring', () => {
+        expect(matchRecord(record, 'Scripts', 'path', false, false)).toBe(true);
+        expect(matchRecord(record, 'Textures', 'path', false, false)).toBe(false);
+      });
+
+      it('guid mode matches record.guid substring', () => {
+        expect(matchRecord(record, 'aaaa1111', 'guid', false, false)).toBe(true);
+        expect(matchRecord(record, 'bbbb', 'guid', false, false)).toBe(false);
+      });
+
+      it('AND-of-terms: all terms must match', () => {
+        expect(matchRecord(record, 'Player cs', 'filename', false, false)).toBe(true);
+        expect(matchRecord(record, 'Player Enemy', 'filename', false, false)).toBe(false);
+      });
+
+      it('case-sensitive mode respects casing', () => {
+        expect(matchRecord(record, 'player', 'filename', true, false)).toBe(false);
+        expect(matchRecord(record, 'Player', 'filename', true, false)).toBe(true);
+      });
+
+      it('case-insensitive mode ignores casing', () => {
+        expect(matchRecord(record, 'PLAYER', 'filename', false, false)).toBe(true);
+      });
+
+      it('glob mode uses matchGlob against the field', () => {
+        expect(matchRecord(record, '**/*.cs', 'path', false, true)).toBe(true);
+        expect(matchRecord(record, '**/*.png', 'path', false, true)).toBe(false);
+      });
+    });
+
+    describe('filterRecords', () => {
+      const makeRecords = () => entriesToRecords([
+        {
+          guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+          pathname: 'Assets/Scripts/Player.cs',
+          asset: encoder.encode('code'),
+          meta: encoder.encode('meta'),
+        },
+        {
+          guid: 'bbbb2222bbbb2222bbbb2222bbbb2222',
+          pathname: 'Assets/Textures/Icon.png',
+          asset: encoder.encode('png'),
+        },
+      ], []);
+
+      const baseOptions = {
+        query: '',
+        matchMode: 'filename' as const,
+        caseSensitive: false,
+        globMode: false,
+        categories: new Set<'asset' | 'meta' | 'preview'>(),
+        sizeMin: '',
+        sizeMax: '',
+        diagCodes: new Set<string>(),
+        includeMetaSidecars: true,
+      };
+
+      it('passes all records with empty options', () => {
+        const records = makeRecords();
+        expect(filterRecords(records, baseOptions)).toHaveLength(records.length);
+      });
+
+      it('hides meta records when includeMetaSidecars is false', () => {
+        const records = makeRecords();
+        const result = filterRecords(records, { ...baseOptions, includeMetaSidecars: false });
+        expect(result.every(r => r.extension !== 'meta')).toBe(true);
+      });
+
+      it('category chip filters Assets only', () => {
+        const records = makeRecords();
+        const result = filterRecords(records, { ...baseOptions, categories: new Set(['asset' as const]) });
+        expect(result.every(r => getRecordCategory(r) === 'asset')).toBe(true);
+        expect(result.length).toBeGreaterThan(0);
+      });
+
+      it('category chip filters Meta only', () => {
+        const records = makeRecords();
+        const result = filterRecords(records, { ...baseOptions, categories: new Set(['meta' as const]) });
+        expect(result.every(r => r.extension === 'meta')).toBe(true);
+      });
+
+      it('size range filters by bytes', () => {
+        const records = makeRecords();
+        // All records in the fixture are very small; filter min=1k excludes them
+        const result = filterRecords(records, { ...baseOptions, sizeMin: '1k' });
+        expect(result.every(r => r.byteLength >= 1024)).toBe(true);
+      });
+
+      it('size range max excludes large records', () => {
+        const records = makeRecords();
+        const result = filterRecords(records, { ...baseOptions, sizeMax: '0' });
+        expect(result.every(r => r.byteLength <= 0)).toBe(true);
+      });
+
+      it('diagCode filter matches records with that code', () => {
+        const records = entriesToRecords([
+          {
+            guid: 'cccc3333cccc3333cccc3333cccc3333',
+            pathname: 'Assets/C.png',
+            asset: encoder.encode('png'),
+            meta: undefined,
+          },
+        ], [
+          {
+            code: 'meta-missing',
+            guid: 'cccc3333cccc3333cccc3333cccc3333',
+            path: 'cccc3333cccc3333cccc3333cccc3333/asset.meta',
+            message: 'Missing meta.',
+            severity: 'warning',
+          },
+        ]);
+        const result = filterRecords(records, {
+          ...baseOptions,
+          diagCodes: new Set(['meta-missing']),
+        });
+        expect(result.some(r => r.diagnostics.some(d => d.code === 'meta-missing'))).toBe(true);
+        expect(result.every(r =>
+          r.diagnostics.some(d => d.code === 'meta-missing') ||
+          r.findings.some(f => f.code === 'meta-missing')
+        )).toBe(true);
+      });
+    });
+
+    describe('sortRecords', () => {
+      it('sorts by name ascending', () => {
+        const records = entriesToRecords([
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/Bravo.cs', asset: encoder.encode('b') },
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/Alpha.cs', asset: encoder.encode('a') },
+        ], []);
+        const sorted = sortRecords(records, 'name', 'asc');
+        expect(sorted[0]?.fileName.localeCompare(sorted[1]?.fileName ?? '') ?? 0).toBeLessThanOrEqual(0);
+      });
+
+      it('sorts by name descending', () => {
+        const records = entriesToRecords([
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/Alpha.cs', asset: encoder.encode('a') },
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/Bravo.cs', asset: encoder.encode('b') },
+        ], []);
+        const sorted = sortRecords(records, 'name', 'desc');
+        expect(sorted[0]?.fileName.localeCompare(sorted[1]?.fileName ?? '') ?? 0).toBeGreaterThanOrEqual(0);
+      });
+
+      it('sorts by size ascending', () => {
+        const records = entriesToRecords([
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/Big.cs', asset: encoder.encode('longer content here') },
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/Small.cs', asset: encoder.encode('x') },
+        ], []);
+        const sorted = sortRecords(records, 'size', 'asc');
+        const sizes = sorted.map(r => r.byteLength);
+        expect(sizes[0]).toBeLessThanOrEqual(sizes[1] ?? 0);
+      });
+
+      it('uses virtualPath as stable secondary sort by path', () => {
+        // Both records have the same byte size (single char)
+        const records = entriesToRecords([
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/Z.cs', asset: encoder.encode('x') },
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.cs', asset: encoder.encode('x') },
+        ], []);
+        const sorted = sortRecords(records, 'size', 'asc');
+        // Primary is tied; secondary (path) determines order
+        const assetRecords = sorted.filter(r => r.extension === 'cs');
+        expect(assetRecords[0]?.virtualPath.localeCompare(assetRecords[1]?.virtualPath ?? '') ?? 0).toBeLessThanOrEqual(0);
+      });
+
+      it('sorts by extension ascending', () => {
+        const records = entriesToRecords([
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/B.png', asset: encoder.encode('p') },
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.cs', asset: encoder.encode('a') },
+        ], []);
+        const sorted = sortRecords(records, 'extension', 'asc');
+        const nonMeta = sorted.filter(r => r.extension !== 'meta');
+        expect(nonMeta[0]?.extension.localeCompare(nonMeta[1]?.extension ?? '') ?? 0).toBeLessThanOrEqual(0);
+      });
+
+      it('sorts by guid ascending', () => {
+        const records = entriesToRecords([
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/B.cs', asset: encoder.encode('b') },
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.cs', asset: encoder.encode('a') },
+        ], []);
+        const sorted = sortRecords(records, 'guid', 'asc');
+        expect(sorted[0]?.guid.localeCompare(sorted[1]?.guid ?? '') ?? 0).toBeLessThanOrEqual(0);
+      });
+    });
+
+    describe('collectDiagCodes', () => {
+      it('returns empty array when no diagnostics', () => {
+        const records = entriesToRecords([
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.cs', asset: encoder.encode('a') },
+        ], []);
+        expect(collectDiagCodes(records)).toEqual([]);
+      });
+
+      it('collects parser diagnostic codes from records', () => {
+        const records = entriesToRecords([
+          {
+            guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+            pathname: 'Assets/A.png',
+            asset: encoder.encode('a'),
+            meta: undefined,
+          },
+        ], [
+          {
+            code: 'meta-missing',
+            guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
+            path: 'aaaa1111aaaa1111aaaa1111aaaa1111/asset.meta',
+            message: 'Missing meta.',
+            severity: 'warning',
+          },
+        ]);
+        const codes = collectDiagCodes(records);
+        expect(codes).toContain('meta-missing');
+      });
+
+      it('collects analysis finding codes routed to records', () => {
+        const records = entriesToRecords([
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.cs', asset: encoder.encode('a'), meta: encoder.encode('m') },
+        ], []);
+        routeAnalysisFindings(records, [
+          { code: 'unsafe-pathname', severity: 'error', message: 'test', guid: 'aaaa1111aaaa1111aaaa1111aaaa1111' },
+        ]);
+        const codes = collectDiagCodes(records);
+        expect(codes).toContain('unsafe-pathname');
+      });
+
+      it('returns codes sorted alphabetically', () => {
+        const records = entriesToRecords([
+          { guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', pathname: 'Assets/A.png', asset: encoder.encode('a'), meta: undefined },
+          { guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', pathname: 'Assets/B.cs', asset: encoder.encode('b'), meta: undefined },
+        ], [
+          { code: 'zero-byte-asset', guid: 'aaaa1111aaaa1111aaaa1111aaaa1111', path: '', message: 'z', severity: 'warning' },
+          { code: 'meta-missing', guid: 'bbbb2222bbbb2222bbbb2222bbbb2222', path: '', message: 'm', severity: 'warning' },
+        ]);
+        const codes = collectDiagCodes(records);
+        const sorted = [...codes].sort();
+        expect(codes).toEqual(sorted);
+      });
+    });
+  });
+});
+
+describe('P2 tree ergonomics helpers', () => {
+  it('getAncestorFolderPaths returns empty array for root-level files', () => {
+    expect(getAncestorFolderPaths('RootFile.cs')).toEqual([]);
+  });
+
+  it('getAncestorFolderPaths returns single ancestor for one-level-deep files', () => {
+    expect(getAncestorFolderPaths('Assets/Player.cs')).toEqual(['Assets']);
+  });
+
+  it('getAncestorFolderPaths returns ordered ancestors for deeply nested files', () => {
+    expect(getAncestorFolderPaths('Assets/Scripts/Player/Player.cs')).toEqual([
+      'Assets',
+      'Assets/Scripts',
+      'Assets/Scripts/Player',
+    ]);
+  });
+
+  it('getAncestorFolderPaths handles leading slashes gracefully', () => {
+    const result = getAncestorFolderPaths('/Assets/Scripts/Player.cs');
+    expect(result).toEqual(['Assets', 'Assets/Scripts']);
+  });
+
+  it('expandAncestors removes all ancestor paths from the collapsed set', () => {
+    const collapsed = new Set(['Assets', 'Assets/Scripts', 'Packages']);
+    const result = expandAncestors('Assets/Scripts/Player.cs', collapsed);
+    expect(result.has('Assets')).toBe(false);
+    expect(result.has('Assets/Scripts')).toBe(false);
+    // Unrelated collapsed folders are preserved
+    expect(result.has('Packages')).toBe(true);
+  });
+
+  it('expandAncestors returns an equivalent set when no ancestors are collapsed', () => {
+    const collapsed = new Set(['Packages']);
+    const result = expandAncestors('Assets/Scripts/Player.cs', collapsed);
+    expect([...result]).toEqual(['Packages']);
+  });
+
+  it('expandAncestors does not mutate the original set', () => {
+    const collapsed = new Set(['Assets']);
+    expandAncestors('Assets/File.cs', collapsed);
+    expect(collapsed.has('Assets')).toBe(true);
+  });
+
+  it('findRecordByVirtualPath locates the matching record', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Scripts/Player.cs',
+        asset: encoder.encode('code'),
+        meta: encoder.encode('meta'),
+      },
+    ], []);
+    const found = findRecordByVirtualPath(records, 'Assets/Scripts/Player.cs');
+    expect(found).toBeDefined();
+    expect(found?.guid).toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  });
+
+  it('findRecordByVirtualPath returns undefined when no record matches', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Scripts/Player.cs',
+        asset: encoder.encode('code'),
+      },
+    ], []);
+    expect(findRecordByVirtualPath(records, 'Assets/Scripts/Missing.cs')).toBeUndefined();
+  });
+
+  it('getAllFolderPaths returns deduplicated, sorted folder paths', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'Assets/Scripts/Player.cs',
+        asset: encoder.encode('code'),
+      },
+      {
+        guid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        pathname: 'Assets/Textures/Icon.png',
+        asset: encoder.encode('png'),
+      },
+    ], []);
+    const folders = getAllFolderPaths(records);
+    expect(folders).toContain('Assets');
+    expect(folders).toContain('Assets/Scripts');
+    expect(folders).toContain('Assets/Textures');
+    // No duplicates
+    expect(new Set(folders).size).toBe(folders.length);
+    // Sorted: Assets < Assets/Scripts < Assets/Textures
+    expect(folders.indexOf('Assets')).toBeLessThan(folders.indexOf('Assets/Scripts'));
+  });
+
+  it('getAllFolderPaths returns empty array for root-only records', () => {
+    const records = entriesToRecords([
+      {
+        guid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        pathname: 'RootFile.cs',
+        asset: encoder.encode('code'),
+      },
+    ], []);
+    expect(getAllFolderPaths(records)).toEqual([]);
+  });
+
+  it('computeHeadHash computes hash of file', async () => {
+    const file = new Blob([new TextEncoder().encode('Hello World')], { type: 'text/plain' });
+    const hash = await computeHeadHash(file);
+    expect(hash).toBeDefined();
+    expect(typeof hash).toBe('string');
+  });
+
+  it('IndexedDB operations gracefully handle environment without indexedDB', async () => {
+    await expect(getRecentPackages()).resolves.toEqual([]);
+    await expect(addRecentPackage({ key: 'test|123|abc', name: 'test', size: 123, headHash: 'abc' })).resolves.toBeUndefined();
+    await expect(removeRecentPackage('test|123|abc')).resolves.toBeUndefined();
   });
 });

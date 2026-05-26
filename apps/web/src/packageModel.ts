@@ -16,11 +16,25 @@ import {
 } from 'unitypackage-core';
 
 export type { MetaImporterType, PreviewKind, SidecarSelectableRecord, SyntaxLanguage, UnityPackageAnalysisFinding, ResolveMetaSidecarsResult } from 'unitypackage-core';
-export { resolveMetaSidecarSelection } from 'unitypackage-core';
+export { resolveMetaSidecarSelection, readMetaGuid, readDeclaredMetaImporter } from 'unitypackage-core';
 
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
 export type RecordCategory = 'asset' | 'meta' | 'preview';
+export type FilterMatchMode = 'filename' | 'path' | 'guid';
+export type SortKey = 'name' | 'size' | 'extension' | 'guid';
+export type SortDirection = 'asc' | 'desc';
+
+export interface FilterState {
+  query: string;
+  matchMode: FilterMatchMode;
+  caseSensitive: boolean;
+  globMode: boolean;
+  categories: ReadonlySet<RecordCategory>;
+  sizeMin: string;
+  sizeMax: string;
+  diagCodes: ReadonlySet<string>;
+}
 
 export interface PackageFileRecord {
   id: string;
@@ -283,6 +297,45 @@ export function getRangeRecordIds(orderedIds: readonly string[], anchorId: strin
   return orderedIds.slice(startIndex, endIndex + 1);
 }
 
+/**
+ * Keyboard range selection helper.
+ * Given the full list of navigable row IDs (including folders/headers),
+ * the anchor row ID, the target row ID, the set of all valid file record IDs,
+ * the base selected set, and the selection mode ('add' | 'remove'),
+ * returns the next set of selected file IDs.
+ */
+export function getKeyboardRangeSelection(
+  navigableRowIds: readonly string[],
+  anchorId: string | null,
+  targetId: string,
+  validFileIds: ReadonlySet<string>,
+  baseSelectedIds: ReadonlySet<string>,
+  mode: 'add' | 'remove',
+): Set<string> {
+  if (!anchorId) return new Set(baseSelectedIds);
+
+  const anchorIndex = navigableRowIds.indexOf(anchorId);
+  const targetIndex = navigableRowIds.indexOf(targetId);
+  if (anchorIndex === -1 || targetIndex === -1) return new Set(baseSelectedIds);
+
+  const startIndex = Math.min(anchorIndex, targetIndex);
+  const endIndex = Math.max(anchorIndex, targetIndex);
+  const rangeRowIds = navigableRowIds.slice(startIndex, endIndex + 1);
+
+  // Filter range to only include valid file IDs
+  const rangeFileIds = rangeRowIds.filter(id => validFileIds.has(id));
+
+  const next = new Set(baseSelectedIds);
+  for (const id of rangeFileIds) {
+    if (mode === 'add') {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+  }
+  return next;
+}
+
 export function getSelectionState(recordIds: readonly string[], selectedIds: ReadonlySet<string>): SelectionState {
   if (recordIds.length === 0) return 'none';
 
@@ -314,6 +367,222 @@ export function formatBytes(bytes: number): string {
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, index);
   return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+/**
+ * Parses a human byte-size shorthand string into a byte count.
+ *
+ * Accepts numeric strings with optional suffix: k/K = 1024, m/M = 1024^2,
+ * g/G = 1024^3. Bare numbers are treated as bytes. Returns null when the
+ * input is empty or not parseable.
+ *
+ * Examples: '100k' => 102400, '2m' => 2097152, '512' => 512.
+ */
+export function parseSize(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const match = /^(\d+(?:\.\d+)?)(k|m|g)?$/i.exec(trimmed);
+  if (!match) return null;
+  const value = parseFloat(match[1] ?? '0');
+  const suffix = (match[2] ?? '').toLowerCase();
+  if (suffix === 'k') return Math.round(value * 1024);
+  if (suffix === 'm') return Math.round(value * 1024 * 1024);
+  if (suffix === 'g') return Math.round(value * 1024 * 1024 * 1024);
+  return Math.round(value);
+}
+
+/**
+ * Tiny browser-safe glob matcher that supports:
+ * - `**` matching any number of path segments (including none)
+ * - `*`  matching any characters within a single segment
+ * - `?`  matching exactly one character
+ * - All other characters match literally.
+ *
+ * The path is tested against the full string (anchored at both ends).
+ */
+export function matchGlob(pattern: string, path: string): boolean {
+  // Build a regex from the glob pattern token-by-token.
+  // Process `**` before `*` to avoid double-substitution.
+  let regexSource = '';
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === '*' && pattern[i + 1] === '*') {
+      // `**` matches zero or more characters including slashes.
+      // When followed by a `/` separator we make both the `**/` and the empty
+      // match optional so that `**/*.cs` matches root-level `Player.cs`.
+      if (pattern[i + 2] === '/') {
+        regexSource += '(?:.+/)?';
+        i += 3; // skip **/
+      } else {
+        regexSource += '.*';
+        i += 2;
+      }
+    } else if (pattern[i] === '*') {
+      // `*` matches any character except `/`
+      regexSource += '[^/]*';
+      i += 1;
+    } else if (pattern[i] === '?') {
+      // `?` matches exactly one character (except `/`)
+      regexSource += '[^/]';
+      i += 1;
+    } else {
+      // Escape regex special chars
+      regexSource += (pattern[i] ?? '').replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      i += 1;
+    }
+  }
+  return new RegExp(`^${regexSource}$`).test(path);
+}
+
+/**
+ * Returns true when the record matches all space-separated terms in the query
+ * against the active match field.
+ *
+ * Terms are split on whitespace. An empty query always matches.
+ * When globMode is true each term is treated as a glob pattern matched against
+ * the full field value. Otherwise a simple substring (or prefix-exact) test is
+ * used.
+ */
+export function matchRecord(
+  record: PackageFileRecord,
+  query: string,
+  mode: FilterMatchMode,
+  caseSensitive: boolean,
+  globMode: boolean,
+): boolean {
+  const rawQuery = query.trim();
+  if (!rawQuery) return true;
+
+  const terms = rawQuery.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  let fieldValue: string;
+  switch (mode) {
+    case 'filename': fieldValue = record.fileName; break;
+    case 'path':     fieldValue = record.virtualPath; break;
+    case 'guid':     fieldValue = record.guid; break;
+  }
+
+  const field = caseSensitive ? fieldValue : fieldValue.toLowerCase();
+
+  return terms.every(rawTerm => {
+    const term = caseSensitive ? rawTerm : rawTerm.toLowerCase();
+    if (globMode) return matchGlob(term, field);
+    return field.includes(term);
+  });
+}
+
+export interface RecordFilterOptions {
+  query: string;
+  matchMode: FilterMatchMode;
+  caseSensitive: boolean;
+  globMode: boolean;
+  /** When empty Set, all categories pass. */
+  categories: ReadonlySet<RecordCategory>;
+  /** Raw string input; empty string means no min bound. */
+  sizeMin: string;
+  /** Raw string input; empty string means no max bound. */
+  sizeMax: string;
+  /** When empty Set, all diagnostic codes pass. */
+  diagCodes: ReadonlySet<string>;
+  includeMetaSidecars: boolean;
+}
+
+/**
+ * Applies all active filters to a record list.
+ *
+ * Ordering:
+ * 1. Text query (AND-of-terms, respects matchMode / caseSensitive / globMode)
+ * 2. Category chips (Assets, Meta, Previews)
+ * 3. Size range (sizeMin / sizeMax in parsed bytes)
+ * 4. Diagnostic-code chips (record must carry at least one matching code)
+ * 5. Meta-sidecar visibility (includeMetaSidecars)
+ */
+export function filterRecords(
+  records: PackageFileRecord[],
+  options: RecordFilterOptions,
+): PackageFileRecord[] {
+  const {
+    query,
+    matchMode,
+    caseSensitive,
+    globMode,
+    categories,
+    sizeMin,
+    sizeMax,
+    diagCodes,
+    includeMetaSidecars,
+  } = options;
+
+  const minBytes = parseSize(sizeMin);
+  const maxBytes = parseSize(sizeMax);
+  const hasCategories = categories.size > 0;
+  const hasDiagCodes = diagCodes.size > 0;
+
+  return records.filter(record => {
+    // 1. Meta-sidecar visibility
+    if (!includeMetaSidecars && record.extension === 'meta') return false;
+
+    // 2. Text query
+    if (!matchRecord(record, query, matchMode, caseSensitive, globMode)) return false;
+
+    // 3. Category chips
+    if (hasCategories && !categories.has(getRecordCategory(record))) return false;
+
+    // 4. Size range
+    if (minBytes !== null && record.byteLength < minBytes) return false;
+    if (maxBytes !== null && record.byteLength > maxBytes) return false;
+
+    // 5. Diagnostic-code chips
+    if (hasDiagCodes) {
+      const allCodes = [
+        ...record.diagnostics.map(d => d.code),
+        ...record.findings.map(f => f.code),
+      ];
+      if (!allCodes.some(code => diagCodes.has(code))) return false;
+    }
+
+    return true;
+  });
+}
+
+/**
+ * Returns a stable-sorted copy of records.
+ *
+ * Primary key: the selected SortKey. Secondary key: virtualPath (stable
+ * tie-breaker so ordering is deterministic even when primary values collide).
+ */
+export function sortRecords(
+  records: PackageFileRecord[],
+  key: SortKey,
+  direction: SortDirection,
+): PackageFileRecord[] {
+  const factor = direction === 'asc' ? 1 : -1;
+  return [...records].sort((a, b) => {
+    let primary = 0;
+    switch (key) {
+      case 'name':      primary = a.fileName.localeCompare(b.fileName); break;
+      case 'size':      primary = a.byteLength - b.byteLength; break;
+      case 'extension': primary = a.extension.localeCompare(b.extension); break;
+      case 'guid':      primary = a.guid.localeCompare(b.guid); break;
+    }
+    if (primary !== 0) return primary * factor;
+    // Stable secondary sort by path, always ascending
+    return a.virtualPath.localeCompare(b.virtualPath);
+  });
+}
+
+/**
+ * Collects all unique diagnostic codes present on the given records.
+ * Returns codes sorted alphabetically.
+ */
+export function collectDiagCodes(records: PackageFileRecord[]): string[] {
+  const codes = new Set<string>();
+  for (const record of records) {
+    for (const d of record.diagnostics) codes.add(d.code);
+    for (const f of record.findings) codes.add(f.code);
+  }
+  return [...codes].sort();
 }
 
 /**
@@ -397,6 +666,61 @@ export function getDeclaredMetaInfoForRecord(
   };
 }
 
+/**
+ * Returns the ordered ancestor folder paths for the given virtualPath.
+ * E.g. "Assets/Scripts/Player.cs" => ["Assets", "Assets/Scripts"].
+ */
+export function getAncestorFolderPaths(virtualPath: string): string[] {
+  const parts = virtualPath.split('/').filter(Boolean);
+  const ancestors: string[] = [];
+  for (let i = 1; i < parts.length; i += 1) {
+    ancestors.push(parts.slice(0, i).join('/'));
+  }
+  return ancestors;
+}
+
+/**
+ * Returns a new collapsed-folders Set with all ancestor folders of
+ * `virtualPath` removed (i.e. expanded) so the record is visible.
+ */
+export function expandAncestors(
+  virtualPath: string,
+  collapsedFolders: ReadonlySet<string>,
+): Set<string> {
+  const ancestors = getAncestorFolderPaths(virtualPath);
+  const next = new Set(collapsedFolders);
+  for (const ancestor of ancestors) {
+    next.delete(ancestor);
+  }
+  return next;
+}
+
+/**
+ * Finds the first record whose virtualPath matches `virtualPath`.
+ * Returns `undefined` when no match exists.
+ */
+export function findRecordByVirtualPath(
+  records: PackageFileRecord[],
+  virtualPath: string,
+): PackageFileRecord | undefined {
+  return records.find(record => record.virtualPath === virtualPath);
+}
+
+/**
+ * Returns all unique folder paths present in the given records, ordered
+ * by path (shallow before deep).
+ */
+export function getAllFolderPaths(records: PackageFileRecord[]): string[] {
+  const seen = new Set<string>();
+  for (const record of records) {
+    const parts = record.virtualPath.split('/').filter(Boolean);
+    for (let i = 1; i < parts.length; i += 1) {
+      seen.add(parts.slice(0, i).join('/'));
+    }
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
 export function validatePackDraft(records: PackageFileRecord[]): PackValidation {
   const messages: string[] = [];
   const stagedAssets = records.filter(record => !record.isUnityPreview && record.extension !== 'meta');
@@ -436,3 +760,119 @@ export function validatePackDraft(records: PackageFileRecord[]): PackValidation 
     createEntryCount: stagedAssets.length,
   };
 }
+
+export interface FileSystemFileHandle {
+  readonly kind: 'file';
+  readonly name: string;
+  getFile(): Promise<File>;
+  queryPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission(descriptor?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>;
+}
+
+export interface RecentPackage {
+  key: string;
+  name: string;
+  size: number;
+  headHash: string;
+  openedAt: number;
+  fileHandle?: FileSystemFileHandle | null;
+}
+
+export async function computeHeadHash(file: File | Blob): Promise<string> {
+  const size = file.size;
+  const chunk = file.slice(0, Math.min(size, 64 * 1024));
+  const arrayBuffer = await chunk.arrayBuffer();
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) {
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `mock-hash-${arrayBuffer.byteLength}`;
+}
+
+const DB_NAME = 'unitypackage-web-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'recents';
+
+export function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is not supported'));
+      return;
+    }
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(new Error(request.error?.message ?? 'Database open failed'));
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+      }
+    };
+  });
+}
+
+export async function getRecentPackages(): Promise<RecentPackage[]> {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
+      request.onerror = () => reject(new Error(request.error?.message ?? 'Failed to get records'));
+      request.onsuccess = () => {
+        const results = request.result as RecentPackage[];
+        results.sort((a, b) => b.openedAt - a.openedAt);
+        resolve(results);
+      };
+    });
+  } catch (err) {
+    console.error('Failed to get recents from IndexedDB:', err);
+    return [];
+  }
+}
+
+export async function addRecentPackage(recent: Omit<RecentPackage, 'openedAt'>): Promise<void> {
+  try {
+    const db = await openDatabase();
+    const item: RecentPackage = {
+      ...recent,
+      openedAt: Date.now(),
+    };
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.put(item);
+      request.onerror = () => reject(new Error(request.error?.message ?? 'Failed to put record'));
+      request.onsuccess = () => resolve();
+    });
+
+    const recents = await getRecentPackages();
+    if (recents.length > 10) {
+      const toDelete = recents.slice(10);
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      for (const entry of toDelete) {
+        store.delete(entry.key);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to add recent package to IndexedDB:', err);
+  }
+}
+
+export async function removeRecentPackage(key: string): Promise<void> {
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.delete(key);
+      request.onerror = () => reject(new Error(request.error?.message ?? 'Failed to delete record'));
+      request.onsuccess = () => resolve();
+    });
+  } catch (err) {
+    console.error('Failed to remove recent package from IndexedDB:', err);
+  }
+}
+

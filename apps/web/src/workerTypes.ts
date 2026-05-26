@@ -3,6 +3,11 @@ import type { PackageFileRecord } from './packageModel';
 
 export type { UnityPackageAnalysisFinding };
 
+export interface ParsePackageRequest {
+  buffer: ArrayBuffer;
+  maxOutputBytes?: number;
+}
+
 export type ParsePackageResponse =
   | { type: 'success'; records: PackageFileRecord[]; diagnostics: UnityPackageParseDiagnostic[]; analysis: UnityPackageAnalysisFinding[] }
   | { type: 'error'; message: string };
@@ -17,3 +22,4 @@ export type DownloadZipResponse =
   | { type: 'success'; data: Uint8Array }
   | { type: 'empty' }
   | { type: 'error'; message: string };
+
