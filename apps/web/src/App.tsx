@@ -1,75 +1,156 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   Archive,
+  ArrowDownUp,
+  ArrowUpDown,
   Boxes,
-  CheckSquare,
-  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Download,
-  File,
   FileArchive,
-  Folder,
-  FolderOpen,
+  Filter,
   Info,
   ListTree,
   PackagePlus,
   RefreshCw,
   Search,
-  Square,
+  Settings,
   UploadCloud,
 } from 'lucide-react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import type { UnityPackageParseDiagnostic } from 'unitypackage-core';
+import { estimateUnityPackageSize } from 'unitypackage-core';
+import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic } from 'unitypackage-core';
 
 import './App.css';
-import { getFileIconDescriptor } from './fileIcons';
-import type { DownloadZipResponse, ParsePackageResponse } from './workerTypes';
+import type { DownloadZipResponse, ParsePackageResponse, CreatePackageResponse } from './workerTypes';
 import {
   buildExtensionGroups,
   buildTreeRows,
-  formatBytes,
+  canStageRecordForPack,
+  collectDiagCodes,
+  expandAncestors,
+  filterRecords,
+  getAllFolderPaths,
   getExtensionFileRecordIds,
-  getFolderRecordIds,
-  getRangeRecordIds,
-  getSelectionState,
   getTreeFileRecordIds,
+  resolveMetaSidecarSelection,
+  routeAnalysisFindings,
+  sortRecords,
+  toSidecarSelectableRecords,
   validatePackDraft,
-  type ExtensionGroup,
+  getMimeType,
+  getPreviewKind,
+  getSyntaxLanguage,
+  computeHeadHash,
+  getRecentPackages,
+  addRecentPackage,
+  removeRecentPackage,
+  pairDroppedItems,
+  type RawDroppedFile,
   type GroupingMode,
   type PackageFileRecord,
   type PreviewKind,
-  type SelectionState,
-  type TreeRow,
+  type SortDirection,
+  type SortKey,
+  type SyntaxLanguage,
+  type UnityPackageAnalysisFinding,
   type WorkspaceMode,
+  type RecentPackage,
+  type FileSystemFileHandle,
 } from './packageModel';
-import { highlightCode, type HighlightedCode, type HighlightedToken, type SyntaxThemeMode } from './syntaxHighlight';
+
+import { ModeTabs } from './components/ModeTabs';
+import { DropZone } from './components/DropZone';
+import { Stats } from './components/Stats';
+import { Explorer } from './components/Explorer';
+import { PreviewPanel } from './components/PreviewPanel';
+import { DiagnosticsDrawer } from './components/DiagnosticsDrawer';
+import { PackPanel } from './components/PackPanel';
+import { ToastStack } from './components/ToastStack';
+import type { Toast } from './components/ToastStack';
+import { RecentsMenu } from './components/RecentsMenu.js';
+import { SettingsMenu } from './components/SettingsMenu.js';
 
 interface ParseResult {
   records: PackageFileRecord[];
   diagnostics: UnityPackageParseDiagnostic[];
+  analysis: UnityPackageAnalysisFinding[];
+}
+
+interface LaunchParams {
+  readonly targetURL?: string;
+  readonly files: readonly FileSystemFileHandle[];
+}
+
+interface LaunchQueue {
+  setConsumer(consumer: (launchParams: LaunchParams) => void | Promise<void>): void;
+}
+
+declare global {
+  interface Window {
+    launchQueue?: LaunchQueue;
+  }
 }
 
 interface AppErrorBoundaryState {
   hasError: boolean;
 }
 
-const textDecoder = new TextDecoder('utf-8', { fatal: false });
-const textPreviewByteLimit = 20000;
-const dragSelectionThresholdPx = 4;
-const dragAutoScrollEdgePx = 32;
-const dragAutoScrollStepPx = 18;
+const packDraftStorageKey = 'unitypackage:pack-draft:v1';
+const maxPersistedImportedRecordBytes = 2 * 1024 * 1024;
 
-type SelectionMode = 'add' | 'remove';
+function uint8ArrayToBase64(arr: Uint8Array): string {
+  let binary = '';
+  const len = arr.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(arr[i]);
+  }
+  return window.btoa(binary);
+}
 
-interface DragSelectionState {
-  pointerId: number;
-  startClientY: number;
-  startRecordId: string;
-  baseSelectedIds: Set<string>;
-  mode: SelectionMode;
-  active: boolean;
+function base64ToUint8Array(str: string): Uint8Array {
+  const binary = window.atob(str);
+  const len = binary.length;
+  const arr = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    arr[i] = binary.charCodeAt(i);
+  }
+  return arr;
+}
+
+interface SerializedRawImportedRecord {
+  id: string;
+  guid: string;
+  pathname: string;
+  virtualPath: string;
+  fileName: string;
+  extension: string;
+  mimeType: string;
+  isUnityPreview: boolean;
+  content: string;
+  byteLength: number;
+  hasAsset: boolean;
+  hasMeta: boolean;
+  hasPreview: boolean;
+  assetSize?: number;
+  metaSize?: number;
+  previewSize?: number;
+  duplicatePathCount: number;
+  previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
+  diagnostics: UnityPackageParseDiagnostic[];
+  findings: UnityPackageAnalysisFinding[];
+  meta?: string;
+  isRawImported?: boolean;
+  isDirectory?: boolean;
+}
+
+interface PackDraft {
+  stagedRecordIds?: string[];
+  importedRecords?: SerializedRawImportedRecord[];
+  gzipLevel?: number;
+  exportFilename?: string;
 }
 
 function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
@@ -81,7 +162,7 @@ function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
     worker.onmessage = ({ data }: MessageEvent<ParsePackageResponse>) => {
       worker.terminate();
       if (data.type === 'success') {
-        resolve({ records: data.records, diagnostics: data.diagnostics });
+        resolve({ records: data.records, diagnostics: data.diagnostics, analysis: data.analysis });
         return;
       }
 
@@ -141,6 +222,61 @@ function createDownloadZipInWorker(
   });
 }
 
+interface PackageCreationError extends Error {
+  diagnostics?: CreateUnityPackageDiagnostic[];
+}
+
+function createPackageInWorker(
+  stagedRecords: PackageFileRecord[],
+  allRecords: PackageFileRecord[],
+  gzipLevel?: number,
+  filename?: string,
+): Promise<{ bytes: Uint8Array; filename: string }> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./createPackage.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+
+    worker.onmessage = ({ data }: MessageEvent<CreatePackageResponse>) => {
+      worker.terminate();
+      if (data.type === 'success') {
+        resolve({ bytes: data.bytes, filename: data.filename });
+        return;
+      }
+
+      if (data.type === 'error') {
+        const err: PackageCreationError = new Error('Failed to create package');
+        err.diagnostics = data.diagnostics;
+        reject(err);
+        return;
+      }
+    };
+
+    worker.onerror = (event) => {
+      worker.terminate();
+      reject(new Error(event.message));
+    };
+
+    worker.onmessageerror = () => {
+      worker.terminate();
+      reject(new Error('Failed to receive package data'));
+    };
+
+    worker.postMessage({ stagedRecords, allRecords, gzipLevel, filename });
+  });
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = { hasError: false };
 
@@ -166,98 +302,791 @@ class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryS
   }
 }
 
+function getDefaultFilename(): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  return `unitypackage-${yyyy}${mm}${dd}-${hh}${min}.unitypackage`;
+}
+
 function AppContent() {
   const [mode, setMode] = useState<WorkspaceMode>('extract');
-  const [groupingMode, setGroupingMode] = useState<GroupingMode>('tree');
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(() => {
+    const val = localStorage.getItem('unitypackage-groupingMode');
+    return (val === 'tree' || val === 'extension') ? val : 'tree';
+  });
   const [records, setRecords] = useState<PackageFileRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<UnityPackageParseDiagnostic[]>([]);
+  const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
-  const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(new Set());
+  const [stagedRecordIds, setStagedRecordIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (draft.stagedRecordIds && Array.isArray(draft.stagedRecordIds)) {
+          return new Set(draft.stagedRecordIds);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load stagedRecordIds from draft:', err);
+    }
+    return new Set();
+  });
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  // detailsRecordId: overrides which record is shown in the details/preview pane
+  // without changing the explorer selection. Resets to null whenever activeRecordId
+  // changes so the pane tracks the explorer by default.
+  const [detailsRecordId, setDetailsRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
-  const [maintainStructure, setMaintainStructure] = useState(true);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [keyboardRangeBaseIds, setKeyboardRangeBaseIds] = useState<Set<string> | null>(null);
+  const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
+  const [isRecentsOpen, setIsRecentsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [maintainStructure, setMaintainStructure] = useState<boolean>(() => {
+    const stored = localStorage.getItem('unitypackage-maintainStructure');
+    return stored === null ? true : stored === 'true';
+  });
+  const [includeMetaSidecars, setIncludeMetaSidecars] = useState(false);
+  const [showPreviews, setShowPreviews] = useState<boolean>(() => {
+    return localStorage.getItem('unitypackage-showPreviews') === 'true';
+  });
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [caseSensitive] = useState<boolean>(() => {
+    return localStorage.getItem('unitypackage-caseSensitive') === 'true';
+  });
+  const [globMode] = useState<boolean>(() => {
+    return localStorage.getItem('unitypackage-globMode') === 'true';
+  });
+  const [diagCodeFilter, setDiagCodeFilter] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    const val = localStorage.getItem('unitypackage-sortKey');
+    return (val === 'name' || val === 'size' || val === 'extension' || val === 'guid') ? val : 'name';
+  });
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
+    const val = localStorage.getItem('unitypackage-sortDirection');
+    return (val === 'asc' || val === 'desc') ? val : 'asc';
+  });
+  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('leftPaneCollapsed') === 'true';
+  });
+  const [rightPaneCollapsed, setRightPaneCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('rightPaneCollapsed') === 'true';
+  });
+
+  const [recents, setRecents] = useState<RecentPackage[]>([]);
+  const [recentToPrompt, setRecentToPrompt] = useState<RecentPackage | null>(null);
   const [packageName, setPackageName] = useState<string | null>(null);
-  const [status, setStatus] = useState('Open a .unitypackage to inspect its contents.');
+  // currentOp: label shown while an async operation is in flight (cleared when done)
+  const [currentOp, setCurrentOp] = useState<string | null>(null);
+  // lastCompleted: fades out a few seconds after an op finishes
+  const [lastCompleted, setLastCompleted] = useState<string | null>(null);
+  const lastCompletedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastCounterRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPacking, setIsPacking] = useState(false);
+  const [packDiagnostics, setPackDiagnostics] = useState<CreateUnityPackageDiagnostic[]>([]);
+  const [gzipLevel, setGzipLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (typeof draft.gzipLevel === 'number') {
+          return draft.gzipLevel;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load gzipLevel from draft:', err);
+    }
+    return 6;
+  });
+  const [exportFilename, setExportFilename] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (typeof draft.exportFilename === 'string') {
+          return draft.exportFilename;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load exportFilename from draft:', err);
+    }
+    return getDefaultFilename();
+  });
+  const [successExport, setSuccessExport] = useState<{ bytes: Uint8Array; filename: string } | null>(null);
+  const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
+  const [importedRecords, setImportedRecords] = useState<PackageFileRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(packDraftStorageKey);
+      if (saved) {
+        const draft = JSON.parse(saved) as PackDraft;
+        if (draft.importedRecords && Array.isArray(draft.importedRecords)) {
+          return draft.importedRecords.map((r: SerializedRawImportedRecord) => {
+            const mapped: PackageFileRecord = {
+              id: r.id,
+              guid: r.guid,
+              pathname: r.pathname,
+              virtualPath: r.virtualPath,
+              fileName: r.fileName,
+              extension: r.extension,
+              mimeType: r.mimeType,
+              isUnityPreview: r.isUnityPreview,
+              content: r.content ? base64ToUint8Array(r.content) : new Uint8Array(),
+              byteLength: r.byteLength,
+              hasAsset: r.hasAsset,
+              hasMeta: r.hasMeta,
+              hasPreview: r.hasPreview,
+              assetSize: r.assetSize,
+              metaSize: r.metaSize,
+              previewSize: r.previewSize,
+              duplicatePathCount: r.duplicatePathCount,
+              previewKind: r.previewKind,
+              syntaxLanguage: r.syntaxLanguage,
+              diagnostics: r.diagnostics,
+              findings: r.findings,
+              meta: r.meta ? base64ToUint8Array(r.meta) : undefined,
+              isRawImported: r.isRawImported,
+              isDirectory: r.isDirectory,
+            };
+            return mapped;
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load importedRecords from draft:', err);
+    }
+    return [];
+  });
+
+  const addToast = useCallback((message: string, kind: Toast['kind'] = 'success') => {
+    toastCounterRef.current += 1;
+    const id = toastCounterRef.current;
+    setToasts(prev => [...prev, { id, message, kind }]);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const completeOp = useCallback((label: string) => {
+    setCurrentOp(null);
+    setLastCompleted(label);
+    if (lastCompletedTimerRef.current !== null) {
+      clearTimeout(lastCompletedTimerRef.current);
+    }
+    lastCompletedTimerRef.current = setTimeout(() => {
+      setLastCompleted(null);
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (lastCompletedTimerRef.current !== null) {
+        clearTimeout(lastCompletedTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 200);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const filteredRecords = useMemo(() => {
-    const normalizedQuery = debouncedQuery.trim().toLowerCase();
-    if (!normalizedQuery || !/[a-z0-9]/i.test(normalizedQuery)) return records;
-    return records.filter(record =>
-      record.fileName.toLowerCase().includes(normalizedQuery) ||
-      record.guid.toLowerCase().includes(normalizedQuery)
-    );
-  }, [debouncedQuery, records]);
+  useEffect(() => {
+    try {
+      if (stagedRecordIds.size === 0 && importedRecords.length === 0) {
+        localStorage.removeItem(packDraftStorageKey);
+      } else {
+        const importedPayloadBytes = importedRecords.reduce(
+          (sum, record) => sum + record.content.byteLength + (record.meta?.byteLength ?? 0),
+          0
+        );
+        const shouldPersistImportedRecords = importedPayloadBytes <= maxPersistedImportedRecordBytes;
+        const draft: PackDraft = {
+          stagedRecordIds: Array.from(stagedRecordIds),
+          gzipLevel,
+          exportFilename,
+        };
+
+        if (shouldPersistImportedRecords) {
+          draft.importedRecords = importedRecords.map(r => ({
+            ...r,
+            content: uint8ArrayToBase64(r.content),
+            meta: r.meta ? uint8ArrayToBase64(r.meta) : undefined,
+          }));
+        }
+
+        localStorage.setItem(packDraftStorageKey, JSON.stringify(draft));
+      }
+    } catch (err) {
+      console.warn('Failed to persist pack draft:', err);
+    }
+  }, [stagedRecordIds, importedRecords, gzipLevel, exportFilename]);
+
+  useEffect(() => {
+    if (records.length > 0) {
+      setStagedRecordIds(prev => {
+        const next = new Set<string>();
+        let changed = false;
+        for (const id of prev) {
+          if (records.some(r => r.id === id)) {
+            next.add(id);
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [records]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-groupingMode', groupingMode);
+  }, [groupingMode]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-sortKey', sortKey);
+  }, [sortKey]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-sortDirection', sortDirection);
+  }, [sortDirection]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-globMode', String(globMode));
+  }, [globMode]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-caseSensitive', String(caseSensitive));
+  }, [caseSensitive]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-maintainStructure', String(maintainStructure));
+  }, [maintainStructure]);
+
+  useEffect(() => {
+    localStorage.setItem('unitypackage-showPreviews', String(showPreviews));
+  }, [showPreviews]);
+
+  useEffect(() => {
+    localStorage.setItem('leftPaneCollapsed', String(leftPaneCollapsed));
+  }, [leftPaneCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('rightPaneCollapsed', String(rightPaneCollapsed));
+  }, [rightPaneCollapsed]);
+
+  useEffect(() => {
+    void getRecentPackages().then(setRecents);
+  }, []);
+
+  const visibleRecords = useMemo(() => {
+    const filtered = filterRecords(records, {
+      query: debouncedQuery,
+      caseSensitive,
+      globMode,
+      diagCodes: diagCodeFilter,
+      includeMetaSidecars,
+      showPreviews,
+    });
+    return sortRecords(filtered, sortKey, sortDirection);
+  }, [
+    records, debouncedQuery, caseSensitive, globMode,
+    diagCodeFilter, includeMetaSidecars, showPreviews,
+    sortKey, sortDirection,
+  ]);
+
+  const visibleExtensions = useMemo(() => {
+    const exts = new Set<string>();
+    for (const record of visibleRecords) {
+      exts.add(record.extension || 'no extension');
+    }
+    return [...exts].sort();
+  }, [visibleRecords]);
+
+  const invertSelection = useCallback(() => {
+    setSelectedRecordIds(previous => {
+      const next = new Set(previous);
+      for (const record of visibleRecords) {
+        if (next.has(record.id)) {
+          next.delete(record.id);
+        } else {
+          next.add(record.id);
+        }
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const selectByExtension = useCallback((ext: string) => {
+    setSelectedRecordIds(previous => {
+      const next = new Set(previous);
+      for (const record of visibleRecords) {
+        const recordExt = record.extension || 'no extension';
+        if (recordExt === ext) {
+          next.add(record.id);
+        }
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const activateRecord = useCallback((id: string) => {
+    setActiveRecordId(id);
+    setDetailsRecordId(null);
+    setFocusedRowId(id);
+    setSelectionAnchorId(id);
+  }, []);
 
   const activeRecord = useMemo(() => {
-    return records.find(record => record.id === activeRecordId) ?? filteredRecords[0] ?? null;
-  }, [activeRecordId, filteredRecords, records]);
+    return records.find(record => record.id === activeRecordId) ?? visibleRecords[0] ?? null;
+  }, [activeRecordId, visibleRecords, records]);
+
+  // The record shown in the details pane. Follows the explorer selection by default;
+  // overridden when the user navigates to a sibling from the Related row.
+  const detailsRecord = useMemo(() => {
+    if (detailsRecordId !== null) {
+      const found = records.find(r => r.id === detailsRecordId);
+      if (found) return found;
+    }
+    return activeRecord;
+  }, [detailsRecordId, records, activeRecord]);
 
   const stagedRecords = useMemo(() => {
-    return records.filter(record => stagedRecordIds.has(record.id));
-  }, [records, stagedRecordIds]);
+    const parsedStaged = records.filter(record => stagedRecordIds.has(record.id));
+    return [...parsedStaged, ...importedRecords];
+  }, [records, stagedRecordIds, importedRecords]);
+
+  const stagedEntries = useMemo(() => {
+    const stagedAssets = stagedRecords.filter(
+      record => !record.isUnityPreview && record.extension !== 'meta'
+    );
+    return stagedAssets.map(assetRecord => {
+      let metaBytes = assetRecord.meta;
+      if (!metaBytes) {
+        const metaRecord = stagedRecords.find(
+          r => r.guid === assetRecord.guid && r.extension === 'meta'
+        ) ?? records.find(
+          r => r.guid === assetRecord.guid && r.extension === 'meta'
+        );
+        if (metaRecord) {
+          metaBytes = metaRecord.content;
+        }
+      }
+
+      return {
+        guid: assetRecord.guid,
+        pathname: assetRecord.pathname,
+        meta: metaBytes ?? new Uint8Array(),
+        asset: assetRecord.hasAsset ? assetRecord.content : undefined,
+      };
+    });
+  }, [stagedRecords, records]);
+
+  useEffect(() => {
+    setSuccessExport(null);
+  }, [stagedEntries, gzipLevel, exportFilename]);
+
+  const estimatedSize = useMemo(() => {
+    if (stagedEntries.length === 0) return 0;
+    return estimateUnityPackageSize(stagedEntries).tarBytes;
+  }, [stagedEntries]);
 
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
-  const extensionGroups = useMemo(() => buildExtensionGroups(filteredRecords), [filteredRecords]);
-  const treeRows = useMemo(() => buildTreeRows(filteredRecords, collapsedFolders), [filteredRecords, collapsedFolders]);
+  const extensionGroups = useMemo(() => buildExtensionGroups(visibleRecords), [visibleRecords]);
+  const treeRows = useMemo(() => buildTreeRows(visibleRecords, collapsedFolders), [visibleRecords, collapsedFolders]);
   const treeFileRecordIds = useMemo(() => getTreeFileRecordIds(treeRows), [treeRows]);
   const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
-  const packValidation = useMemo(() => validatePackDraft(stagedRecords), [stagedRecords]);
+  const packValidation = useMemo(() => validatePackDraft(stagedRecords, records), [stagedRecords, records]);
 
-  const handlePackageFile = async (file: File) => {
+  const handlePackageFileWithHandle = async (file: File, fileHandle: FileSystemFileHandle | null) => {
     setIsLoading(true);
     setError(null);
     setPackageName(file.name);
-    setStatus(`Parsing ${file.name}`);
+    setCurrentOp(`Parsing ${file.name}…`);
     setRecords([]);
     setDiagnostics([]);
+    setAnalysis([]);
+    setIsDiagnosticsOpen(false);
     setSelectedRecordIds(new Set());
-    setStagedRecordIds(new Set());
     setActiveRecordId(null);
+    setDetailsRecordId(null);
     setCollapsedFolders(new Set());
+    setQuery('');
+    setDebouncedQuery('');
+    setDiagCodeFilter(new Set());
 
     try {
       const startedAt = performance.now();
       const result = await parsePackageInWorker(await file.arrayBuffer());
       const elapsed = Math.round(performance.now() - startedAt);
+      routeAnalysisFindings(result.records, result.analysis);
       setRecords(result.records);
       setDiagnostics(result.diagnostics);
+      setAnalysis(result.analysis);
       setActiveRecordId(result.records[0]?.id ?? null);
-      setStatus(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms.`);
+      completeOp(`Parsed ${file.name}`);
+      addToast(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms`);
+
+      const headHash = await computeHeadHash(file);
+      const recentKey = `${file.name}|${file.size.toString()}|${headHash}`;
+      await addRecentPackage({
+        key: recentKey,
+        name: file.name,
+        size: file.size,
+        headHash,
+        fileHandle,
+      });
+      const updatedRecents = await getRecentPackages();
+      setRecents(updatedRecents);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to parse package';
       setError(message);
-      setStatus('Package parsing failed.');
+      setCurrentOp(null);
+      addToast(`Parse failed: ${message}`, 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handlePackageFile = (file: File) => {
+    void handlePackageFileWithHandle(file, null);
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'launchQueue' in window && window.launchQueue) {
+      window.launchQueue.setConsumer(async (launchParams) => {
+        if (launchParams.files && launchParams.files.length > 0) {
+          const fileHandle = launchParams.files[0];
+          if (fileHandle) {
+            try {
+              const file = await fileHandle.getFile();
+              void handlePackageFileWithHandle(file, fileHandle);
+            } catch (err) {
+              console.error('Failed to open file from launchQueue:', err);
+            }
+          }
+        }
+      });
+    }
+  }, []);
+
+  const handleRecentClick = async (recent: RecentPackage) => {
+    if (recent.fileHandle) {
+      try {
+        const handle = recent.fileHandle;
+        const options = { mode: 'read' as const };
+        let permission = await handle.queryPermission(options);
+        if (permission !== 'granted') {
+          permission = await handle.requestPermission(options);
+        }
+        if (permission === 'granted') {
+          const file = await handle.getFile();
+          void handlePackageFileWithHandle(file, handle);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to access file handle:', err);
+      }
+    }
+    setRecentToPrompt(recent);
+  };
+
+  const handleRemoveRecent = async (key: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    await removeRecentPackage(key);
+    const updatedRecents = await getRecentPackages();
+    setRecents(updatedRecents);
+  };
+
+  const handleClearAllRecents = async () => {
+    for (const recent of recents) {
+      await removeRecentPackage(recent.key);
+    }
+    setRecents([]);
+  };
+
+  const handleResetSettings = () => {
+    const keysToRemove = [
+      'unitypackage-groupingMode',
+      'unitypackage-sortKey',
+      'unitypackage-sortDirection',
+      'unitypackage-maintainStructure',
+      'unitypackage-showPreviews',
+      'unitypackage-caseSensitive',
+      'unitypackage-globMode',
+    ];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+    setGroupingMode('tree');
+    setSortKey('name');
+    setSortDirection('asc');
+    setMaintainStructure(true);
+    setShowPreviews(false);
+  };
+
+  const handlePathnameChange = useCallback((id: string, newPathname: string) => {
+    setImportedRecords(prev =>
+      prev.map(r => {
+        if (r.id === id) {
+          const parts = newPathname.split('/');
+          const fileName = parts[parts.length - 1] ?? '';
+          const extension = fileName.includes('.') ? fileName.split('.').pop() ?? '' : '';
+          return {
+            ...r,
+            pathname: newPathname,
+            virtualPath: newPathname,
+            fileName,
+            extension,
+            mimeType: getMimeType(newPathname),
+            syntaxLanguage: getSyntaxLanguage(newPathname),
+            previewKind: r.isDirectory ? 'unsupported' : getPreviewKind(newPathname, r.content),
+          };
+        }
+        return r;
+      })
+    );
+  }, []);
+
+  const handleImportFiles = useCallback(async (dataTransfer: DataTransfer) => {
+    setCurrentOp('Importing files…');
+    setError(null);
+
+    interface DroppedItem {
+      name: string;
+      relativePath: string;
+      isFile: boolean;
+      isDirectory: boolean;
+      file?: File;
+    }
+
+    try {
+      const droppedItems: DroppedItem[] = [];
+      const items = Array.from(dataTransfer.items || []);
+      const entries: FileSystemEntry[] = [];
+      const hasWebKitGetAsEntry = items.length > 0 && typeof items[0].webkitGetAsEntry === 'function';
+      if (hasWebKitGetAsEntry) {
+        for (const item of items) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            entries.push(entry);
+          }
+        }
+      }
+      const fallbackFiles = Array.from(dataTransfer.files || []);
+
+      const walkEntry = async (entry: FileSystemEntry, pathPrefix = ''): Promise<void> => {
+        const relativePath = pathPrefix ? `${pathPrefix}/${entry.name}` : entry.name;
+        if (entry.isFile) {
+          const file = await new Promise<File>((resolve, reject) => {
+            (entry as FileSystemFileEntry).file(resolve, reject);
+          });
+          droppedItems.push({
+            name: entry.name,
+            relativePath,
+            isFile: true,
+            isDirectory: false,
+            file,
+          });
+        } else if (entry.isDirectory) {
+          droppedItems.push({
+            name: entry.name,
+            relativePath,
+            isFile: false,
+            isDirectory: true,
+          });
+          const dirReader = (entry as FileSystemDirectoryEntry).createReader();
+          const readEntries = (): Promise<FileSystemEntry[]> => {
+            return new Promise((resolve, reject) => {
+              dirReader.readEntries(resolve, reject);
+            });
+          };
+
+          const dirEntries: FileSystemEntry[] = [];
+          try {
+            let chunk = await readEntries();
+            while (chunk.length > 0) {
+              dirEntries.push(...chunk);
+              chunk = await readEntries();
+            }
+          } catch (err) {
+            console.error('Error reading directory entries:', err);
+          }
+
+          for (const child of dirEntries) {
+            await walkEntry(child, relativePath);
+          }
+        }
+      };
+
+      if (hasWebKitGetAsEntry && entries.length > 0) {
+        for (const entry of entries) {
+          await walkEntry(entry);
+        }
+      } else {
+        // Fallback to top-level files
+        for (const file of fallbackFiles) {
+          droppedItems.push({
+            name: file.name,
+            relativePath: file.name,
+            isFile: true,
+            isDirectory: false,
+            file,
+          });
+        }
+      }
+
+      // Convert DroppedItem to RawDroppedFile (load content as Uint8Array)
+      const rawFiles: RawDroppedFile[] = await Promise.all(
+        droppedItems.map(async item => {
+          let content = new Uint8Array();
+          if (item.file) {
+            const buf = await item.file.arrayBuffer();
+            content = new Uint8Array(buf);
+          }
+          return {
+            relativePath: item.relativePath,
+            content,
+            isDirectory: item.isDirectory,
+          };
+        })
+      );
+
+      // Collect existing GUIDs
+      const existingGuids = new Set<string>();
+      for (const record of records) {
+        if (stagedRecordIds.has(record.id)) {
+          existingGuids.add(record.guid);
+        }
+      }
+      for (const r of importedRecords) {
+        existingGuids.add(r.guid);
+      }
+
+      // Pair dropped items
+      const paired = pairDroppedItems(rawFiles, existingGuids);
+
+      // Map PairedDroppedItem to PackageFileRecord
+      const newImportedRecords: PackageFileRecord[] = paired.map(item => {
+        const parts = item.pathname.split('/');
+        const fileName = parts[parts.length - 1] ?? '';
+        const extension = fileName.includes('.') ? fileName.split('.').pop() ?? '' : '';
+
+        return {
+          id: `raw-${item.guid}`,
+          guid: item.guid,
+          pathname: item.pathname,
+          virtualPath: item.pathname,
+          fileName,
+          extension,
+          mimeType: getMimeType(item.pathname),
+          isUnityPreview: false,
+          content: item.content,
+          byteLength: item.content.byteLength,
+          hasAsset: !item.isDirectory,
+          hasMeta: true,
+          hasPreview: false,
+          assetSize: item.isDirectory ? undefined : item.content.byteLength,
+          metaSize: item.meta.byteLength,
+          duplicatePathCount: 0,
+          previewKind: item.isDirectory ? 'unsupported' : getPreviewKind(item.pathname, item.content),
+          syntaxLanguage: getSyntaxLanguage(item.pathname),
+          diagnostics: [],
+          findings: [],
+          meta: item.meta,
+          isRawImported: true,
+          isDirectory: item.isDirectory,
+        };
+      });
+
+      setImportedRecords(prev => [...prev, ...newImportedRecords]);
+      setCurrentOp(null);
+      addToast(`Imported ${newImportedRecords.length.toString()} entries`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to import files';
+      setError(msg);
+      setCurrentOp(null);
+      addToast(`Import failed: ${msg}`, 'error');
+    }
+  }, [records, stagedRecordIds, importedRecords, addToast]);
+
   const handleDownload = async (targetRecords: PackageFileRecord[], fileName: string, recordIds?: string[]) => {
     setError(null);
+    setCurrentOp('Creating ZIP…');
     try {
       const data = await createDownloadZipInWorker(targetRecords, maintainStructure, recordIds);
       if (!data) {
-        setError('There are no files to download.');
+        setCurrentOp(null);
+        addToast('No files to download.', 'error');
         return;
       }
 
       downloadBlob(new Blob([new Uint8Array(data)], { type: 'application/zip' }), fileName);
+      setCurrentOp(null);
+      addToast(`ZIP downloaded: ${fileName}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to create ZIP file';
       setError(message);
+      setCurrentOp(null);
+      addToast(`ZIP failed: ${message}`, 'error');
+    }
+  };
+
+  const handleExport = async () => {
+    setIsPacking(true);
+    setPackDiagnostics([]);
+    setSuccessExport(null);
+    setCurrentOp('Exporting package…');
+    try {
+      let filename = exportFilename.trim();
+      if (!filename) {
+        filename = 'export.unitypackage';
+      } else if (!filename.toLowerCase().endsWith('.unitypackage')) {
+        filename += '.unitypackage';
+      }
+
+      const result = await createPackageInWorker(stagedRecords, records, gzipLevel, filename);
+      setSuccessExport({
+        bytes: result.bytes,
+        filename: result.filename,
+      });
+      const blob = new Blob([result.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
+      downloadBlob(blob, result.filename);
+      setCurrentOp(null);
+      addToast(`Exported ${result.filename}`);
+    } catch (caught) {
+      setCurrentOp(null);
+      if (caught instanceof Error) {
+        const err = caught as PackageCreationError;
+        if (err.diagnostics) {
+          setPackDiagnostics(err.diagnostics);
+          addToast('Export failed: see diagnostics in the Pack panel.', 'error');
+        } else {
+          setError(err.message);
+          addToast(`Export failed: ${err.message}`, 'error');
+        }
+      } else {
+        setError('Failed to create package');
+        addToast('Export failed.', 'error');
+      }
+    } finally {
+      setIsPacking(false);
     }
   };
 
   const toggleRecordSelection = useCallback((recordId: string) => {
+    setSelectionAnchorId(recordId);
     setSelectedRecordIds(previous => {
       const next = new Set(previous);
       if (next.has(recordId)) next.delete(recordId);
@@ -281,7 +1110,7 @@ function AppContent() {
     setSelectedRecordIds(new Set(nextSelectedIds));
   }, []);
 
-  const selectScope = useCallback((recordIds: readonly string[], state: SelectionState) => {
+  const selectScope = useCallback((recordIds: readonly string[], state: import('./packageModel').SelectionState) => {
     applyRecordSelection(recordIds, state !== 'all');
   }, [applyRecordSelection]);
 
@@ -290,6 +1119,9 @@ function AppContent() {
   }, []);
 
   const toggleFolder = useCallback((path: string) => {
+    const rowId = `folder:${path}`;
+    setFocusedRowId(rowId);
+    setSelectionAnchorId(rowId);
     setCollapsedFolders(previous => {
       const next = new Set(previous);
       if (next.has(path)) next.delete(path);
@@ -298,12 +1130,144 @@ function AppContent() {
     });
   }, []);
 
-  const stageSelection = () => {
-    setStagedRecordIds(previous => {
+  const expandAll = useCallback(() => {
+    setCollapsedFolders(previous => {
       const next = new Set(previous);
-      for (const id of selectedRecordIds) next.add(id);
+      for (const folder of getAllFolderPaths(visibleRecords)) {
+        next.delete(folder);
+      }
       return next;
     });
+  }, [visibleRecords]);
+
+  const collapseAll = useCallback(() => {
+    setCollapsedFolders(previous => {
+      const next = new Set(previous);
+      for (const folder of getAllFolderPaths(visibleRecords)) {
+        next.add(folder);
+      }
+      return next;
+    });
+  }, [visibleRecords]);
+
+  const [scrollToRow, setScrollToRow] = useState<{ id: string; key: number } | null>(null);
+
+  // Ref to the virtual-tree scroll container so we can scroll rows into view.
+  const treeViewportRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Switches to tree mode, expands ancestors of the record or folder path,
+   * and queues a scroll to the matching row after the next paint.
+   */
+  const revealPathInTree = useCallback((pathOrId: string) => {
+    const record = records.find(r => r.id === pathOrId || r.virtualPath === pathOrId);
+    const path = record ? record.virtualPath : pathOrId;
+    const rowId = record ? record.id : `folder:${pathOrId}`;
+
+    setGroupingMode('tree');
+    setCollapsedFolders(prev => expandAncestors(path, prev));
+    if (record) {
+      setActiveRecordId(record.id);
+    }
+    setFocusedRowId(rowId);
+    setSelectionAnchorId(rowId);
+    setScrollToRow({ id: rowId, key: Date.now() });
+
+    setTimeout(() => {
+      treeViewportRef.current?.focus();
+    }, 50);
+  }, [records]);
+
+  // When meta sidecars are hidden (via includeMetaSidecars or category filter), remove
+  // hidden meta IDs from selection and re-home the active record if it points at a
+  // now-hidden meta row.
+  useEffect(() => {
+    if (includeMetaSidecars) return;
+
+    const hiddenMetaIds = new Set(
+      records.filter(record => record.extension === 'meta').map(record => record.id),
+    );
+    if (hiddenMetaIds.size === 0) return;
+
+    setSelectedRecordIds(previous => {
+      const hasHidden = [...previous].some(id => hiddenMetaIds.has(id));
+      if (!hasHidden) return previous;
+      const next = new Set(previous);
+      for (const id of hiddenMetaIds) next.delete(id);
+      return next;
+    });
+
+    setActiveRecordId(previous => {
+      if (previous === null || !hiddenMetaIds.has(previous)) return previous;
+      // Try to find the same-GUID asset record
+      const hiddenRecord = records.find(record => record.id === previous);
+      if (hiddenRecord) {
+        const sameGuidAsset = records.find(
+          record => record.guid === hiddenRecord.guid && record.extension !== 'meta' && !record.isUnityPreview,
+        );
+        if (sameGuidAsset) return sameGuidAsset.id;
+      }
+      // Fall back to the first visible (non-meta) record
+      const firstVisible = records.find(record => record.extension !== 'meta');
+      return firstVisible?.id ?? null;
+    });
+  }, [includeMetaSidecars, records]);
+
+  // When previews are hidden, remove hidden preview IDs from selection and re-home
+  // the active record to the same-GUID asset or the first visible record.
+  useEffect(() => {
+    if (showPreviews) return;
+
+    const hiddenPreviewIds = new Set(
+      records.filter(record => record.isUnityPreview).map(record => record.id),
+    );
+    if (hiddenPreviewIds.size === 0) return;
+
+    setSelectedRecordIds(previous => {
+      const hasHidden = [...previous].some(id => hiddenPreviewIds.has(id));
+      if (!hasHidden) return previous;
+      const next = new Set(previous);
+      for (const id of hiddenPreviewIds) next.delete(id);
+      return next;
+    });
+
+    setActiveRecordId(previous => {
+      if (previous === null || !hiddenPreviewIds.has(previous)) return previous;
+      // Try to find the same-GUID asset record
+      const hiddenRecord = records.find(record => record.id === previous);
+      if (hiddenRecord) {
+        const sameGuidAsset = records.find(
+          record => record.guid === hiddenRecord.guid && !record.isUnityPreview && record.extension !== 'meta',
+        );
+        if (sameGuidAsset) return sameGuidAsset.id;
+      }
+      // Fall back to the first visible non-preview record
+      const firstVisible = records.find(record => !record.isUnityPreview);
+      return firstVisible?.id ?? null;
+    });
+  }, [showPreviews, records]);
+
+  const stageSelection = () => {
+    const selectedRecords = records.filter(record => selectedRecordIds.has(record.id));
+    const stageableIds = new Set(
+      selectedRecords
+        .filter(canStageRecordForPack)
+        .map(record => record.id)
+    );
+    const skippedCount = selectedRecords.length - stageableIds.size;
+
+    setStagedRecordIds(previous => {
+      const next = new Set(previous);
+      for (const id of stageableIds) next.add(id);
+      return next;
+    });
+    if (stageableIds.size === 0) {
+      addToast('No packable assets selected.', 'error');
+    } else if (skippedCount > 0) {
+      addToast(`Staged ${stageableIds.size.toString()} assets (skipped ${skippedCount.toString()} preview/meta records).`);
+    } else {
+      addToast(`Staged ${stageableIds.size.toString()} assets for pack.`);
+    }
     setMode('pack');
   };
 
@@ -332,18 +1296,52 @@ function AppContent() {
               }}
             />
           </label>
+          <RecentsMenu
+            recents={recents}
+            isOpen={isRecentsOpen}
+            onToggle={() => { setIsRecentsOpen(prev => !prev); setIsSettingsOpen(false); }}
+            onOpen={(recent) => { void handleRecentClick(recent); }}
+            onRemove={(key, e) => { void handleRemoveRecent(key, e); }}
+            onClearAll={() => { void handleClearAllRecents(); }}
+            onClose={() => { setIsRecentsOpen(false); }}
+          />
+          <SettingsMenu
+            isOpen={isSettingsOpen}
+            onToggle={() => { setIsSettingsOpen(prev => !prev); setIsRecentsOpen(false); }}
+            onResetSettings={handleResetSettings}
+            onClose={() => { setIsSettingsOpen(false); }}
+          />
         </div>
       </header>
 
-      <section className="workspace" aria-label="Unity package workspace">
-        <aside className="sidebar" aria-label="Package controls">
+      <section
+        className={[
+          'workspace',
+          leftPaneCollapsed ? 'workspace--left-collapsed' : '',
+          rightPaneCollapsed ? 'workspace--right-collapsed' : '',
+        ].filter(Boolean).join(' ')}
+        aria-label="Unity package workspace"
+      >
+        <aside className={`sidebar${leftPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Package controls">
+          <button
+            type="button"
+            className="pane-collapse-toggle pane-collapse-toggle--left"
+            aria-label={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'}
+            title={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'}
+            onClick={() => { setLeftPaneCollapsed(prev => !prev); }}
+          >
+            {leftPaneCollapsed
+              ? <ChevronRight aria-hidden="true" size={15} />
+              : <ChevronLeft aria-hidden="true" size={15} />}
+          </button>
           <DropZone isLoading={isLoading} onPackageFile={(file) => void handlePackageFile(file)} />
           <div className="search-box">
             <Search aria-hidden="true" size={17} />
             <input
               type="search"
+              aria-label="Search package files"
               value={query}
-              placeholder="Filter name or GUID"
+              placeholder="Search files by name or path"
               onChange={event => {
                 setQuery(event.target.value);
               }}
@@ -362,14 +1360,52 @@ function AppContent() {
           <label className="toggle-row">
             <input
               type="checkbox"
-              checked={maintainStructure}
+              checked={showPreviews}
               onChange={event => {
-                setMaintainStructure(event.target.checked);
+                setShowPreviews(event.target.checked);
               }}
             />
-            Preserve folders in ZIP downloads
+            Show preview records
           </label>
-          <Stats records={records} filteredCount={filteredRecords.length} totalBytes={totalBytes} diagnostics={diagnostics} />
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={includeMetaSidecars}
+              onChange={event => {
+                setIncludeMetaSidecars(event.target.checked);
+              }}
+            />
+            Include .meta with assets
+          </label>
+          <details className="sidebar-disclosure">
+            <summary className="sidebar-disclosure-summary">
+              <Settings aria-hidden="true" size={13} />
+              <span>ZIP options</span>
+            </summary>
+            <div className="sidebar-disclosure-body">
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={maintainStructure}
+                  onChange={event => {
+                    setMaintainStructure(event.target.checked);
+                  }}
+                />
+                Preserve folders in ZIP downloads
+              </label>
+            </div>
+          </details>
+          {records.length > 0 && (
+            <details className="sidebar-disclosure">
+              <summary className="sidebar-disclosure-summary">
+                <Info aria-hidden="true" size={13} />
+                <span>Package summary</span>
+              </summary>
+              <div className="sidebar-disclosure-body">
+                <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} diagnostics={diagnostics} analysis={analysis} />
+              </div>
+            </details>
+          )}
         </aside>
 
         <section className="main-panel" aria-label="Package explorer">
@@ -379,15 +1415,84 @@ function AppContent() {
                 <div>
                   <h2>Extract</h2>
                   <p>
-                    {filteredRecords.length.toString()} visible records
-                    {selectedRecordIds.size > 0 ? `, ${selectedRecordIds.size.toString()} selected` : ''}
+                    {visibleRecords.length.toString()} visible records
+                    {selectedRecordIds.size > 0 ? `, ${[...selectedRecordIds].filter(id => visibleRecords.some(r => r.id === id)).length.toString()} selected` : ''}
                   </p>
                 </div>
                 <div className="button-row">
+                  <div className="sort-control">
+                    <label htmlFor="sort-key" className="sort-label">Sort</label>
+                    <select
+                      id="sort-key"
+                      className="sort-select"
+                      value={sortKey}
+                      onChange={event => { setSortKey(event.target.value as SortKey); }}
+                    >
+                      <option value="name">Name</option>
+                      <option value="size">Size</option>
+                      <option value="extension">Extension</option>
+                      <option value="guid">GUID</option>
+                    </select>
+                    <button
+                      type="button"
+                      id="sort-direction-toggle"
+                      className="icon-button"
+                      aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                      title={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                      onClick={() => { setSortDirection(d => d === 'asc' ? 'desc' : 'asc'); }}
+                    >
+                      {sortDirection === 'asc'
+                        ? <ArrowUpDown aria-hidden="true" size={15} />
+                        : <ArrowDownUp aria-hidden="true" size={15} />}
+                    </button>
+                  </div>
                   <button type="button" disabled={selectedRecordIds.size === 0} onClick={clearSelection}>
                     <RefreshCw aria-hidden="true" size={16} />
                     <span>Clear selection</span>
                   </button>
+                  <button
+                    type="button"
+                    disabled={visibleRecords.length === 0}
+                    onClick={invertSelection}
+                  >
+                    <RefreshCw aria-hidden="true" size={16} />
+                    <span>Invert selection</span>
+                  </button>
+                  <div className="select-by-ext-container">
+                    <button
+                      type="button"
+                      disabled={visibleRecords.length === 0}
+                      onClick={() => { setIsExtPickerOpen(prev => !prev); }}
+                      aria-label="Select by extension"
+                      aria-expanded={isExtPickerOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <Filter aria-hidden="true" size={16} />
+                      <span>Select by extension</span>
+                    </button>
+                    {isExtPickerOpen && (
+                      <div className="ext-picker-dropdown" role="listbox" aria-label="Available extensions">
+                        {visibleExtensions.length === 0 ? (
+                          <div className="ext-picker-item empty">No extensions</div>
+                        ) : (
+                          visibleExtensions.map(ext => (
+                            <button
+                              key={ext}
+                              type="button"
+                              className="ext-picker-item"
+                              role="option"
+                              onClick={() => {
+                                selectByExtension(ext);
+                                setIsExtPickerOpen(false);
+                              }}
+                            >
+                              .{ext}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <button type="button" disabled={selectedRecordIds.size === 0} onClick={stageSelection}>
                     <PackagePlus aria-hidden="true" size={16} />
                     <span>Stage for pack</span>
@@ -395,7 +1500,24 @@ function AppContent() {
                   <button
                     type="button"
                     disabled={selectedRecordIds.size === 0}
-                    onClick={() => void handleDownload(records, 'selected_files.zip', [...selectedRecordIds])}
+                    onClick={() => {
+                      if (!includeMetaSidecars) {
+                        void handleDownload(records, 'selected_files.zip', [...selectedRecordIds]);
+                        return;
+                      }
+                      const result = resolveMetaSidecarSelection(
+                        toSidecarSelectableRecords(records),
+                        [...selectedRecordIds],
+                      );
+                      void handleDownload(records, 'selected_files.zip', result.ids).then(() => {
+                        if (result.missingMetaForAssetIds.length > 0) {
+                          addToast(
+                            `${result.missingMetaForAssetIds.length.toString()} asset(s) have no .meta sidecar in this package.`,
+                            'error',
+                          );
+                        }
+                      });
+                    }}
                   >
                     <Download aria-hidden="true" size={16} />
                     <span>Selected ZIP</span>
@@ -408,7 +1530,7 @@ function AppContent() {
               </div>
               <Explorer
                 groupingMode={groupingMode}
-                records={filteredRecords}
+                records={visibleRecords}
                 treeRows={treeRows}
                 extensionGroups={extensionGroups}
                 treeFileRecordIds={treeFileRecordIds}
@@ -416,967 +1538,230 @@ function AppContent() {
                 selectedIds={selectedRecordIds}
                 activeId={activeRecord?.id ?? null}
                 collapsedFolders={collapsedFolders}
+                treeViewportRef={treeViewportRef}
+                scrollToRow={scrollToRow}
                 onToggleFolder={toggleFolder}
-                onActivate={setActiveRecordId}
+                onExpandAll={expandAll}
+                onCollapseAll={collapseAll}
+                onActivate={activateRecord}
                 onToggleSelected={toggleRecordSelection}
                 onScopeSelect={selectScope}
                 onReplaceSelection={replaceRecordSelection}
+                onRevealInTree={revealPathInTree}
+                focusedRowId={focusedRowId}
+                onFocusRow={setFocusedRowId}
+                selectionAnchorId={selectionAnchorId}
+                onSetAnchor={setSelectionAnchorId}
+                keyboardRangeBaseIds={keyboardRangeBaseIds}
+                onSetKeyboardRangeBase={setKeyboardRangeBaseIds}
               />
             </>
           ) : (
             <PackPanel
               stagedRecords={stagedRecords}
               validation={packValidation}
+              isPacking={isPacking}
+              packDiagnostics={packDiagnostics}
+              onExport={() => { void handleExport(); }}
               onRemove={(id) => {
                 setStagedRecordIds(previous => {
                   const next = new Set(previous);
                   next.delete(id);
                   return next;
                 });
+                setImportedRecords(previous => previous.filter(r => r.id !== id));
               }}
               onClear={() => {
                 setStagedRecordIds(new Set());
+                setImportedRecords([]);
               }}
+              onClearDraft={() => {
+                localStorage.removeItem(packDraftStorageKey);
+                setStagedRecordIds(new Set());
+                setImportedRecords([]);
+                setGzipLevel(6);
+                setExportFilename(getDefaultFilename());
+                addToast('Pack draft reset.');
+              }}
+              gzipLevel={gzipLevel}
+              setGzipLevel={setGzipLevel}
+              exportFilename={exportFilename}
+              setExportFilename={setExportFilename}
+              estimatedSize={estimatedSize}
+              successExport={successExport}
+              onDownloadAgain={() => {
+                if (successExport) {
+                  const blob = new Blob([successExport.bytes.buffer as BlobPart], { type: 'application/octet-stream' });
+                  downloadBlob(blob, successExport.filename);
+                }
+              }}
+              onShowInList={(recordId) => {
+                setHighlightedRecordId(null);
+                setTimeout(() => {
+                  setHighlightedRecordId(recordId);
+                  const element = document.getElementById(`staged-row-${recordId}`);
+                  if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }
+                }, 10);
+              }}
+              highlightedRecordId={highlightedRecordId}
+              onPathnameChange={handlePathnameChange}
+              onImportFiles={(dt) => { void handleImportFiles(dt); }}
             />
           )}
         </section>
 
-        <aside className="preview-panel" aria-label="Preview and metadata">
-          <PreviewPanel record={activeRecord} />
+        <aside className={`preview-panel${rightPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Preview and metadata">
+          <button
+            type="button"
+            className="pane-collapse-toggle pane-collapse-toggle--right"
+            aria-label={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'}
+            title={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'}
+            onClick={() => { setRightPaneCollapsed(prev => !prev); }}
+          >
+            {rightPaneCollapsed
+              ? <ChevronLeft aria-hidden="true" size={15} />
+              : <ChevronRight aria-hidden="true" size={15} />}
+          </button>
+          <PreviewPanel
+            record={detailsRecord}
+            records={records}
+            includeMetaSidecars={includeMetaSidecars}
+            onDownloadZip={(zipRecords, fileName, recordIds) => void handleDownload(zipRecords, fileName, recordIds)}
+            onStatusWarning={(msg) => { addToast(msg, 'error'); }}
+            onRevealInTree={revealPathInTree}
+            onOpenSibling={(siblingId) => { setDetailsRecordId(siblingId); }}
+            onOpenSiblingInExplorer={(siblingId) => {
+              setDetailsRecordId(null);
+              revealPathInTree(siblingId);
+            }}
+            showPreviews={showPreviews}
+            onSetShowPreviews={setShowPreviews}
+            includeMetaSidecarsForSibling={includeMetaSidecars}
+            onSetIncludeMetaSidecars={setIncludeMetaSidecars}
+          />
         </aside>
       </section>
 
+      {isDiagnosticsOpen && (diagnostics.length > 0 || analysis.length > 0) ? (
+        <DiagnosticsDrawer
+          diagnostics={diagnostics}
+          analysis={analysis}
+          records={records}
+          diagCodes={collectDiagCodes(records)}
+          diagCodeFilter={diagCodeFilter}
+          onDiagCodeFilterChange={(code) => {
+            setDiagCodeFilter(prev => {
+              const next = new Set(prev);
+              if (next.has(code)) next.delete(code);
+              else next.add(code);
+              return next;
+            });
+          }}
+          onNavigate={(recordId) => {
+            const targetRecord = records.find(r => r.id === recordId);
+            if (targetRecord) {
+              setQuery('');
+              setDebouncedQuery('');
+              setDiagCodeFilter(new Set());
+              setGroupingMode('tree');
+              setCollapsedFolders(prev => expandAncestors(targetRecord.virtualPath, prev));
+              setActiveRecordId(targetRecord.id);
+              setFocusedRowId(targetRecord.id);
+            }
+            setIsDiagnosticsOpen(false);
+          }}
+          onClose={() => { setIsDiagnosticsOpen(false); }}
+        />
+      ) : null}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <footer className="statusbar" aria-live="polite">
-        <span>{status}</span>
+        <span className="statusbar-op">
+          {currentOp ?? lastCompleted ?? null}
+        </span>
         {error ? (
           <span className="status-error">
             <AlertTriangle aria-hidden="true" size={15} />
             {error}
           </span>
         ) : null}
-        {diagnostics.length > 0 ? (
-          <span>
+        {(diagnostics.length > 0 || analysis.length > 0) ? (
+          <button
+            type="button"
+            className="status-diagnostics-toggle"
+            onClick={() => { setIsDiagnosticsOpen(open => !open); }}
+            aria-expanded={isDiagnosticsOpen}
+            aria-label="Toggle diagnostics drawer"
+          >
             <Info aria-hidden="true" size={15} />
-            {diagnostics.length.toString()} diagnostics
-          </span>
+            {(diagnostics.length + analysis.length).toString()} findings
+          </button>
         ) : null}
+        {recentToPrompt && (
+          <div className="modal-overlay" onClick={() => setRecentToPrompt(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Reopen Recent Package</h3>
+                <button
+                  type="button"
+                  className="recent-remove-btn"
+                  style={{ width: '24px', height: '24px', fontSize: '1.2rem', minHeight: '24px' }}
+                  onClick={() => setRecentToPrompt(null)}
+                  aria-label="Close dialog"
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="modal-body">
+                <p>
+                  Direct file access is not available for <strong>{recentToPrompt.name}</strong>.
+                  Please select the file or drop it below to reopen.
+                </p>
+                <div
+                  className="modal-dropzone"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files[0];
+                    if (file?.name === recentToPrompt.name) {
+                      void handlePackageFileWithHandle(file, null);
+                      setRecentToPrompt(null);
+                    } else if (file) {
+                      setError(`Dropped file "${file.name}" does not match "${recentToPrompt.name}".`);
+                    }
+                  }}
+                >
+                  <span>Drop <strong>{recentToPrompt.name}</strong> here</span>
+                  <label className="file-open-button" style={{ marginTop: '8px' }}>
+                    <span>Choose File</span>
+                    <input
+                      type="file"
+                      accept=".unitypackage"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file?.name === recentToPrompt.name) {
+                          void handlePackageFileWithHandle(file, null);
+                          setRecentToPrompt(null);
+                        } else if (file) {
+                          setError(`Selected file "${file.name}" does not match "${recentToPrompt.name}".`);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setRecentToPrompt(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
       </footer>
     </main>
   );
-}
-
-function ModeTabs({ mode, onModeChange }: { mode: WorkspaceMode; onModeChange: (mode: WorkspaceMode) => void }) {
-  return (
-    <div className="mode-tabs" aria-label="Workspace mode">
-      <button type="button" className={mode === 'extract' ? 'active' : ''} onClick={() => { onModeChange('extract'); }}>
-        <Download aria-hidden="true" size={16} />
-        <span>Extract</span>
-      </button>
-      <button type="button" className={mode === 'pack' ? 'active' : ''} onClick={() => { onModeChange('pack'); }}>
-        <PackagePlus aria-hidden="true" size={16} />
-        <span>Pack</span>
-      </button>
-    </div>
-  );
-}
-
-function DropZone({ isLoading, onPackageFile }: { isLoading: boolean; onPackageFile: (file: File) => void }) {
-  const [isDragActive, setIsDragActive] = useState(false);
-
-  return (
-    <label
-      className={`drop-zone${isDragActive ? ' drag-active' : ''}`}
-      onDragEnter={(event) => {
-        event.preventDefault();
-        setIsDragActive(true);
-      }}
-      onDragOver={(event) => {
-        event.preventDefault();
-        setIsDragActive(true);
-      }}
-      onDragLeave={(event) => {
-        event.preventDefault();
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setIsDragActive(false);
-        }
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsDragActive(false);
-        const file = event.dataTransfer.files[0];
-        if (file?.name.endsWith('.unitypackage')) {
-          onPackageFile(file);
-        }
-      }}
-    >
-      {isLoading ? <RefreshCw aria-hidden="true" className="spin" size={24} /> : <UploadCloud aria-hidden="true" size={24} />}
-      <span>{isLoading ? 'Parsing package' : 'Drop a .unitypackage'}</span>
-      <small>or choose a file</small>
-      <input
-        type="file"
-        accept=".unitypackage"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) onPackageFile(file);
-          event.currentTarget.value = '';
-        }}
-      />
-    </label>
-  );
-}
-
-function Stats({
-  records,
-  filteredCount,
-  totalBytes,
-  diagnostics,
-}: {
-  records: PackageFileRecord[];
-  filteredCount: number;
-  totalBytes: number;
-  diagnostics: UnityPackageParseDiagnostic[];
-}) {
-  const assetCount = records.filter(record => !record.isUnityPreview && record.extension !== 'meta').length;
-  const metaCount = records.filter(record => record.extension === 'meta').length;
-  const previewCount = records.filter(record => record.isUnityPreview).length;
-
-  return (
-    <dl className="stats-grid">
-      <div>
-        <dt>Records</dt>
-        <dd>{filteredCount.toString()} / {records.length.toString()}</dd>
-      </div>
-      <div>
-        <dt>Assets</dt>
-        <dd>{assetCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Meta</dt>
-        <dd>{metaCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Previews</dt>
-        <dd>{previewCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Bytes</dt>
-        <dd>{formatBytes(totalBytes)}</dd>
-      </div>
-      <div>
-        <dt>Diagnostics</dt>
-        <dd>{diagnostics.length.toString()}</dd>
-      </div>
-    </dl>
-  );
-}
-
-function Explorer({
-  groupingMode,
-  records,
-  treeRows,
-  extensionGroups,
-  treeFileRecordIds,
-  extensionFileRecordIds,
-  selectedIds,
-  activeId,
-  collapsedFolders,
-  onToggleFolder,
-  onActivate,
-  onToggleSelected,
-  onScopeSelect,
-  onReplaceSelection,
-}: {
-  groupingMode: GroupingMode;
-  records: PackageFileRecord[];
-  treeRows: TreeRow[];
-  extensionGroups: ExtensionGroup[];
-  treeFileRecordIds: string[];
-  extensionFileRecordIds: string[];
-  selectedIds: ReadonlySet<string>;
-  activeId: string | null;
-  collapsedFolders: ReadonlySet<string>;
-  onToggleFolder: (path: string) => void;
-  onActivate: (recordId: string) => void;
-  onToggleSelected: (recordId: string) => void;
-  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
-  onReplaceSelection: (selectedIds: Set<string>) => void;
-}) {
-  if (records.length === 0) {
-    return (
-      <div className="empty-state">
-        <FileArchive aria-hidden="true" size={42} />
-        <h2>No records loaded</h2>
-        <p>Open a Unity package to inspect its tree, previews, metadata, diagnostics, and extractable files.</p>
-      </div>
-    );
-  }
-
-  return groupingMode === 'tree' ? (
-    <VirtualTree
-      rows={treeRows}
-      records={records}
-      orderedRecordIds={treeFileRecordIds}
-      selectedIds={selectedIds}
-      activeId={activeId}
-      collapsedFolders={collapsedFolders}
-      onToggleFolder={onToggleFolder}
-      onActivate={onActivate}
-      onToggleSelected={onToggleSelected}
-      onScopeSelect={onScopeSelect}
-      onReplaceSelection={onReplaceSelection}
-    />
-  ) : (
-    <ExtensionList
-      groups={extensionGroups}
-      orderedRecordIds={extensionFileRecordIds}
-      selectedIds={selectedIds}
-      activeId={activeId}
-      onActivate={onActivate}
-      onToggleSelected={onToggleSelected}
-      onScopeSelect={onScopeSelect}
-      onReplaceSelection={onReplaceSelection}
-    />
-  );
-}
-
-function VirtualTree({
-  rows,
-  records,
-  orderedRecordIds,
-  selectedIds,
-  activeId,
-  collapsedFolders,
-  onToggleFolder,
-  onActivate,
-  onToggleSelected,
-  onScopeSelect,
-  onReplaceSelection,
-}: {
-  rows: TreeRow[];
-  records: PackageFileRecord[];
-  orderedRecordIds: string[];
-  selectedIds: ReadonlySet<string>;
-  activeId: string | null;
-  collapsedFolders: ReadonlySet<string>;
-  onToggleFolder: (path: string) => void;
-  onActivate: (recordId: string) => void;
-  onToggleSelected: (recordId: string) => void;
-  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
-  onReplaceSelection: (selectedIds: Set<string>) => void;
-}) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const dragSelection = useRowSweepSelection({
-    orderedRecordIds,
-    selectedIds,
-    scrollRef: parentRef,
-    onReplaceSelection,
-  });
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 38,
-    overscan: 10,
-  });
-
-  return (
-    <div
-      ref={parentRef}
-      className={`explorer-viewport${dragSelection.isDragging ? ' selecting-range' : ''}`}
-      role="tree"
-      aria-label="Package file tree"
-    >
-      <div className="virtual-spacer" style={{ height: `${virtualizer.getTotalSize()}px` }}>
-        {virtualizer.getVirtualItems().map(virtualRow => {
-          const row = rows[virtualRow.index];
-          const style: CSSProperties = {
-            height: `${virtualRow.size}px`,
-            transform: `translateY(${virtualRow.start}px)`,
-          };
-
-          if (row.type === 'folder') {
-            const collapsed = collapsedFolders.has(row.path);
-            const folderRecordIds = getFolderRecordIds(records, row.path);
-            const selectionState = getSelectionState(folderRecordIds, selectedIds);
-            return (
-              <div
-                key={row.id}
-                className="tree-row folder-row"
-                style={{ ...style, paddingLeft: `${12 + row.depth * 18}px` }}
-                onClick={() => { onToggleFolder(row.path); }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onToggleFolder(row.path);
-                  }
-                }}
-                role="treeitem"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-              >
-                <SelectionToggle
-                  state={selectionState}
-                  disabled={folderRecordIds.length === 0}
-                  label={`${selectionState === 'all' ? 'Deselect' : 'Select'} ${row.name}`}
-                  onSelect={() => { onScopeSelect(folderRecordIds, selectionState); }}
-                />
-                {collapsed ? <ChevronRight aria-hidden="true" size={16} /> : <ChevronDown aria-hidden="true" size={16} />}
-                {collapsed ? <Folder aria-hidden="true" size={17} /> : <FolderOpen aria-hidden="true" size={17} />}
-                <span>{row.name}</span>
-                <small>{row.fileCount.toString()}</small>
-              </div>
-            );
-          }
-
-          return (
-            <FileRow
-              key={row.id}
-              record={row.record}
-              active={activeId === row.record.id}
-              selected={selectedIds.has(row.record.id)}
-              depth={row.depth}
-              style={style}
-              onActivate={onActivate}
-              onToggleSelected={onToggleSelected}
-              onPointerDown={dragSelection.onPointerDown}
-              shouldSuppressClick={dragSelection.shouldSuppressClick}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ExtensionList({
-  groups,
-  orderedRecordIds,
-  selectedIds,
-  activeId,
-  onActivate,
-  onToggleSelected,
-  onScopeSelect,
-  onReplaceSelection,
-}: {
-  groups: ExtensionGroup[];
-  orderedRecordIds: string[];
-  selectedIds: ReadonlySet<string>;
-  activeId: string | null;
-  onActivate: (recordId: string) => void;
-  onToggleSelected: (recordId: string) => void;
-  onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
-  onReplaceSelection: (selectedIds: Set<string>) => void;
-}) {
-  const parentRef = useRef<HTMLDivElement | null>(null);
-  const dragSelection = useRowSweepSelection({
-    orderedRecordIds,
-    selectedIds,
-    scrollRef: parentRef,
-    onReplaceSelection,
-  });
-
-  return (
-    <div ref={parentRef} className={`extension-list${dragSelection.isDragging ? ' selecting-range' : ''}`}>
-      {groups.map(group => (
-        <section className="extension-group" key={group.extension}>
-          <header>
-            <div className="extension-title">
-              <SelectionToggle
-                state={getSelectionState(group.records.map(record => record.id), selectedIds)}
-                disabled={group.records.length === 0}
-                label={`${getSelectionState(group.records.map(record => record.id), selectedIds) === 'all' ? 'Deselect' : 'Select'} ${group.extension}`}
-                onSelect={() => {
-                  const recordIds = group.records.map(record => record.id);
-                  onScopeSelect(recordIds, getSelectionState(recordIds, selectedIds));
-                }}
-              />
-              <h3>{group.extension}</h3>
-            </div>
-            <span>{group.records.length.toString()} files, {formatBytes(group.totalBytes)}</span>
-          </header>
-          {group.records.map(record => (
-            <FileRow
-              key={record.id}
-              record={record}
-              active={activeId === record.id}
-              selected={selectedIds.has(record.id)}
-              depth={0}
-              onActivate={onActivate}
-              onToggleSelected={onToggleSelected}
-              onPointerDown={dragSelection.onPointerDown}
-              shouldSuppressClick={dragSelection.shouldSuppressClick}
-            />
-          ))}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function SelectionToggle({
-  state,
-  label,
-  disabled = false,
-  onSelect,
-}: {
-  state: SelectionState;
-  label: string;
-  disabled?: boolean;
-  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
-}) {
-  const ariaChecked = state === 'partial' ? 'mixed' : state === 'all';
-
-  return (
-    <button
-      type="button"
-      className={`icon-button selection-toggle selection-${state}`}
-      role="checkbox"
-      aria-checked={ariaChecked}
-      aria-label={label}
-      disabled={disabled}
-      onPointerDown={(event) => { event.stopPropagation(); }}
-      onKeyDown={(event) => { event.stopPropagation(); }}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelect(event);
-      }}
-    >
-      {state === 'all' ? <CheckSquare aria-hidden="true" size={16} /> : <Square aria-hidden="true" size={16} />}
-    </button>
-  );
-}
-
-function useRowSweepSelection({
-  orderedRecordIds,
-  selectedIds,
-  scrollRef,
-  onReplaceSelection,
-}: {
-  orderedRecordIds: string[];
-  selectedIds: ReadonlySet<string>;
-  scrollRef: { current: HTMLElement | null };
-  onReplaceSelection: (selectedIds: Set<string>) => void;
-}) {
-  const [isDragging, setIsDragging] = useState(false);
-  const suppressClickRef = useRef(false);
-
-  const shouldSuppressClick = useCallback(() => suppressClickRef.current, []);
-
-  useEffect(() => {
-    if (!isDragging) return undefined;
-
-    document.body.classList.add('range-selecting');
-    return () => {
-      document.body.classList.remove('range-selecting');
-    };
-  }, [isDragging]);
-
-  const onPointerDown = useCallback((recordId: string, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || orderedRecordIds.length === 0) return;
-    event.preventDefault();
-    event.currentTarget.focus();
-
-    const drag: DragSelectionState = {
-      pointerId: event.pointerId,
-      startClientY: event.clientY,
-      startRecordId: recordId,
-      baseSelectedIds: new Set(selectedIds),
-      mode: selectedIds.has(recordId) ? 'remove' : 'add',
-      active: false,
-    };
-
-    const applyRange = (targetRecordId: string) => {
-      const rangeIds = getRangeRecordIds(orderedRecordIds, drag.startRecordId, targetRecordId);
-      const next = new Set(drag.baseSelectedIds);
-      for (const id of rangeIds) {
-        if (drag.mode === 'add') next.add(id);
-        else next.delete(id);
-      }
-      onReplaceSelection(next);
-    };
-
-    const scrollNearEdge = (clientY: number) => {
-      const scrollElement = scrollRef.current;
-      if (!scrollElement) return;
-
-      const bounds = scrollElement.getBoundingClientRect();
-      if (clientY < bounds.top + dragAutoScrollEdgePx) {
-        scrollElement.scrollTop -= dragAutoScrollStepPx;
-      } else if (clientY > bounds.bottom - dragAutoScrollEdgePx) {
-        scrollElement.scrollTop += dragAutoScrollStepPx;
-      }
-    };
-
-    const getRecordIdAtPoint = (clientX: number, clientY: number) => {
-      const scrollElement = scrollRef.current;
-      if (!scrollElement) return null;
-
-      const bounds = scrollElement.getBoundingClientRect();
-      if (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom) {
-        return null;
-      }
-
-      const element = document.elementFromPoint(clientX, clientY);
-      if (!(element instanceof HTMLElement)) return null;
-      const row = element.closest<HTMLElement>('[data-record-id]');
-      if (!row || !scrollElement.contains(row)) return null;
-      return row.dataset.recordId ?? null;
-    };
-
-    const onPointerMove = (pointerEvent: PointerEvent) => {
-      if (pointerEvent.pointerId !== drag.pointerId) return;
-
-      const targetRecordId = getRecordIdAtPoint(pointerEvent.clientX, pointerEvent.clientY);
-      if (!drag.active && Math.abs(pointerEvent.clientY - drag.startClientY) < dragSelectionThresholdPx) return;
-      if (!targetRecordId) return;
-
-      scrollNearEdge(pointerEvent.clientY);
-      drag.active = true;
-      setIsDragging(true);
-      pointerEvent.preventDefault();
-      window.getSelection()?.removeAllRanges();
-      applyRange(targetRecordId);
-    };
-
-    const cleanup = () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerCancel);
-    };
-
-    const onPointerUp = (pointerEvent: PointerEvent) => {
-      if (pointerEvent.pointerId !== drag.pointerId) return;
-      cleanup();
-      if (drag.active) {
-        suppressClickRef.current = true;
-        window.setTimeout(() => {
-          suppressClickRef.current = false;
-        }, 0);
-      }
-      setIsDragging(false);
-    };
-
-    const onPointerCancel = (pointerEvent: PointerEvent) => {
-      if (pointerEvent.pointerId !== drag.pointerId) return;
-      cleanup();
-      setIsDragging(false);
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerCancel);
-  }, [onReplaceSelection, orderedRecordIds, scrollRef, selectedIds]);
-
-  return {
-    isDragging,
-    onPointerDown,
-    shouldSuppressClick,
-  };
-}
-
-function FileRow({
-  record,
-  active,
-  selected,
-  depth,
-  style,
-  onActivate,
-  onToggleSelected,
-  onPointerDown,
-  shouldSuppressClick,
-}: {
-  record: PackageFileRecord;
-  active: boolean;
-  selected: boolean;
-  depth: number;
-  style?: CSSProperties;
-  onActivate: (recordId: string) => void;
-  onToggleSelected: (recordId: string) => void;
-  onPointerDown: (recordId: string, event: ReactPointerEvent<HTMLElement>) => void;
-  shouldSuppressClick: () => boolean;
-}) {
-  const { Icon, tone, label } = getFileIconDescriptor(record);
-
-  return (
-    <div
-      className={`tree-row file-row${active ? ' active' : ''}${selected ? ' selected' : ''}`}
-      style={{ ...style, paddingLeft: `${12 + depth * 18}px` }}
-      role="treeitem"
-      aria-selected={selected}
-      tabIndex={0}
-      data-record-id={record.id}
-      onPointerDown={(event) => { onPointerDown(record.id, event); }}
-      onClick={(event) => {
-        if (shouldSuppressClick()) {
-          event.preventDefault();
-          return;
-        }
-
-        if (event.ctrlKey || event.metaKey) {
-          onToggleSelected(record.id);
-        }
-
-        onActivate(record.id);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          onActivate(record.id);
-          return;
-        }
-
-        if (event.key === ' ') {
-          event.preventDefault();
-          onToggleSelected(record.id);
-        }
-      }}
-    >
-      <SelectionToggle
-        state={selected ? 'all' : 'none'}
-        label={selected ? `Deselect ${record.fileName}` : `Select ${record.fileName}`}
-        onSelect={() => { onToggleSelected(record.id); }}
-      />
-      <span className={`file-kind-icon file-kind-${tone}`} title={label}>
-        <Icon aria-hidden="true" size={17} strokeWidth={1.9} />
-      </span>
-      <span className="file-name">{record.fileName}</span>
-      <small>{formatBytes(record.byteLength)}</small>
-    </div>
-  );
-}
-
-function PreviewPanel({ record }: { record: PackageFileRecord | null }) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!record) {
-      setBlobUrl(null);
-      return undefined;
-    }
-
-    const blob = new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType });
-    const nextUrl = URL.createObjectURL(blob);
-    setBlobUrl(nextUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextUrl);
-    };
-  }, [record]);
-
-  if (!record) {
-    return (
-      <div className="preview-empty">
-        <Info aria-hidden="true" size={34} />
-        <h2>No file selected</h2>
-        <p>Select a file in the explorer to preview content and metadata.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="preview-content">
-      <header className="preview-header">
-        <div>
-          <h2>{record.fileName}</h2>
-          <p>{record.virtualPath}</p>
-        </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={`Download ${record.fileName}`}
-          onClick={() => {
-            downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
-          }}
-        >
-          <Download aria-hidden="true" size={18} />
-        </button>
-      </header>
-      <PreviewBody record={record} blobUrl={blobUrl} />
-      <Metadata record={record} />
-    </div>
-  );
-}
-
-function PreviewBody({ record, blobUrl }: { record: PackageFileRecord; blobUrl: string | null }) {
-  if (!blobUrl) {
-    return <div className="preview-frame">Preparing preview</div>;
-  }
-
-  if (record.previewKind === 'image') {
-    return (
-      <div className="preview-frame media-frame">
-        <img src={blobUrl} alt={`${record.fileName} preview`} />
-      </div>
-    );
-  }
-
-  if (record.previewKind === 'pdf') {
-    return (
-      <div className="preview-frame pdf-frame">
-        <object data={blobUrl} type="application/pdf" aria-label={`${record.fileName} preview`}>
-          <a href={blobUrl} download={record.fileName}>Download PDF</a>
-        </object>
-      </div>
-    );
-  }
-
-  if (record.previewKind === 'audio') {
-    return (
-      <div className="preview-frame">
-        <audio controls src={blobUrl}>
-          <a href={blobUrl} download={record.fileName}>Download audio</a>
-        </audio>
-      </div>
-    );
-  }
-
-  if (record.previewKind === 'video') {
-    return (
-      <div className="preview-frame media-frame">
-        <video controls src={blobUrl}>
-          <a href={blobUrl} download={record.fileName}>Download video</a>
-        </video>
-      </div>
-    );
-  }
-
-  if (record.previewKind === 'text') {
-    return <TextPreview record={record} />;
-  }
-
-  return (
-    <div className="preview-frame unsupported-frame">
-      <FileArchive aria-hidden="true" size={34} />
-      <h3>No native preview</h3>
-      <p>This file type can still be downloaded and staged for pack workflows.</p>
-    </div>
-  );
-}
-
-function TextPreview({ record }: { record: PackageFileRecord }) {
-  const themeMode = usePreferredSyntaxTheme();
-  const preview = useMemo(() => textDecoder.decode(record.content.slice(0, textPreviewByteLimit)), [record.content]);
-  const isTruncated = record.content.byteLength > textPreviewByteLimit;
-  const [highlightedCode, setHighlightedCode] = useState<HighlightedCode | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setHighlightedCode(null);
-
-    void highlightCode(preview, record.syntaxLanguage, themeMode)
-      .then(result => {
-        if (!cancelled) setHighlightedCode(result);
-      })
-      .catch(() => {
-        if (!cancelled) setHighlightedCode(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [preview, record.syntaxLanguage, themeMode]);
-
-  if (!highlightedCode) {
-    return (
-      <pre className="preview-frame text-frame">
-        {formatTextPreview(preview, isTruncated)}
-      </pre>
-    );
-  }
-
-  return (
-    <pre
-      className="preview-frame text-frame highlighted-text-frame"
-      style={{
-        backgroundColor: highlightedCode.background,
-        color: highlightedCode.foreground,
-      }}
-    >
-      <code>
-        {highlightedCode.lines.map((line, lineIndex) => (
-          <span className="code-line" key={lineIndex.toString()}>
-            {line.map((token, tokenIndex) => (
-              <span className="syntax-token" key={`${lineIndex.toString()}-${tokenIndex.toString()}`} style={tokenStyle(token)}>
-                {token.content}
-              </span>
-            ))}
-          </span>
-        ))}
-        {isTruncated ? <span className="preview-truncation">[Preview truncated at 20 KB]</span> : null}
-      </code>
-    </pre>
-  );
-}
-
-function usePreferredSyntaxTheme(): SyntaxThemeMode {
-  const [themeMode, setThemeMode] = useState<SyntaxThemeMode>(() => getPreferredSyntaxTheme());
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const updateTheme = () => {
-      setThemeMode(mediaQuery.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', updateTheme);
-    updateTheme();
-
-    return () => {
-      mediaQuery.removeEventListener('change', updateTheme);
-    };
-  }, []);
-
-  return themeMode;
-}
-
-function getPreferredSyntaxTheme(): SyntaxThemeMode {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function formatTextPreview(preview: string, isTruncated: boolean): string {
-  return isTruncated ? `${preview}\n\n[Preview truncated at 20 KB]` : preview;
-}
-
-function tokenStyle(token: HighlightedToken): CSSProperties {
-  const style: CSSProperties = {
-    color: token.color,
-    backgroundColor: token.backgroundColor,
-  };
-
-  if (token.fontStyle !== undefined) {
-    if ((token.fontStyle & 1) !== 0) style.fontStyle = 'italic';
-    if ((token.fontStyle & 2) !== 0) style.fontWeight = 700;
-    if ((token.fontStyle & 4) !== 0) style.textDecoration = 'underline';
-  }
-
-  return {
-    ...style,
-    ...token.htmlStyle,
-  };
-}
-
-function Metadata({ record }: { record: PackageFileRecord }) {
-  const rows = [
-    ['Path', record.virtualPath],
-    ['GUID', record.guid],
-    ['Extension', record.extension || 'None'],
-    ['MIME', record.mimeType],
-    ['Size', formatBytes(record.byteLength)],
-    ['Asset bytes', record.assetSize === undefined ? 'None' : formatBytes(record.assetSize)],
-    ['Meta bytes', record.metaSize === undefined ? 'None' : formatBytes(record.metaSize)],
-    ['Preview bytes', record.previewSize === undefined ? 'None' : formatBytes(record.previewSize)],
-    ['Duplicate paths', record.duplicatePathCount.toString()],
-    ['Preview support', previewLabel(record.previewKind)],
-    ['Syntax language', record.previewKind === 'text' ? record.syntaxLanguage : 'None'],
-  ];
-
-  return (
-    <section className="metadata">
-      <h3>Metadata</h3>
-      <dl>
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {record.diagnostics.length > 0 ? (
-        <div className="record-diagnostics">
-          <h3>Related diagnostics</h3>
-          <ul>
-            {record.diagnostics.map((diagnostic, index) => (
-              <li key={`${diagnostic.code}-${index.toString()}`}>
-                <strong>{diagnostic.code}</strong>
-                <span>{diagnostic.message}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function PackPanel({
-  stagedRecords,
-  validation,
-  onRemove,
-  onClear,
-}: {
-  stagedRecords: PackageFileRecord[];
-  validation: ReturnType<typeof validatePackDraft>;
-  onRemove: (id: string) => void;
-  onClear: () => void;
-}) {
-  return (
-    <section className="pack-panel">
-      <div className="panel-toolbar">
-        <div>
-          <h2>Pack</h2>
-          <p>{validation.createEntryCount.toString()} future package entries staged</p>
-        </div>
-        <div className="button-row">
-          <button type="button" disabled={stagedRecords.length === 0} onClick={onClear}>
-            <RefreshCw aria-hidden="true" size={16} />
-            <span>Clear</span>
-          </button>
-          <button type="button" disabled>
-            <PackagePlus aria-hidden="true" size={16} />
-            <span>Export .unitypackage</span>
-          </button>
-        </div>
-      </div>
-      <div className="pack-status" role="status">
-        <AlertTriangle aria-hidden="true" size={18} />
-        <div>
-          <strong>Export is prepared but blocked</strong>
-          <p>The creation worker will be connected after `docs/plans/web/new-api.md` adds the browser package creation API.</p>
-        </div>
-      </div>
-      <ul className="validation-list">
-        {validation.messages.map(message => (
-          <li key={message}>{message}</li>
-        ))}
-      </ul>
-      <div className="staged-list">
-        {stagedRecords.map(record => (
-          <div key={record.id} className="staged-row">
-            <File aria-hidden="true" size={16} />
-            <span>{record.virtualPath}</span>
-            <button type="button" className="icon-button" aria-label={`Remove ${record.fileName}`} onClick={() => { onRemove(record.id); }}>
-              <RefreshCw aria-hidden="true" size={15} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function previewLabel(kind: PreviewKind): string {
-  switch (kind) {
-    case 'audio':
-      return 'Native audio';
-    case 'image':
-      return 'Native image';
-    case 'pdf':
-      return 'Native PDF';
-    case 'text':
-      return 'Highlighted text';
-    case 'video':
-      return 'Native video';
-    case 'unsupported':
-      return 'Unsupported';
-  }
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
 
 export default function App() {

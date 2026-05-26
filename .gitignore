@@ -171,3 +171,4 @@ package-json.lock
 **/playwright/.auth/
 
 # Repo-specific
+.antigravitycli

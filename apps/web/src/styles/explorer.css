@@ -1,0 +1,336 @@
+/* Explorer: tree rows, folder rows, file rows, extension list, selection toggle */
+
+.explorer-viewport,
+.extension-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.virtual-spacer {
+  position: relative;
+}
+
+.tree-row {
+  width: 100%;
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+}
+
+.tree-row:hover,
+.file-row.active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.file-row.selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.file-row.selected.active {
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
+}
+
+.folder-row {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.file-row {
+  min-height: 38px;
+  padding-right: 14px;
+}
+
+.file-kind-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  line-height: 0;
+}
+
+.file-kind-image {
+  color: var(--file-icon-image);
+}
+
+.file-kind-audio {
+  color: var(--file-icon-audio);
+}
+
+.file-kind-video {
+  color: var(--file-icon-video);
+}
+
+.file-kind-pdf {
+  color: var(--danger);
+}
+
+.file-kind-document,
+.file-kind-text {
+  color: var(--file-icon-document);
+}
+
+.file-kind-code {
+  color: var(--success);
+}
+
+.file-kind-json {
+  color: var(--warning);
+}
+
+.file-kind-xml,
+.file-kind-shader {
+  color: var(--file-icon-shader);
+}
+
+.file-kind-unity,
+.file-kind-meta {
+  color: var(--accent-2);
+}
+
+.file-kind-binary {
+  color: var(--muted);
+}
+
+.file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row small,
+.staged-row small,
+.extension-group header span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.selection-toggle {
+  position: relative;
+  flex: 0 0 30px;
+}
+
+.selection-toggle.selection-partial::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.selecting-range {
+  cursor: cell;
+  user-select: none;
+}
+
+.selecting-range .file-row {
+  cursor: cell;
+}
+
+.extension-list {
+  padding: 10px;
+}
+
+.extension-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.extension-group header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  background: var(--panel-2);
+}
+
+.extension-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.extension-group h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.extension-group .file-row {
+  position: relative;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  min-height: 280px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px;
+}
+
+.empty-state h2 {
+  margin: 0;
+  color: var(--text);
+}
+
+/* Tree toolbar (Expand all / Collapse all) */
+.tree-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  flex-shrink: 0;
+}
+
+.tree-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.tree-toolbar-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* Virtualized extension list */
+.extension-list-viewport {
+  padding: 10px;
+}
+
+/* Virtualized extension group header row */
+.ext-group-header {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.ext-group-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.ext-group-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ext-group-header-right span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+/* Reveal in tree button */
+.reveal-in-tree-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 7px;
+  font-size: 0.76rem;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.reveal-in-tree-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Select by extension picker */
+.select-by-ext-container {
+  position: relative;
+  display: inline-block;
+}
+
+.ext-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: var(--shadow);
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.ext-picker-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 0.88rem;
+  border-radius: 4px;
+  min-height: auto;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.ext-picker-item:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ext-picker-item.empty {
+  color: var(--muted);
+  cursor: default;
+  padding: 6px 12px;
+}
+
+/* Accessible outline focus indicator for active descendant inside the tree/extension viewports */
+.explorer-viewport:focus-within .tree-row.focused,
+.explorer-viewport:focus .tree-row.focused,
+.explorer-viewport:focus-within .ext-group-header.focused,
+.explorer-viewport:focus .ext-group-header.focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
