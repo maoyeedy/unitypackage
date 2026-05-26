@@ -732,7 +732,7 @@ export function validatePackDraft(
 
   for (const record of stagedAssets) {
     guidCounts.set(record.guid, (guidCounts.get(record.guid) ?? 0) + 1);
-    
+
     // Look for meta record in stagedRecords, then in allRecords, or record.meta
     const hasMeta = !!record.meta ||
                     stagedRecords.some(r => r.guid === record.guid && r.extension === 'meta') ||
@@ -986,7 +986,7 @@ export function pairDroppedItems(
 
     if (matchingMeta) {
       const parsedGuid = readMetaGuid(matchingMeta.content) ?? undefined;
-      
+
       guid = getUniqueGuid(parsedGuid ?? null, usedGuidsInBatch);
       if (guid !== parsedGuid) {
         metaBytes = writeMetaGuid(matchingMeta.content, guid);

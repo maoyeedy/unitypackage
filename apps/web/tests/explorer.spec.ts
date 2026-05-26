@@ -185,27 +185,27 @@ test.describe('explorer interactions', () => {
   test.describe('keyboard navigation and selection power', () => {
     test('arrow key navigation and selection in tree view', async ({ page }) => {
       const tree = page.getByRole('tree', { name: 'Package file tree' });
-      
+
       // Click the first file row to focus and activate it
       const fileRow = tree.locator('.file-row').first();
       await fileRow.click();
-      
+
       const firstId = await fileRow.getAttribute('id');
       let activeId = await tree.getAttribute('aria-activedescendant');
       expect(activeId).toBe(firstId);
 
       // Press ArrowDown to move focus to the next visible row
       await tree.press('ArrowDown');
-      
+
       activeId = await tree.getAttribute('aria-activedescendant');
       expect(activeId).not.toBe(firstId);
 
       // Press Space to toggle selection
       await tree.press(' ');
-      
+
       // Shift+ArrowDown range selection
       await tree.press('Shift+ArrowDown');
-      
+
       const selectedCountText = page.getByText(/selected/);
       await expect(selectedCountText).toBeVisible();
 
@@ -246,7 +246,7 @@ test.describe('explorer interactions', () => {
 
     test('Select by extension opens a picker and selects by extension', async ({ page }) => {
       await page.getByRole('button', { name: 'Select by extension', exact: true }).click();
-      
+
       const pickerOption = page.locator('.ext-picker-dropdown button').first();
       await pickerOption.click();
 

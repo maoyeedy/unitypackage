@@ -1925,7 +1925,7 @@ describe('P2 tree ergonomics helpers', () => {
       ];
       const existingGuids = new Set<string>();
       const paired = pairDroppedItems(dropped, existingGuids);
-      
+
       expect(paired).toHaveLength(1);
       expect(paired[0].pathname).toBe('Assets/Scripts/Player.cs');
       expect(paired[0].guid).toBe('0123456789abcdef0123456789abcdef');
@@ -1940,7 +1940,7 @@ describe('P2 tree ergonomics helpers', () => {
       ];
       const existingGuids = new Set<string>();
       const paired = pairDroppedItems(dropped, existingGuids);
-      
+
       expect(paired).toHaveLength(1);
       expect(paired[0].pathname).toBe('Assets/Scripts/Player.cs');
       expect(paired[0].guid).toHaveLength(32);
@@ -1955,7 +1955,7 @@ describe('P2 tree ergonomics helpers', () => {
       ];
       const existingGuids = new Set<string>();
       const paired = pairDroppedItems(dropped, existingGuids);
-      
+
       expect(paired).toHaveLength(1);
       expect(paired[0].pathname).toBe('Assets/MyFolder');
       expect(paired[0].guid).toHaveLength(32);
@@ -1977,10 +1977,10 @@ describe('P2 tree ergonomics helpers', () => {
         array.fill(0);
         return array;
       };
-      
+
       const collidesWithAll = new Set<string>(['00000000000000000000000000000000']);
       expect(() => getUniqueGuid(null, collidesWithAll)).toThrow('GUID collision');
-      
+
       globalThis.crypto.getRandomValues = originalGetRandomValues;
     });
 
@@ -1993,7 +1993,7 @@ describe('P2 tree ergonomics helpers', () => {
           meta: encoder.encode('meta'),
         },
       ], []);
-      
+
       const validation = validatePackDraft(records);
       expect(validation.status).toBe('blocked');
       expect(validation.diagnostics.some(d => d.code === 'oversized-pathname-tar')).toBe(true);
