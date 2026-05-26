@@ -38,7 +38,7 @@ Out of scope:
 | ID | Title | Goal | Depends on | Files |
 |----|-------|------|------------|-------|
 | P1 | Pane controls | Add collapse and optional resize behavior without making the shell busier. | Debloat | shell/layout components, CSS |
-| P2 | Open and settings menus | Move recents, theme, and defaults into compact top-bar menus. | Debloat | topbar/settings components, IndexedDB recents helpers |
+| P2 | Open and settings menus | Move recents and defaults into compact top-bar menus. | Debloat | topbar/settings components, IndexedDB recents helpers |
 | P3 | Details navigation | Add small related-record navigation around asset/meta/preview siblings. | Debloat | details components, model helpers |
 | P4 | Status and toasts | Replace the overloaded footer status string with current operation plus toasts. | Debloat | status/toast components, worker hooks |
 | P5 | Pack refinements | Make the staged list easier to scan without expanding Pack scope. | Debloat | pack components, tests |
@@ -80,7 +80,6 @@ Behavior changes:
 - Keep the primary "Open package" action visible.
 - Add an adjacent recents menu that lists recent packages with file name, size,
   and last-opened time.
-- Move theme override to a settings menu.
 - Move default grouping, default sort, and preview-row default into settings
   only if those defaults exist after debloat.
 - Add "Clear recents" and "Reset settings" commands in settings.
@@ -89,7 +88,6 @@ Behavior changes:
 Exit criteria:
 
 - Recents are no longer always visible in the left pane.
-- Theme control is no longer always visible in the left pane.
 - Existing recent-package reopen behavior still works, including the browser
   prompt path when file handles cannot be reused.
 - Run:
@@ -203,10 +201,9 @@ cd apps/web && bunx playwright test
 
 Manual smoke:
 
-- Open `fixtures/static/editor-packed.unitypackage`.
+- Open `fixtures/static/archives/Polytope_URP.unitypackage`.
 - Collapse and reopen both side panes; reload and confirm state persists.
 - Reopen a package from the recents menu.
-- Change theme from settings and reload.
 - Jump between an asset, its `.meta`, and its preview sibling from Details.
 - Trigger selected ZIP and Pack export feedback and confirm toasts/status are
   concise.

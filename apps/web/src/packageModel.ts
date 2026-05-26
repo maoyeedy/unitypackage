@@ -10,6 +10,8 @@ import {
   generateGuid,
   createMinimalMetaFor,
   createMinimalFolderMeta,
+  matchGlob,
+  writeMetaGuid,
   type MetaImporterType,
   type PreviewKind,
   type SidecarSelectableRecord,
@@ -17,10 +19,12 @@ import {
   type UnityPackageAnalysisFinding,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
+  type UnityPackageComponentRecord,
 } from 'unitypackage-core';
 
 export type { MetaImporterType, PreviewKind, SidecarSelectableRecord, SyntaxLanguage, UnityPackageAnalysisFinding, ResolveMetaSidecarsResult } from 'unitypackage-core';
 export { resolveMetaSidecarSelection, readMetaGuid, readDeclaredMetaImporter } from 'unitypackage-core';
+export { matchGlob, writeMetaGuid as updateMetaBytesGuid };
 
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
@@ -29,27 +33,9 @@ export type FilterMatchMode = 'filename' | 'path' | 'guid';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-export interface PackageFileRecord {
-  id: string;
-  guid: string;
-  pathname: string;
-  virtualPath: string;
+export interface PackageFileRecord extends UnityPackageComponentRecord {
   fileName: string;
-  extension: string;
-  mimeType: string;
   isUnityPreview: boolean;
-  content: Uint8Array;
-  byteLength: number;
-  hasAsset: boolean;
-  hasMeta: boolean;
-  hasPreview: boolean;
-  assetSize?: number;
-  metaSize?: number;
-  previewSize?: number;
-  duplicatePathCount: number;
-  previewKind: PreviewKind;
-  syntaxLanguage: SyntaxLanguage;
-  diagnostics: UnityPackageParseDiagnostic[];
   findings: UnityPackageAnalysisFinding[];
   meta?: Uint8Array;
   isRawImported?: boolean;
@@ -108,6 +94,7 @@ export type PackDraftDiagnosticCode =
   | 'missing-meta'
   | 'duplicate-guid'
   | 'oversized-pathname'
+  | 'oversized-pathname-tar'
   | 'empty-entries'
   | 'preview-record'
   | 'no-assets'
@@ -132,26 +119,9 @@ export function entriesToRecords(
   diagnostics: UnityPackageParseDiagnostic[],
 ): PackageFileRecord[] {
   return entriesToComponentRecords(entries, diagnostics).map(record => ({
-    id: record.id,
-    guid: record.guid,
-    pathname: record.pathname,
-    virtualPath: record.virtualPath,
+    ...record,
     fileName: record.virtualPath.split('/').pop() ?? record.virtualPath,
-    extension: record.extension,
-    mimeType: record.mimeType,
     isUnityPreview: record.component === 'preview',
-    content: record.content,
-    byteLength: record.byteLength,
-    hasAsset: record.hasAsset,
-    hasMeta: record.hasMeta,
-    hasPreview: record.hasPreview,
-    assetSize: record.assetSize,
-    metaSize: record.metaSize,
-    previewSize: record.previewSize,
-    duplicatePathCount: record.duplicatePathCount,
-    previewKind: record.previewKind,
-    syntaxLanguage: record.syntaxLanguage,
-    diagnostics: record.diagnostics,
     findings: [],
   }));
 }
@@ -406,48 +376,7 @@ export function parseSize(input: string): number | null {
   return Math.round(value);
 }
 
-/**
- * Tiny browser-safe glob matcher that supports:
- * - `**` matching any number of path segments (including none)
- * - `*`  matching any characters within a single segment
- * - `?`  matching exactly one character
- * - All other characters match literally.
- *
- * The path is tested against the full string (anchored at both ends).
- */
-export function matchGlob(pattern: string, path: string): boolean {
-  // Build a regex from the glob pattern token-by-token.
-  // Process `**` before `*` to avoid double-substitution.
-  let regexSource = '';
-  let i = 0;
-  while (i < pattern.length) {
-    if (pattern[i] === '*' && pattern[i + 1] === '*') {
-      // `**` matches zero or more characters including slashes.
-      // When followed by a `/` separator we make both the `**/` and the empty
-      // match optional so that `**/*.cs` matches root-level `Player.cs`.
-      if (pattern[i + 2] === '/') {
-        regexSource += '(?:.+/)?';
-        i += 3; // skip **/
-      } else {
-        regexSource += '.*';
-        i += 2;
-      }
-    } else if (pattern[i] === '*') {
-      // `*` matches any character except `/`
-      regexSource += '[^/]*';
-      i += 1;
-    } else if (pattern[i] === '?') {
-      // `?` matches exactly one character (except `/`)
-      regexSource += '[^/]';
-      i += 1;
-    } else {
-      // Escape regex special chars
-      regexSource += (pattern[i] ?? '').replace(/[.+^${}()|[\]\\]/g, '\\$&');
-      i += 1;
-    }
-  }
-  return new RegExp(`^${regexSource}$`).test(path);
-}
+
 
 /**
  * Returns true when the record matches all space-separated terms in the query
@@ -826,9 +755,9 @@ export function validatePackDraft(
       });
     }
     if (!pathVal.ok) {
-      if (pathVal.reason === 'oversized-tar-entry') {
+      if (pathVal.reason === 'oversized-pathname-tar') {
         diagnostics.push({
-          code: 'oversized-pathname',
+          code: 'oversized-pathname-tar',
           message: `Pathname validation failed for ${record.pathname}: tar entry name is too long (${pathVal.detail} bytes)`,
           recordId: record.id,
         });
@@ -1028,16 +957,7 @@ export function getUniqueGuid(preferredGuid: string | null, existingGuids: Set<s
   throw new Error('GUID collision: Failed to generate a unique GUID after 4 retries.');
 }
 
-export function updateMetaBytesGuid(metaBytes: Uint8Array, newGuid: string): Uint8Array {
-  const text = new TextDecoder().decode(metaBytes);
-  let updatedText = text;
-  if (/guid:\s*[0-9a-fA-F]{32}/.test(text)) {
-    updatedText = text.replace(/guid:\s*[0-9a-fA-F]{32}/, `guid: ${newGuid}`);
-  } else {
-    updatedText = `guid: ${newGuid}\n` + text;
-  }
-  return new TextEncoder().encode(updatedText);
-}
+
 
 export function pairDroppedItems(
   dropped: RawDroppedFile[],
@@ -1069,7 +989,7 @@ export function pairDroppedItems(
       
       guid = getUniqueGuid(parsedGuid ?? null, usedGuidsInBatch);
       if (guid !== parsedGuid) {
-        metaBytes = updateMetaBytesGuid(matchingMeta.content, guid);
+        metaBytes = writeMetaGuid(matchingMeta.content, guid);
       } else {
         metaBytes = matchingMeta.content;
       }

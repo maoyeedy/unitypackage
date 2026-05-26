@@ -2,13 +2,13 @@ import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/editor-packed.unitypackage');
+const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../fixtures/static/archives/Polytope_URP.unitypackage');
 
 test.describe('package loading', () => {
   test('status updates after successful parse', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Open package').setInputFiles(fixturePath);
-    await expect(page.getByText(/Parsed \d+ records from editor-packed\.unitypackage/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Parsed \d+ records from Polytope_URP\.unitypackage/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('file tree appears and empty state is removed', async ({ page }) => {
@@ -31,7 +31,7 @@ test.describe('package loading', () => {
     await page.goto('/');
     await page.getByLabel('Open package').setInputFiles(fixturePath);
     await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('.brand p')).toHaveText('editor-packed.unitypackage');
+    await expect(page.locator('.brand p')).toHaveText('Polytope_URP.unitypackage');
   });
 
   test('All ZIP button becomes enabled after load', async ({ page }) => {
@@ -49,14 +49,14 @@ test.describe('package loading', () => {
 
     // Verify recents list contains the package
     await page.getByRole('button', { name: 'Recent packages' }).click();
-    await expect(page.locator('.recent-item')).toContainText('editor-packed.unitypackage');
+    await expect(page.locator('.recent-item')).toContainText('Polytope_URP.unitypackage');
 
     // Reload page
     await page.reload();
 
     // Verify it is still in recents and tree is empty
     await page.getByRole('button', { name: 'Recent packages' }).click();
-    await expect(page.locator('.recent-item')).toContainText('editor-packed.unitypackage');
+    await expect(page.locator('.recent-item')).toContainText('Polytope_URP.unitypackage');
     await expect(page.getByRole('heading', { name: 'No records loaded' })).toBeVisible();
 
     // Click recent item to trigger reopen prompt

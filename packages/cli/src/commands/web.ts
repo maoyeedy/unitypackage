@@ -2,6 +2,12 @@ import { createServer, type ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { CliError, EXIT } from '../util/exit.js';
+import { isInside } from '../util/path.js';
+
+export interface WebOptions {
+  port?: number;
+  host?: string;
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -18,11 +24,33 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain',
 };
 
-async function serveRequest(assetDir: string, url: string, res: ServerResponse): Promise<void> {
-  let urlPath = url.split('?')[0];
-  if (urlPath === '/') urlPath = '/index.html';
+function resolveAssetPath(assetDir: string, url: string): string | null {
+  const rawPath = url.split('?')[0] || '/';
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  if (decodedPath.split(/[\\/]+/).some(segment => segment === '..')) {
+    return null;
+  }
 
-  let filePath = path.join(assetDir, urlPath);
+  const normalizedPath = decodedPath === '/'
+    ? 'index.html'
+    : path.normalize(decodedPath).replace(/^[/\\]+/, '');
+  const filePath = path.resolve(assetDir, normalizedPath);
+  return isInside(assetDir, filePath) ? filePath : null;
+}
+
+async function serveRequest(assetDir: string, url: string, res: ServerResponse): Promise<void> {
+  let filePath = resolveAssetPath(assetDir, url);
+
+  if (filePath === null) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
 
   try {
     await stat(filePath);
@@ -42,8 +70,9 @@ async function serveRequest(assetDir: string, url: string, res: ServerResponse):
   }
 }
 
-export async function web(opts: { port?: number } = {}): Promise<void> {
+export async function web(opts: WebOptions = {}): Promise<void> {
   const port = opts.port ?? 5173;
+  const { host } = opts;
   // Resolves to packages/cli/assets/web/ at runtime (dist/commands/web.js → ../../assets/web)
   const assetDir = path.resolve(import.meta.dirname, '../../assets/web');
 
@@ -51,7 +80,7 @@ export async function web(opts: { port?: number } = {}): Promise<void> {
     await stat(path.join(assetDir, 'index.html'));
   } catch {
     throw new CliError(
-      'Web assets not found at ' + assetDir + '\nBuild first:\n  bun run build:web\n  bun run build:cli',
+      'Web assets not found at ' + assetDir + '\nRun from the workspace root: bun run build:cli',
       EXIT.IO,
     );
   }
@@ -65,10 +94,24 @@ export async function web(opts: { port?: number } = {}): Promise<void> {
   });
 
   await new Promise<void>((resolve, reject) => {
-    server.on('error', reject);
-    server.listen(port, () => {
-      console.log(`Web app running at http://localhost:${port}`);
+    const onSigint = (): void => {
+      server.close(() => resolve());
+    };
+    const onListening = (): void => {
+      const address = server.address();
+      const actualPort = typeof address === 'object' && address !== null ? address.port : port;
+      console.log(`Web app running at http://${formatUrlHost(host ?? 'localhost')}:${actualPort}`);
+    };
+    server.on('error', err => {
+      process.off('SIGINT', onSigint);
+      reject(err);
     });
-    process.on('SIGINT', () => server.close(() => resolve()));
+    process.once('SIGINT', onSigint);
+    if (host === undefined) server.listen(port, onListening);
+    else server.listen(port, host, onListening);
   });
+}
+
+function formatUrlHost(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }

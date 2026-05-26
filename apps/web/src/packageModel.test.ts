@@ -52,8 +52,8 @@ import {
 import type { UnityPackageAnalysisFinding } from './packageModel';
 
 const encoder = new TextEncoder();
-const fixturePng = new URL('../../../fixtures/static/texture_02.png', import.meta.url);
-const fixturePngMeta = new URL('../../../fixtures/static/texture_02.png.meta', import.meta.url);
+const fixturePng = new URL('../../../fixtures/static/texture.png', import.meta.url);
+const fixturePngMeta = new URL('../../../fixtures/static/texture.png.meta', import.meta.url);
 
 describe('package model helpers', () => {
   it('creates records with derived metadata and duplicate path counts', () => {
@@ -909,7 +909,7 @@ describe('package model helpers', () => {
       expect(diag?.recordId).toBe(records[0]?.id);
     });
 
-    it('returns blocked for oversized-pathname when tar entry name exceeds 100 bytes', () => {
+    it('returns blocked for oversized-pathname-tar when tar entry name exceeds 100 bytes', () => {
       // worst case is <guid>/asset.meta, with a long guid it would exceed 100 bytes
       const longGuid = 'a'.repeat(90);
       const records = entriesToRecords([
@@ -923,7 +923,7 @@ describe('package model helpers', () => {
 
       const validation = validatePackDraft(records);
       expect(validation.status).toBe('blocked');
-      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname');
+      const diag = validation.diagnostics.find(d => d.code === 'oversized-pathname-tar');
       expect(diag).toBeDefined();
       expect(diag?.recordId).toBe(records[0]?.id);
     });
@@ -1996,7 +1996,7 @@ describe('P2 tree ergonomics helpers', () => {
       
       const validation = validatePackDraft(records);
       expect(validation.status).toBe('blocked');
-      expect(validation.diagnostics.some(d => d.code === 'oversized-pathname')).toBe(true);
+      expect(validation.diagnostics.some(d => d.code === 'oversized-pathname-tar')).toBe(true);
     });
 
     it('updates meta bytes guid correctly', () => {
@@ -2137,6 +2137,62 @@ describe('P2 tree ergonomics helpers', () => {
           expect(sibling?.id).not.toBe(record.id);
         }
       }
+    });
+  });
+
+  describe('real archive entries-to-records', () => {
+    const archiveUrl = new URL('../../../fixtures/static/archives/Polytope_URP.unitypackage', import.meta.url);
+
+    it('parses Polytope_URP into well-shaped records with known entries', () => {
+      const pkgBytes = readFileSync(archiveUrl);
+      const { entries, diagnostics } = parseUnityPackageEntries(pkgBytes);
+      const records = entriesToRecords(entries, diagnostics);
+
+      expect(records.length).toBeGreaterThan(50);
+      expect(getRecordCategory(records[0])).toBeOneOf(['asset', 'meta', 'preview']);
+
+      for (const record of records) {
+        expect(record.id).toBeTruthy();
+        expect(record.guid).toMatch(/^[0-9a-f]{32}$/);
+        expect(record.pathname).toBeTruthy();
+        expect(record.virtualPath).toBeTruthy();
+        expect(record.extension).toBeTruthy();
+        expect(typeof record.byteLength).toBe('number');
+        expect(typeof record.isUnityPreview).toBe('boolean');
+      }
+
+      const shader = records.find(r =>
+        r.pathname.endsWith('PT_Rock_Shader.shader') && !r.isUnityPreview
+      );
+      expect(shader).toBeDefined();
+      expect(shader!.extension).toBe('shader');
+      expect(shader!.mimeType).toBe('text/plain;charset=utf-8');
+      expect(shader!.syntaxLanguage).toBe('shaderlab');
+
+      const shaderMeta = records.find(r =>
+        r.virtualPath.endsWith('PT_Rock_Shader.shader.meta')
+      );
+      expect(shaderMeta).toBeDefined();
+      expect(shaderMeta!.extension).toBe('meta');
+      expect(shaderMeta!.isUnityPreview).toBe(false);
+      expect(shaderMeta!.previewKind).toBe('text');
+      expect(shaderMeta!.syntaxLanguage).toBe('yaml');
+
+      const mat = records.find(r =>
+        r.pathname.endsWith('PT_mat.mat') && !r.isUnityPreview
+      );
+      expect(mat).toBeDefined();
+      expect(mat!.extension).toBe('mat');
+      expect(mat!.previewKind).toBe('text');
+      expect(mat!.syntaxLanguage).toBe('yaml');
+
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'fbx')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'prefab')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'unity')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'cs')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'cginc')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'asset')).toBe(true);
+      expect(records.some(r => !r.isUnityPreview && r.extension === 'terrainlayer')).toBe(true);
     });
   });
 });

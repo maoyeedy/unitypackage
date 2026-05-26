@@ -148,7 +148,7 @@ describe('validatePathname', () => {
     expect(result.reason).toBe('control-character');
   });
 
-  // oversized-tar-entry
+  // oversized-pathname-tar
   it('returns ok:true when guid + fixed names fit within 100 bytes', () => {
     // "<32>/asset.meta" = 32 + 1 + 10 = 43 bytes -- well under 100
     const guid = 'a'.repeat(32);
@@ -160,7 +160,7 @@ describe('validatePathname', () => {
     const longGuid = 'b'.repeat(90);
     const result = validatePathname('Assets/Foo.cs', { guid: longGuid });
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe('oversized-tar-entry');
+    expect(result.reason).toBe('oversized-pathname-tar');
     expect(result.detail).toBe('101');
   });
 
@@ -171,20 +171,20 @@ describe('validatePathname', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('oversized-tar-entry detail matches actual UTF-8 byte length of "<guid>/asset.meta"', () => {
+  it('oversized-pathname-tar detail matches actual UTF-8 byte length of "<guid>/asset.meta"', () => {
     // guid of 90 chars => 101 bytes
     const longGuid = 'c'.repeat(90);
     const result = validatePathname('Assets/Bar.cs', { guid: longGuid });
     expect(result.ok).toBe(false);
-    expect(result.reason).toBe('oversized-tar-entry');
+    expect(result.reason).toBe('oversized-pathname-tar');
     const reportedLength = Number(result.detail);
     const expected = new TextEncoder().encode(`${longGuid}/asset.meta`).length;
     expect(reportedLength).toBe(expected);
   });
 
-  it('oversized-tar-entry check aligns with tryCreateUnityPackage for the same input', () => {
-    // Use a 90-char guid: tryCreateUnityPackage should emit oversized-pathname
-    // and validatePathname should emit oversized-tar-entry
+  it('oversized-pathname-tar check aligns with tryCreateUnityPackage for the same input', () => {
+    // Use a 90-char guid: tryCreateUnityPackage should emit oversized-pathname-tar
+    // and validatePathname should emit oversized-pathname-tar
     const longGuid = 'd'.repeat(90);
     const createResult = tryCreateUnityPackage([
       {
@@ -194,20 +194,20 @@ describe('validatePathname', () => {
         meta: encoder.encode('meta'),
       },
     ]);
-    const createOversized = createResult.diagnostics.filter(d => d.code === 'oversized-pathname');
+    const createOversized = createResult.diagnostics.filter(d => d.code === 'oversized-pathname-tar');
     expect(createOversized.length).toBeGreaterThan(0);
 
     const validateResult = validatePathname('Assets/Align.cs', { guid: longGuid });
     expect(validateResult.ok).toBe(false);
-    expect(validateResult.reason).toBe('oversized-tar-entry');
+    expect(validateResult.reason).toBe('oversized-pathname-tar');
   });
 
-  it('does not check oversized-tar-entry when no guid is provided', () => {
-    // Even a long pathname alone should not trigger oversized-tar-entry
+  it('does not check oversized-pathname-tar when no guid is provided', () => {
+    // Even a long pathname alone should not trigger oversized-pathname-tar
     const longPathname = 'Assets/' + 'X'.repeat(200);
     const result = validatePathname(longPathname);
-    // No oversized-tar-entry without a guid; other checks should pass (it's a valid path)
-    expect(result.reason).not.toBe('oversized-tar-entry');
+    // No oversized-pathname-tar without a guid; other checks should pass (it's a valid path)
+    expect(result.reason).not.toBe('oversized-pathname-tar');
   });
 });
 

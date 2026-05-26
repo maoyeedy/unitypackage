@@ -3,8 +3,6 @@
 import {
   analyzeUnityPackageEntries,
   parseUnityPackageEntries,
-  parseUnityPackageStreamed,
-  DecompressionBombError,
 } from 'unitypackage-core';
 import { entriesToRecords } from './packageModel';
 import type { ParsePackageRequest, ParsePackageResponse } from './workerTypes';
@@ -14,24 +12,7 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     const bytes = new Uint8Array(data.buffer);
     const options = data.maxOutputBytes !== undefined ? { maxOutputBytes: data.maxOutputBytes } : undefined;
 
-    let entries;
-    let diagnostics;
-
-    try {
-      // Primary streaming path to enforce maxOutputBytes during decompression
-      const result = parseUnityPackageStreamed(bytes, options);
-      entries = result.entries;
-      diagnostics = result.diagnostics;
-    } catch (streamError) {
-      // Fallback path to parseUnityPackageEntries if needed for compatibility during rollout.
-      // If it's a DecompressionBombError, bubble it up directly.
-      if (streamError instanceof DecompressionBombError || (streamError instanceof Error && streamError.name === 'DecompressionBombError')) {
-        throw streamError;
-      }
-      const result = parseUnityPackageEntries(bytes, options);
-      entries = result.entries;
-      diagnostics = result.diagnostics;
-    }
+    const { entries, diagnostics } = parseUnityPackageEntries(bytes, options);
 
     const records = entriesToRecords(entries, diagnostics);
     const { findings: analysis } = analyzeUnityPackageEntries(entries, diagnostics);
@@ -41,4 +22,3 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     self.postMessage({ type: 'error', message } satisfies ParsePackageResponse);
   }
 };
-

@@ -18,7 +18,6 @@
     "prepublishOnly": "npm run build && npm run lint && npm run test"
   },
   "dependencies": {
-    "unitypackage-core": "workspace:*",
-    "yaml": "^2.7.1"
+    "unitypackage-core": "workspace:*"
   }
 }

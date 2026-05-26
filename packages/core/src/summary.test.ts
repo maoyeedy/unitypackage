@@ -109,16 +109,28 @@ describe('summarizePackage', () => {
     expect(exts).not.toContain('PNG');
   });
 
-  it('treats extensionless entries as extension ""', () => {
+  it('excludes folder entries (no asset) from byExtension', () => {
     const entries: UnityPackageEntry[] = [
       makeEntry('a'.repeat(32), 'Assets/Folder', undefined, 'meta'),
       makeEntry('b'.repeat(32), 'Assets/OtherFolder', undefined, 'meta'),
     ];
     const summary = summarizePackage(entries);
-    const empty = summary.byExtension.find(e => e.extension === '');
-    expect(empty).toBeDefined();
-    expect(empty!.count).toBe(2);
-    expect(empty!.assetBytes).toBe(0);
+    // Folder entries have no asset -- they must not appear in byExtension
+    expect(summary.byExtension).toEqual([]);
+    expect(summary.folderCount).toBe(2);
+  });
+
+  it('excludes folder entry from byExtension but still counts it in folderCount', () => {
+    const entries: UnityPackageEntry[] = [
+      makeEntry('a'.repeat(32), 'Assets/Editor', undefined, 'meta'),
+      makeEntry('b'.repeat(32), 'Assets/Editor/Tool.cs', 'body', 'meta'),
+    ];
+    const summary = summarizePackage(entries);
+    expect(summary.folderCount).toBe(1);
+    expect(summary.fileCount).toBe(1);
+    expect(summary.byExtension).toEqual([{ extension: 'cs', count: 1, assetBytes: encoder.encode('body').byteLength }]);
+    // No '' row for the folder entry
+    expect(summary.byExtension.find(e => e.extension === '')).toBeUndefined();
   });
 
   it('orders byExtension descending by count, ties broken by extension ascending', () => {
@@ -197,17 +209,18 @@ describe('summarizePackage', () => {
     expect(summary.duplicateGuidCount).toBe(1);
     expect(summary.totalPreviewBytes).toBe(encoder.encode('preview bytes').byteLength);
 
-    // byExtension: cs has 3 entries (Script1, Script2, Dup), png has 1, '' has 1
+    // byExtension: cs has 3 entries (Script1, Script2, Dup), png has 1
+    // Folder entry (SubFolder, no asset) is excluded from byExtension
     const csExt = summary.byExtension.find(e => e.extension === 'cs');
     const pngExt = summary.byExtension.find(e => e.extension === 'png');
     const emptyExt = summary.byExtension.find(e => e.extension === '');
     expect(csExt!.count).toBe(3);
     expect(pngExt!.count).toBe(1);
-    expect(emptyExt!.count).toBe(1);
-    // Ordering: cs(3) > png(1) == ''(1) -- png before '' alphabetically
+    expect(emptyExt).toBeUndefined(); // folder entry excluded
+    // Ordering: cs(3) > png(1)
     expect(summary.byExtension[0].extension).toBe('cs');
-    expect(summary.byExtension[1].extension).toBe('');  // '' < 'png' alphabetically
-    expect(summary.byExtension[2].extension).toBe('png');
+    expect(summary.byExtension[1].extension).toBe('png');
+    expect(summary.byExtension).toHaveLength(2);
 
     expect(summary.diagnosticsBySeverity.error).toBe(1);
     expect(summary.diagnosticsBySeverity.warning).toBe(0);

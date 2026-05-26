@@ -10,10 +10,10 @@ metadata completeness.
 
 | ID | Title | Goal | Parallel with | Depends on | Files | Subagent |
 |----|-------|------|---------------|------------|-------|----------|
-| P1 | CI, publish, and Pages workflows | Add GitHub Actions for matrix CI, tag publishing, and web deployment. | P2 | - | `.github/workflows/*.yml`, `docs/reference/publishing.md`, `package.json` | worker |
-| P2 | Dependency and version automation | Add Dependabot and Changesets configuration for the monorepo. | P1 | - | `.github/dependabot.yml`, `.changeset/config.json`, `package.json`, `bun.lock`, `docs/reference/publishing.md` | worker |
+| P1 | CI, publish, and Pages workflows | Add GitHub Actions for matrix CI, tag publishing, and web deployment. | P2 | - | `.github/workflows/*.yml`, `package.json` | worker |
+| P2 | Dependency and version automation | Add Dependabot and Changesets configuration for the monorepo. | P1 | - | `.github/dependabot.yml`, `.changeset/config.json`, `package.json`, `bun.lock` | worker |
 | P3 | Playwright smoke | Add a browser smoke test that loads the web app, drops a generated package, and asserts the workspace tree, batch selection, and preview pane render. | - | P1, P2 | `apps/web/**/*`, `fixtures/**/*`, `package.json`, `bun.lock` | worker |
-| P4 | Package metadata and release verification | Ensure CLI package includes a license and run the release dry-run gate. | - | P3 | `packages/cli/LICENSE`, `packages/cli/package.json`, `docs/reference/publishing.md` | worker |
+| P4 | Package metadata and release verification | Ensure CLI package includes a license and run the release dry-run gate. | - | P3 | `packages/cli/LICENSE`, `packages/cli/package.json` | worker |
 
 ### P1 - CI, publish, and Pages workflows
 
@@ -80,3 +80,46 @@ bun run pack:dry
 Manual smoke:
 - Review generated GitHub Actions in the GitHub UI after pushing to a branch.
 - Confirm publish workflow secrets and npm permissions before tagging a release.
+
+## Manual release flow
+
+### Setup
+
+```sh
+npm login && npm whoami
+npm view unitypackage-core version    # should 404
+npm view unitypackage-tools version   # should 404
+```
+
+Ensure each package dir has `README.md`. `LICENSE` symlinks already in place.
+
+### Pre-publish
+
+```sh
+bun run build
+bun run pack:dry
+```
+
+Verify tarball contents: `dist/`, `README.md`, `LICENSE` for each.
+
+### Version bump
+
+Edit `packages/core/package.json` and `packages/cli/package.json` (semver). CLI: replace `"unitypackage-core": "workspace:*"` with `"^<version>"`.
+
+### Publish order (strict)
+
+1. `npm publish --workspace unitypackage-core`
+2. `npm publish --workspace unitypackage-tools`
+
+Both run `prepublishOnly` (build + lint + test) automatically.
+
+### After
+
+```sh
+npm view unitypackage-core          # verify version
+npm view unitypackage-tools         # verify version
+git add packages/core/package.json packages/cli/package.json
+git commit -m "chore: release v<version>"
+git tag v<version>
+git push && git push --tags
+```

@@ -28,7 +28,9 @@ export interface UnityPackageSummary {
  * diagnostics. Pure function; browser-safe; no side effects.
  *
  * `byExtension` is ordered by `count` descending, ties broken by `extension`
- * ascending. Extensions are lower-cased; extensionless assets use `''`.
+ * ascending. Folder entries (`entry.asset === undefined`) are excluded from
+ * `byExtension` entirely; extensionless assets (no dot after the last slash)
+ * still contribute to the `''` row.
  *
  * `diagnosticsBySeverity` is zeroed (`{ info: 0, warning: 0, error: 0 }`)
  * when `diagnostics` is omitted or empty.
@@ -67,20 +69,23 @@ export function summarizePackage(
       totalPreviewBytes += entry.preview.byteLength;
     }
 
-    // Derive extension from the pathname (lower-cased, without the leading dot)
-    const dot = entry.pathname.lastIndexOf('.');
-    const slash = entry.pathname.lastIndexOf('/');
-    const extension = dot > slash && dot !== -1
-      ? entry.pathname.slice(dot + 1).toLowerCase()
-      : '';
+    // Folder entries (no asset) are excluded from byExtension.
+    if (entry.asset !== undefined) {
+      // Derive extension from the pathname (lower-cased, without the leading dot)
+      const dot = entry.pathname.lastIndexOf('.');
+      const slash = entry.pathname.lastIndexOf('/');
+      const extension = dot > slash && dot !== -1
+        ? entry.pathname.slice(dot + 1).toLowerCase()
+        : '';
 
-    const existing = extMap.get(extension);
-    const assetBytes = entry.asset?.byteLength ?? 0;
-    if (existing === undefined) {
-      extMap.set(extension, { count: 1, assetBytes });
-    } else {
-      existing.count += 1;
-      existing.assetBytes += assetBytes;
+      const existing = extMap.get(extension);
+      const assetBytes = entry.asset.byteLength;
+      if (existing === undefined) {
+        extMap.set(extension, { count: 1, assetBytes });
+      } else {
+        existing.count += 1;
+        existing.assetBytes += assetBytes;
+      }
     }
   }
 

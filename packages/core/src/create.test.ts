@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { gunzipSync } from 'fflate';
 import {
@@ -53,7 +54,7 @@ describe('createUnityPackage', () => {
   });
 
   it('enforces the ustar 100-byte entry name limit via tryCreateUnityPackage', () => {
-    // A guid of 89 chars produces "<89>/asset.meta" = 100 bytes exactly -- at the limit, no oversized-pathname
+    // A guid of 89 chars produces "<89>/asset.meta" = 100 bytes exactly -- at the limit, no oversized-pathname-tar
     const atLimitGuid = 'a'.repeat(89);
     // A guid of 90 chars produces "<90>/asset.meta" = 101 bytes -- exceeds limit
     const overLimitGuid = 'b'.repeat(90);
@@ -66,9 +67,9 @@ describe('createUnityPackage', () => {
         meta: encoder.encode('meta'),
       },
     ], { gzipLevel: 1 });
-    // invalid-guid fires (89 chars, not 32) but no oversized-pathname for tar names
+    // invalid-guid fires (89 chars, not 32) but no oversized-pathname-tar for tar names
     const atLimitOversized = (atLimitResult.diagnostics as CreateUnityPackageDiagnostic[]).filter(
-      d => d.code === 'oversized-pathname',
+      d => d.code === 'oversized-pathname-tar',
     );
     expect(atLimitOversized).toHaveLength(0);
 
@@ -80,9 +81,9 @@ describe('createUnityPackage', () => {
         meta: encoder.encode('meta'),
       },
     ], { gzipLevel: 1 });
-    // oversized-pathname fires because "<90>/asset.meta" is 101 bytes
+    // oversized-pathname-tar fires because "<90>/asset.meta" is 101 bytes
     const overLimitOversized = (overLimitResult.diagnostics as CreateUnityPackageDiagnostic[]).filter(
-      d => d.code === 'oversized-pathname',
+      d => d.code === 'oversized-pathname-tar',
     );
     expect(overLimitOversized.length).toBeGreaterThan(0);
     expect(overLimitOversized[0].message).toContain('Tar entry name is too long');
@@ -256,6 +257,25 @@ describe('tryCreateUnityPackage', () => {
     expect(result.bytes).not.toBeNull();
   });
 
+  it('normalizes uppercase GUID to lowercase on create -- round-trip preserves identity', () => {
+    const upperGuid = 'ABCDEF1234567890ABCDEF1234567890';
+    const lowerGuid = upperGuid.toLowerCase();
+    const result = tryCreateUnityPackage([
+      {
+        guid: upperGuid,
+        pathname: 'Assets/UpperGuid.cs',
+        asset: encoder.encode('class UpperGuid {}'),
+        meta: encoder.encode('guid: abcdef1234567890abcdef1234567890'),
+      },
+    ]);
+    expect(result.bytes).not.toBeNull();
+
+    // Round-trip: parsed entry.guid must equal the lowercase form
+    const { entries: parsed } = parseUnityPackageEntries(result.bytes!);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].guid).toBe(lowerGuid);
+  });
+
   it('returns bytes: null and oversized-pathname diagnostic when pathname exceeds 200 chars', () => {
     const guid = 'dddddddddddddddddddddddddddddddd';
     const longPathname = 'Assets/' + 'X'.repeat(195);
@@ -275,7 +295,7 @@ describe('tryCreateUnityPackage', () => {
     expect(diag[0].severity).toBe('error');
   });
 
-  it('returns bytes: null and oversized-pathname diagnostic when tar entry name exceeds 100 bytes', () => {
+  it('returns bytes: null and oversized-pathname-tar diagnostic when tar entry name exceeds 100 bytes', () => {
     // 90-char guid: "<90>/asset.meta" = 101 bytes > 100
     const longGuid = 'b'.repeat(90);
     const result = tryCreateUnityPackage([
@@ -287,7 +307,7 @@ describe('tryCreateUnityPackage', () => {
       },
     ]);
     expect(result.bytes).toBeNull();
-    const diag = result.diagnostics.filter(d => d.code === 'oversized-pathname');
+    const diag = result.diagnostics.filter(d => d.code === 'oversized-pathname-tar');
     expect(diag.length).toBeGreaterThan(0);
     expect(diag[0].message).toContain('Tar entry name is too long');
     expect(diag[0].severity).toBe('error');
@@ -371,5 +391,68 @@ describe('estimateUnityPackageSize', () => {
     const { tarBytes, entryCount } = estimateUnityPackageSize(entries);
     expect(tarBytes).toBe(uncompressedTarSize(entries));
     expect(entryCount).toBe(5);
+  });
+
+  it('round-trips the Polytope_URP fixture preserving preview bytes exactly', () => {
+    const fixtureUrl = new URL('../../../fixtures/static/archives/Polytope_URP.unitypackage', import.meta.url);
+    const fixtureBytes = readFileSync(fixtureUrl);
+
+    // Parse the original package
+    const { entries: originalEntries } = parseUnityPackageEntries(fixtureBytes);
+
+    // Verify we have entries with previews to make the test meaningful
+    const entriesWithPreviews = originalEntries.filter(e => e.preview !== undefined);
+    expect(entriesWithPreviews.length).toBeGreaterThan(0);
+
+    // Create package entries structure for repackaging
+    const repackEntries: CreateUnityPackageEntry[] = originalEntries.map(e => {
+      if (!e.meta) {
+        throw new Error(`Fixture entry missing meta: ${e.pathname}`);
+      }
+      return {
+        guid: e.guid,
+        pathname: e.pathname,
+        meta: e.meta,
+        asset: e.asset,
+        preview: e.preview,
+      };
+    });
+
+    // Pack them back
+    const repackedPkg = createUnityPackage(repackEntries, { gzipLevel: 6 });
+
+    // Parse the repacked package
+    const { entries: repackedEntries } = parseUnityPackageEntries(repackedPkg);
+
+    // Check that we got the exact same entries back, including preview bytes
+    expect(repackedEntries.length).toBe(originalEntries.length);
+
+    for (const original of originalEntries) {
+      const repacked = repackedEntries.find(r => r.guid === original.guid);
+      expect(repacked).toBeDefined();
+      expect(repacked!.pathname).toBe(original.pathname);
+
+      // Compare preview bytes
+      if (original.preview) {
+        expect(repacked!.preview).toBeDefined();
+        expect(repacked!.preview).toEqual(original.preview);
+      } else {
+        expect(repacked!.preview).toBeUndefined();
+      }
+
+      // Compare asset bytes
+      if (original.asset) {
+        expect(repacked!.asset).toBeDefined();
+        expect(repacked!.asset).toEqual(original.asset);
+      } else {
+        expect(repacked!.asset).toBeUndefined();
+      }
+
+      // Compare meta bytes
+      if (original.meta) {
+        expect(repacked!.meta).toBeDefined();
+        expect(repacked!.meta).toEqual(original.meta);
+      }
+    }
   });
 });

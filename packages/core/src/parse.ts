@@ -1,4 +1,4 @@
-import { Gunzip, gunzipSync } from 'fflate';
+import { Gunzip } from 'fflate';
 import type { ExtractedFileContent, UnityPackageDiagnosticSeverity, UnityPackageEntry } from './model';
 import { BLOCK_SIZE, concatUint8Arrays, textDecoder } from './tar';
 
@@ -25,10 +25,6 @@ export interface UnityPackageParseDiagnostic {
   guid?: string;
 }
 
-/** @deprecated Use the `{ entries, diagnostics }` return shape from `parseUnityPackageEntries` instead. */
-export type UnityPackageEntriesResult = UnityPackageEntry[] & {
-  diagnostics: UnityPackageParseDiagnostic[];
-};
 
 /** Default maximum total decompressed output bytes across all entries (4 GiB). */
 export const DEFAULT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024 * 1024;
@@ -36,6 +32,25 @@ export const DEFAULT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024 * 1024;
 /** Default maximum number of parsed GUID entries. */
 export const DEFAULT_MAX_ENTRIES = 250_000;
 
+/**
+ * Thrown when a parse operation exceeds a configured decompression-bomb guard.
+ *
+ * ### `observed` semantics
+ * `observed` is the **cumulative total after the offending entry or chunk was
+ * processed**, so `observed > limit` is always true; `observed === limit` never
+ * triggers the guard.
+ *
+ * ### `kind` values
+ * - `'output-bytes'` -- the guard fired on raw decompressed size.
+ *   `observed` is the total decompressed byte count accumulated up to and
+ *   including the chunk that pushed it past the limit
+ *   (set via {@link ParseUnityPackageOptions.maxOutputBytes};
+ *   default {@link DEFAULT_MAX_OUTPUT_BYTES}).
+ * - `'entry-count'` -- the guard fired on the number of GUID entries.
+ *   `observed` is the entry count at the point the limit was exceeded
+ *   (set via {@link ParseUnityPackageOptions.maxEntries};
+ *   default {@link DEFAULT_MAX_ENTRIES}).
+ */
 export class DecompressionBombError extends Error {
   readonly kind: 'output-bytes' | 'entry-count';
   readonly observed: number;
@@ -56,24 +71,22 @@ export interface ParseUnityPackageOptions {
   maxOutputBytes?: number;
   /** Maximum number of parsed GUID entries. Default: {@link DEFAULT_MAX_ENTRIES} (250 000). */
   maxEntries?: number;
+  /** Chunk size for gzip decompression in bytes. Default: 256 KiB (262144 bytes). */
+  chunkSize?: number;
 }
 
-export interface StreamParseProgressEvent {
-  /** Decompressed bytes consumed so far in the tar stream. */
-  bytesRead: number;
-  /** Total decompressed tar bytes, when known. */
-  bytesTotal: number;
+export interface IterEntriesProgressEvent {
   /** Number of fully emitted GUID entries so far. */
   entryCount: number;
 }
 
-export interface StreamParseOptions extends ParseUnityPackageOptions {
-  onProgress?: (event: StreamParseProgressEvent) => void;
+export interface IterEntriesOptions extends ParseUnityPackageOptions {
+  onProgress?: (event: IterEntriesProgressEvent) => void;
 }
 
-export type StreamParseItemKind = 'entry' | 'diagnostic';
-export type StreamedEntry = UnityPackageEntry & { _kind: 'entry' };
-export type StreamedDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
+export type IterEntriesItemKind = 'entry' | 'diagnostic';
+export type IterEntriesEntry = UnityPackageEntry & { _kind: 'entry' };
+export type IterEntriesDiagnostic = UnityPackageParseDiagnostic & { _kind: 'diagnostic' };
 
 const UNITY_GUID_PATTERN = /^[0-9a-fA-F]{32}$/;
 const EXPECTED_GUID_FILES = new Set(['pathname', 'asset', 'asset.meta', 'metaData', 'preview.png']);
@@ -101,15 +114,26 @@ export function parseUnityPackageEntries(
   data: Uint8Array,
   options?: ParseUnityPackageOptions,
 ): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
-  const decompressed = gunzipSync(data);
+  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const chunkSize = options?.chunkSize ?? 256 * 1024;
+  const decompressed = gunzipBounded(data, maxOutputBytes, chunkSize);
   return parseUnityPackageTar(decompressed, options);
 }
 
-export function* parseUnityPackageStream(
+/**
+ * Synchronous generator that yields entries and diagnostics.
+ *
+ * Note: gzip and tar are fully decompressed and processed before the generator
+ * yields the first entry. This function is for callers that want incremental UI
+ * updates between entry yielding, not memory bounding.
+ */
+export function* iterUnityPackageEntries(
   bytes: Uint8Array,
-  options?: StreamParseOptions,
-): Generator<StreamedEntry | StreamedDiagnostic> {
-  const decompressed = gunzipSync(bytes);
+  options?: IterEntriesOptions,
+): Generator<IterEntriesEntry | IterEntriesDiagnostic> {
+  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const chunkSize = options?.chunkSize ?? 256 * 1024;
+  const decompressed = gunzipBounded(bytes, maxOutputBytes, chunkSize);
   const { entries, diagnostics } = parseUnityPackageTar(decompressed, options);
 
   for (const diagnostic of diagnostics) {
@@ -117,30 +141,26 @@ export function* parseUnityPackageStream(
   }
 
   let entryCount = 0;
-  let lastProgressMs = -Infinity;
   for (const entry of entries) {
     yield { ...entry, _kind: 'entry' };
     entryCount += 1;
     if (options?.onProgress !== undefined) {
-      const now = Date.now();
-      if (now - lastProgressMs >= 16) {
-        lastProgressMs = now;
-        options.onProgress({ bytesRead: decompressed.byteLength, bytesTotal: decompressed.byteLength, entryCount });
-      }
+      options.onProgress({ entryCount });
     }
-  }
-
-  if (options?.onProgress !== undefined) {
-    options.onProgress({ bytesRead: decompressed.byteLength, bytesTotal: decompressed.byteLength, entryCount });
   }
 }
 
-export function parseUnityPackageStreamed(
+/**
+ * Decompresses a gzip-compressed buffer in chunks, throwing
+ * {@link DecompressionBombError} the moment the running decompressed total
+ * exceeds `maxOutputBytes`.  All three sync/generator entry points call this
+ * so the guard fires before any tar work runs.
+ */
+function gunzipBounded(
   data: Uint8Array,
-  options?: ParseUnityPackageOptions & { chunkSize?: number },
-): { entries: UnityPackageEntry[]; diagnostics: UnityPackageParseDiagnostic[] } {
-  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
-  const chunkSize = options?.chunkSize ?? 64 * 1024;
+  maxOutputBytes: number,
+  chunkSize = 256 * 1024,
+): Uint8Array {
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   let thrown: unknown;
@@ -164,13 +184,16 @@ export function parseUnityPackageStreamed(
   const gunzip = new Gunzip(ondata);
   for (let offset = 0; offset < data.byteLength; offset += chunkSize) {
     if (thrown !== undefined) break;
-    gunzip.push(data.slice(offset, Math.min(data.byteLength, offset + chunkSize)), offset + chunkSize >= data.byteLength);
+    gunzip.push(
+      data.subarray(offset, Math.min(data.byteLength, offset + chunkSize)),
+      offset + chunkSize >= data.byteLength,
+    );
   }
 
   if (thrown !== undefined) {
-    throw thrown instanceof Error ? thrown : new Error('Streaming gunzip failed with a non-Error value.');
+    throw thrown instanceof Error ? thrown : new Error('Gunzip failed with a non-Error value.');
   }
-  return parseUnityPackageTar(concatUint8Arrays(chunks), options);
+  return concatUint8Arrays(chunks);
 }
 
 function parseUnityPackageTar(
@@ -188,7 +211,7 @@ function readTarMembers(data: Uint8Array, diagnostics: UnityPackageParseDiagnost
   let offset = 0;
 
   while (offset + BLOCK_SIZE <= data.length) {
-    const header = data.slice(offset, offset + BLOCK_SIZE);
+    const header = data.subarray(offset, offset + BLOCK_SIZE);
     if (header.every(byte => byte === 0)) break;
 
     const name = readTarString(header, 0, 100);
@@ -262,7 +285,6 @@ function mapUnityEntries(
   diagnostics: UnityPackageParseDiagnostic[],
   options?: ParseUnityPackageOptions,
 ): UnityPackageEntry[] {
-  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const maxEntries = options?.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const groups = new Map<string, Map<string, Uint8Array>>();
 
@@ -293,7 +315,6 @@ function mapUnityEntries(
   }
 
   const entries: UnityPackageEntry[] = [];
-  let totalOutputBytes = 0;
 
   for (const [guid, files] of groups) {
     const pathnameBuf = files.get('pathname');
@@ -334,11 +355,6 @@ function mapUnityEntries(
     const asset = files.get('asset');
     const meta = files.get('asset.meta') ?? files.get('metaData');
     const preview = files.get('preview.png');
-    const entryBytes = (asset?.byteLength ?? 0) + (meta?.byteLength ?? 0) + (preview?.byteLength ?? 0);
-    totalOutputBytes += entryBytes;
-    if (totalOutputBytes > maxOutputBytes) {
-      throw new DecompressionBombError('output-bytes', totalOutputBytes);
-    }
 
     if (preview !== undefined) {
       diagnostics.push({
@@ -413,7 +429,7 @@ function validateTarMemberName(name: string, diagnostics: UnityPackageParseDiagn
 }
 
 function readTarString(header: Uint8Array, offset: number, length: number): string {
-  return textDecoder.decode(header.slice(offset, offset + length)).replace(/\0/g, '').trim();
+  return textDecoder.decode(header.subarray(offset, offset + length)).replace(/\0/g, '').trim();
 }
 
 function readTarOctal(header: Uint8Array, offset: number, length: number): number | null {

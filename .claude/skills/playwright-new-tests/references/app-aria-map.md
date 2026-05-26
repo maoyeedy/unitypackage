@@ -133,7 +133,7 @@ await expect(page.getByText(/Package parsing failed/)).toBeVisible();
 
 ## Fixture
 
-Real `.unitypackage` for upload tests: `fixtures/static/editor-packed.unitypackage`
+Real `.unitypackage` for upload tests: `fixtures/static/archives/Polytope_URP.unitypackage`
 
 ```typescript
 import { fileURLToPath } from 'node:url';
@@ -141,7 +141,7 @@ import path from 'node:path';
 
 const fixturePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../../fixtures/static/editor-packed.unitypackage'
+  '../../../fixtures/static/archives/Polytope_URP.unitypackage'
 );
 ```
 

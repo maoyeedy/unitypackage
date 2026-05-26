@@ -2,9 +2,30 @@
   "schemaVersion": 0,
   "package": {
     "size": 200,
-    "sha256": "b051ead700a659226ee565586714d8b33c1eaa857c6cd2bebc550a4c16b5e17e"
+    "sha256": "775cbba020abb2f6e5d201a431b013c094bab6e12c076b15ce554ac1f537800d"
   },
   "summary": {
+    "entryCount": 1,
+    "fileCount": 1,
+    "folderCount": 0,
+    "previewCount": 0,
+    "uniqueGuidCount": 1,
+    "duplicateGuidCount": 0,
+    "totalAssetBytes": 11,
+    "totalMetaBytes": 60,
+    "totalPreviewBytes": 0,
+    "byExtension": [
+      {
+        "extension": "cs",
+        "count": 1,
+        "assetBytes": 11
+      }
+    ],
+    "diagnosticsBySeverity": {
+      "info": 0,
+      "warning": 0,
+      "error": 0
+    },
     "entries": 1,
     "withAsset": 1,
     "withMeta": 1,
@@ -17,6 +38,46 @@
       "hasAsset": true,
       "assetSize": 11,
       "hasMeta": true
+    }
+  ],
+  "components": [
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1:asset:Assets/Minimal.cs",
+      "guid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+      "pathname": "Assets/Minimal.cs",
+      "virtualPath": "Assets/Minimal.cs",
+      "component": "asset",
+      "byteLength": 11,
+      "extension": "cs",
+      "mimeType": "text/plain;charset=utf-8",
+      "previewKind": "text",
+      "syntaxLanguage": "csharp",
+      "diagnostics": [],
+      "hasAsset": true,
+      "hasMeta": true,
+      "hasPreview": false,
+      "assetSize": 11,
+      "metaSize": 60,
+      "duplicatePathCount": 1
+    },
+    {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1:meta:Assets/Minimal.cs.meta",
+      "guid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+      "pathname": "Assets/Minimal.cs",
+      "virtualPath": "Assets/Minimal.cs.meta",
+      "component": "meta",
+      "byteLength": 60,
+      "extension": "meta",
+      "mimeType": "text/plain;charset=utf-8",
+      "previewKind": "text",
+      "syntaxLanguage": "yaml",
+      "diagnostics": [],
+      "hasAsset": true,
+      "hasMeta": true,
+      "hasPreview": false,
+      "assetSize": 11,
+      "metaSize": 60,
+      "duplicatePathCount": 1
     }
   ]
 }

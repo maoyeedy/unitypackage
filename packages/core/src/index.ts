@@ -8,6 +8,7 @@ export {
   guidFromPath,
   isValidGuid,
 } from './guid';
+export { matchGlob } from './glob';
 export type {
   PathnameCollision,
   PathnameRejectionReason,
@@ -37,6 +38,7 @@ export {
   detectMetaImporterType,
   readDeclaredMetaImporter,
   readMetaGuid,
+  writeMetaGuid,
 } from './meta';
 export type {
   PreviewKind,
@@ -63,13 +65,12 @@ export type {
 } from './component';
 export { entriesToComponentRecords } from './component';
 export type {
+  IterEntriesDiagnostic,
+  IterEntriesEntry,
+  IterEntriesItemKind,
+  IterEntriesOptions,
+  IterEntriesProgressEvent,
   ParseUnityPackageOptions,
-  StreamedDiagnostic,
-  StreamedEntry,
-  StreamParseItemKind,
-  StreamParseOptions,
-  StreamParseProgressEvent,
-  UnityPackageEntriesResult,
   UnityPackageParseDiagnostic,
   UnityPackageParseDiagnosticCode,
 } from './parse';
@@ -77,10 +78,9 @@ export {
   DEFAULT_MAX_ENTRIES,
   DEFAULT_MAX_OUTPUT_BYTES,
   DecompressionBombError,
+  iterUnityPackageEntries,
   parseUnityPackage,
   parseUnityPackageEntries,
-  parseUnityPackageStream,
-  parseUnityPackageStreamed,
 } from './parse';
 export type {
   CreateUnityPackageDiagnostic,

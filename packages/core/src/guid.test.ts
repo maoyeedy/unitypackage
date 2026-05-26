@@ -16,9 +16,10 @@ describe('isValidGuid', () => {
     expect(isValidGuid('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBe(false);
   });
 
-  it('rejects uppercase hex', () => {
-    expect(isValidGuid('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBe(false);
-    expect(isValidGuid('Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBe(false);
+  it('accepts uppercase and mixed-case hex', () => {
+    expect(isValidGuid('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')).toBe(true);
+    expect(isValidGuid('Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBe(true);
+    expect(isValidGuid('0123456789ABCDEF0123456789abcdef')).toBe(true);
   });
 
   it('rejects non-hex characters', () => {
