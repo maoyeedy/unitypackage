@@ -37,11 +37,14 @@ Add repository automation for dependency updates and coordinated package version
 
 Dependabot should target **minor only** — current major versions (ESLint 10, TS 6, Vitest 4, Vite 8, Lucide 1, vite-plugin-pwa 1, react-hooks 7) were verified in the May 2026 upgrade pass and should not be auto-bumped. Only patch/minor within each major.
 
+Changesets are **agent-written per change** (no CI bot / "Version Packages" PR). Agent workflow: after implementation + lint/verify → `bunx changeset` → include changeset file in commit. At release time: `bun changeset version` bumps versions, regenerates CHANGELOGs, and replaces `workspace:*` → `^x.y.z` automatically.
+
 Exit criteria
 ```text
 - Root Dependabot config covers the monorepo package ecosystem, targeting minor updates.
 - Changesets is configured for coordinated `core` and `cli` versioning.
 - Root scripts or docs explain the changeset workflow if a command is added.
+- Changesets use CLI-only mode — no GitHub Action, no CI bot.
 - Run: bun run check
 ```
 
@@ -107,7 +110,12 @@ Verify tarball contents: `dist/`, `README.md`, `LICENSE` for each.
 
 ### Version bump
 
-Edit `packages/core/package.json` and `packages/cli/package.json` (semver). CLI: replace `"unitypackage-core": "workspace:*"` with `"^<version>"`.
+```sh
+bun changeset version     # bumps versions, updates CHANGELOGs, replaces workspace:*
+```
+Edit individual changeset `.md` files first if the auto-generated summary needs cleanup, then run `bun changeset version`.
+
+If running manually without changesets: edit `packages/core/package.json` and `packages/cli/package.json` (semver). CLI: replace `"unitypackage-core": "workspace:*"` with `"^<version>"`.
 
 ### Publish order (strict)
 
@@ -121,7 +129,7 @@ Both run `prepublishOnly` (build + lint + test) automatically.
 ```sh
 npm view unitypackage-core          # verify version
 npm view unitypackage-tools         # verify version
-git add packages/core/package.json packages/cli/package.json
+git add -A
 git commit -m "chore: release v<version>"
 git tag v<version>
 git push && git push --tags

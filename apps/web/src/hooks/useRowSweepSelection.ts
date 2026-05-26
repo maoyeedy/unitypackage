@@ -6,6 +6,15 @@ const dragSelectionThresholdPx = 4;
 const dragAutoScrollEdgePx = 32;
 const dragAutoScrollStepPx = 18;
 
+function scrollElementNearEdge(scrollElement: HTMLElement, clientY: number) {
+  const bounds = scrollElement.getBoundingClientRect();
+  if (clientY < bounds.top + dragAutoScrollEdgePx) {
+    scrollElement.scrollTop -= dragAutoScrollStepPx;
+  } else if (clientY > bounds.bottom - dragAutoScrollEdgePx) {
+    scrollElement.scrollTop += dragAutoScrollStepPx;
+  }
+}
+
 type SelectionMode = 'add' | 'remove';
 
 interface DragSelectionState {
@@ -69,13 +78,7 @@ export function useRowSweepSelection({
     const scrollNearEdge = (clientY: number) => {
       const scrollElement = scrollRef.current;
       if (!scrollElement) return;
-
-      const bounds = scrollElement.getBoundingClientRect();
-      if (clientY < bounds.top + dragAutoScrollEdgePx) {
-        scrollElement.scrollTop -= dragAutoScrollStepPx;
-      } else if (clientY > bounds.bottom - dragAutoScrollEdgePx) {
-        scrollElement.scrollTop += dragAutoScrollStepPx;
-      }
+      scrollElementNearEdge(scrollElement, clientY);
     };
 
     const getRecordIdAtPoint = (clientX: number, clientY: number) => {

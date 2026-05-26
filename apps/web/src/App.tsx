@@ -774,6 +774,12 @@ function AppContent() {
     void handlePackageFileWithHandle(file, null);
   };
 
+  const handlePackageFileRef = useRef(handlePackageFileWithHandle);
+
+  useEffect(() => {
+    handlePackageFileRef.current = handlePackageFileWithHandle;
+  });
+
   useEffect(() => {
     if (typeof window !== 'undefined' && 'launchQueue' in window && window.launchQueue) {
       window.launchQueue.setConsumer(async (launchParams) => {
@@ -782,7 +788,7 @@ function AppContent() {
           if (fileHandle) {
             try {
               const file = await fileHandle.getFile();
-              void handlePackageFileWithHandle(file, fileHandle);
+              void handlePackageFileRef.current(file, fileHandle);
             } catch (err) {
               console.error('Failed to open file from launchQueue:', err);
             }
@@ -790,7 +796,6 @@ function AppContent() {
         }
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRecentClick = async (recent: RecentPackage) => {

@@ -22,13 +22,12 @@
 | `@playwright/test` 1.x | Latest |
 | `vite-plugin-pwa` 1.x | Latest |
 
-## Gaps (Nice-to-Have)
+## Installed
 
-| Package | Why |
-|---------|-----|
-| **Prettier** 3.x | No formatter; ESLint-only style rules conflict-prone |
-| **@changesets/cli** | Monorepo with 2 publishable packages; CHANGELOG.md maintained manually |
-| **Husky** + **lint-staged** | Pre-commit lint/format enforcement |
+### @changesets/cli
+
+Installed at root (`bun add -d @changesets/cli`). Agent writes `.changeset/*.md` per change. At release time `bun changeset version` bumps versions, regenerates CHANGELOGs, and replaces `workspace:*` → `^x.y.z`. No CI bot — CLI-only mode.
+
 
 ## Installed
 
@@ -71,6 +70,17 @@ RTL fills the **component layer** — fast, targeted, run-on-save tests for thin
 - Hook and composition testing in isolation
 - `bun run test:web` — RTL tests run as part of the existing Vitest project
 
-## Optional
+### React Compiler
 
-- **React Compiler**: `babel-plugin-react-compiler` + `@rolldown/plugin-babel` for auto-memoization. Works with current `@vitejs/plugin-react` 6 via `reactCompilerPreset`.
+`babel-plugin-react-compiler` + `@rolldown/plugin-babel` + `@babel/core` (all in `apps/web`).
+
+Auto-memoizes React components at build time — equivalent to inserting correct `useMemo`/`useCallback`/`React.memo` with perfect dependency arrays. Enabled via `reactCompilerPreset` in `apps/web/vite.config.ts`. Babel plugin runs first, then oxc handles JSX transform/Fast Refresh.
+
+**What it enables:**
+- Components with zero manual memo get free optimization (7 of 12 `.tsx` files had none)
+- Future code never needs manual `useMemo`/`useCallback` — write plain code, compiler handles caching
+- ESLint rule (`eslint-plugin-react-compiler`) catches violations pre-build: impure components, prop mutation, conditional hooks
+- Remove existing `useMemo`/`useCallback` incrementally after verifying with React DevTools "Memo ✨" badge
+- Does NOT cover hooks that directly mutate DOM element properties (use `scrollElementNearEdge` helper pattern instead)
+
+**Cost:** ~10% slower builds due to Babel pass, ~20KB added to final bundle (compiler runtime).

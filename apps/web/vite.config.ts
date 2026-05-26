@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
@@ -11,6 +12,9 @@ export default defineConfig({
     strictPort: true,
   },
   plugins: [
+    babel({
+      presets: [reactCompilerPreset()],
+    }),
     react(),
     VitePWA({
       registerType: 'autoUpdate',

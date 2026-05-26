@@ -3,6 +3,7 @@ import { defineConfig, globalIgnores, includeIgnoreFile } from 'eslint/config';
 import { fileURLToPath } from 'node:url';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import reactCompiler from 'eslint-plugin-react-compiler';
 import reactHooks from 'eslint-plugin-react-hooks';
 import { reactRefresh } from 'eslint-plugin-react-refresh';
 
@@ -59,10 +60,12 @@ export default defineConfig(
     files: ['apps/web/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
     plugins: {
+      'react-compiler': reactCompiler,
       'react-hooks': reactHooks,
     },
     rules: {
       ...reactHooks.configs['recommended-latest'].rules,
+      'react-compiler/react-compiler': 'error',
     },
   },
 );

@@ -24,9 +24,9 @@ export default defineConfig({
           root: './apps/web',
           include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
           setupFiles: ['./src/test/setup.ts'],
-          environmentMatchGlobs: [
-            ['src/**/*.test.tsx', 'jsdom'],
-          ],
+          // NOTE: per-file "// @vitest-environment jsdom" required on
+          // each .test.tsx — environmentMatchGlobs doesn't resolve
+          // correctly inside project configs with root in vitest 4.x.
         },
       },
     ],

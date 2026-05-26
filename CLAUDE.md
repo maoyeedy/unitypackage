@@ -56,6 +56,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **`apps/web` typecheck**: `tsc -b` (not `--noEmit` — skips project ref resolution).
 - **`apps/web` English-only**: no translations, language selectors, or `language` URL state.
 - **`apps/web` Pack mode**: shell only. `.unitypackage` export disabled. ZIP remains Extract-mode.
+- **`apps/web` has React Compiler**: enabled via `@rolldown/plugin-babel` + `reactCompilerPreset` in `vite.config.ts`. Auto-memoizes components at build time. Manual `useMemo`/`useCallback`/`React.memo` can be removed incrementally after verifying via React DevTools "Memo ✨" badge. Does not apply to hooks that mutate DOM props directly (use `scrollElementNearEdge` helper pattern).
 - **`PackageFileRecord` has no `kind`**: use `extension` + `isUnityPreview` primitives, or `getRecordCategory(record)` for a single discriminator. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
@@ -85,7 +86,8 @@ All contexts (dev, CI, published): Node ≥24.
 - **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `README.md` exist.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
-- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`. Place `.test.tsx` files co-located with components.
+- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
+- **React Compiler ESLint rule**: `eslint-plugin-react-compiler` is active in the web-app block. Errors indicate the compiler will skip that component/hook. Fix violations to maximize compiler coverage.
 - **Knip** (`bun run knip`): detects unused files, exports, dependencies. Config at `knip.ts`. Run after structural changes to catch dead code.
 
 ## Reference
