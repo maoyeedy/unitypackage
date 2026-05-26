@@ -22,6 +22,9 @@ bun run smoke                     # ad-hoc smoke tests (inspect, verify, diff, e
 bun run test:core                 # vitest --project core
 bun run test:cli                  # vitest --project cli
 bun run test:web                  # vitest --project web
+bun run knip                      # detect unused deps/exports/files
+bun run test:knip                 # alias
+bun run test:web                  # vitest --project web (unit + RTL)
 bun run --filter @unitypackage-tools/web typecheck
 bun run --filter @unitypackage-tools/web build
 bunx eslint apps/web/src         # source-only, avoids dev-dist/
@@ -79,9 +82,11 @@ All contexts (dev, CI, published): Node ≥24.
 - **E2E fixture path from `apps/web/tests/`**: `path.join(..., '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
 - **`getByRole` name matching is substring**: use `exact: true` when label is a substring of another (e.g., `'Pack'` matches "Stage for pack").
 - **E2E explorer rows are virtualized**: search/filter before selecting named rows that may be offscreen. Use file-row selectors or exact file checkbox names when you need a file; broad `getByRole('checkbox', { name: /^Select/ }).first()` can hit folder scope toggles and select many records.
-- **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `Changelog.md` or `README.md` exist.
+- **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `README.md` exist.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
+- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`. Place `.test.tsx` files co-located with components.
+- **Knip** (`bun run knip`): detects unused files, exports, dependencies. Config at `knip.ts`. Run after structural changes to catch dead code.
 
 ## Reference
 
