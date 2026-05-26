@@ -17,11 +17,9 @@ metadata completeness.
 
 ### P1 - CI, publish, and Pages workflows
 
-Add workflows that reflect the commands already documented for this repository.
-Keep secrets and publish behavior explicit and conservative.
+Add workflows that reflect the commands already documented for this repository. Keep secrets and publish behavior explicit and conservative.
 
-Prerequisite: `bunfig.toml` sets `[run] shell = "bun"` for cross-platform
-consistency. Workflow steps can rely on `bun run <script>` using Bun's shell
+Prerequisite: `bunfig.toml` sets `[run] shell = "bun"` for cross-platform consistency. Workflow steps can rely on `bun run <script>` using Bun's shell
 on all three OS runners (no bash-specific syntax assumed).
 
 Exit criteria
@@ -35,12 +33,13 @@ Exit criteria
 
 ### P2 - Dependency and version automation
 
-Add repository automation for dependency updates and coordinated package
-versioning without changing package versions unless required by tooling setup.
+Add repository automation for dependency updates and coordinated package versioning without changing package versions unless required by tooling setup.
+
+Dependabot should target **minor only** — current major versions (ESLint 10, TS 6, Vitest 4, Vite 8, Lucide 1, vite-plugin-pwa 1, react-hooks 7) were verified in the May 2026 upgrade pass and should not be auto-bumped. Only patch/minor within each major.
 
 Exit criteria
 ```text
-- Root Dependabot config covers the monorepo package ecosystem.
+- Root Dependabot config covers the monorepo package ecosystem, targeting minor updates.
 - Changesets is configured for coordinated `core` and `cli` versioning.
 - Root scripts or docs explain the changeset workflow if a command is added.
 - Run: bun run check
