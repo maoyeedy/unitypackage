@@ -13,8 +13,12 @@ import { CliError, EXIT } from './util/exit.js';
 export async function cli(argv: string[]): Promise<void> {
   const { command, positional, flags } = parseArgs(argv);
 
-  if (!command || flagBool(flags, 'help')) {
-    printHelp();
+  if (!command) {
+    printRootHelp();
+    return;
+  }
+  if (flagBool(flags, 'help')) {
+    printCommandHelp(command);
     return;
   }
 
@@ -50,7 +54,7 @@ export async function cli(argv: string[]): Promise<void> {
         await runWeb(flags);
         break;
       default:
-        printHelp();
+        printRootHelp();
         throw new CliError(`Unknown command: ${command}`, EXIT.ERROR);
     }
   } finally {
@@ -209,50 +213,150 @@ function parseNonNegativeSafeIntegerFlag(
   return value;
 }
 
-function printHelp(): void {
+function printRootHelp(): void {
   console.log(`\
 Usage: unitypackage-tools <command> [options]
 
 Commands:
-  extract <package.unitypackage> [output-dir]
-    --filter <glob>    Match full package pathnames, e.g. **/*.shader
-    --exclude <glob>   Exclude full package pathnames
-    --path <pathname>  Extract one exact package pathname; repeatable
-    --path-file <file> Read exact package pathnames from a line-delimited file
-    --merge            Merge into an existing directory
-    --force            Overwrite existing files
-    --skip-existing    Skip files that already exist
-    --no-meta          Do not write .meta files
-    --with-meta        Include sidecars for exact --path asset selections
-    --dry-run          Plan extraction without writing files
-    --json             Write extract plan/result as JSON
-
-  pack <output.unitypackage> [src dest]...
-    --manifest <file>  Read JSON { "src": "dst" } pairs
-    --gzip-level <0-9> Set gzip compression level
-    --random-guids     Generate non-reproducible GUIDs for missing .meta files
-    --dry-run          Validate and plan package creation without writing
-    --json             Write pack plan/result as JSON
-
-  inspect <package.unitypackage>
-    --json             Write inspect result as JSON
-    --format <format>  Output format: list or tree
-    --filter <filter>  Show only entries matching extension or glob
-    --exclude <glob>   Exclude full package pathnames
-
-  verify <package.unitypackage>
-    --json             Write verify result as JSON
-    --strict           Fail when warnings are present
-
-  diff <before.unitypackage> <after.unitypackage>
-    --json             Write diff result as JSON
-
-  web [--port <n>] [--host <host>]
-                      Serve the web UI (default: 5173)
+  extract   Extract files from a .unitypackage archive
+  pack      Create a .unitypackage archive from source files
+  inspect   Inspect contents of a .unitypackage archive
+  verify    Verify structure and integrity of a .unitypackage archive
+  diff      Compare two .unitypackage archives
+  web       Launch the web UI for browsing .unitypackage files
 
 Global:
-  --max-output-bytes <n>
-                      Safety limit for decompressed package bytes
-  --max-entries <n>   Safety limit for parsed package entries
-  -h, --help           Show this help`);
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help
+
+Run 'unitypackage-tools <command> --help' for command-specific options.`);
+}
+
+function printCommandHelp(command: string): void {
+  switch (command) {
+    case 'extract':
+      console.log(`\
+Usage: unitypackage-tools extract <package.unitypackage> [output-dir] [options]
+
+Extract files from a .unitypackage archive.
+
+Selection (mutually exclusive):
+    --filter <glob>    Match full package pathnames, e.g. **/*.shader
+    --path <pathname>  Extract one exact package pathname (repeatable)
+    --path-file <file> Read exact package pathnames from a line-delimited file
+
+Filtering:
+    --exclude <glob>   Exclude full package pathnames matching glob
+
+Output:
+    --force            Overwrite existing files
+    --skip-existing    Skip files that already exist
+    --merge            Merge into an existing directory
+    --no-meta          Do not write .meta files
+    --with-meta        Include sidecars for exact --path selections
+
+Operational:
+    --dry-run          Plan extraction without writing files
+    --json             Write result as JSON to stdout
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    case 'pack':
+      console.log(`\
+Usage: unitypackage-tools pack <output.unitypackage> [src dest]... [options]
+
+Create a .unitypackage archive from source files.
+
+Source specification (mutually exclusive with [src dest]...):
+    --manifest <file>  Read JSON { "src": "dst" } pairs from file
+
+Compression:
+    --gzip-level <0-9> Set gzip compression level (default: 6)
+
+GUID handling:
+    --random-guids     Generate non-reproducible GUIDs for missing .meta
+
+Operational:
+    --dry-run          Validate and plan package creation without writing
+    --json             Write result as JSON to stdout
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    case 'inspect':
+      console.log(`\
+Usage: unitypackage-tools inspect <package.unitypackage> [options]
+
+Inspect contents of a .unitypackage archive.
+
+Options:
+    --format <format>  Output format: list (default) or tree
+    --filter <filter>  Show only entries matching extension or glob
+    --exclude <glob>   Exclude full package pathnames
+    --json             Write result as JSON to stdout
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    case 'verify':
+      console.log(`\
+Usage: unitypackage-tools verify <package.unitypackage> [options]
+
+Verify structure and integrity of a .unitypackage archive.
+
+Options:
+    --strict           Fail when warnings are present (default: warn only)
+    --json             Write result as JSON to stdout
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    case 'diff':
+      console.log(`\
+Usage: unitypackage-tools diff <before.unitypackage> <after.unitypackage> [options]
+
+Compare two .unitypackage archives and show file-level changes.
+
+Options:
+    --json             Write result as JSON to stdout
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    case 'web':
+      console.log(`\
+Usage: unitypackage-tools web [options]
+
+Launch the web UI for browsing and extracting .unitypackage files.
+
+Options:
+    --port <n>         HTTP port (default: 5173)
+    --host <host>      Bind address (default: localhost)
+
+Global:
+  --max-output-bytes <n>  Safety limit for decompressed package bytes
+  --max-entries <n>       Safety limit for parsed package entries
+  -h, --help               Show this help`);
+      break;
+
+    default:
+      printRootHelp();
+  }
 }

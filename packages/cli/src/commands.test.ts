@@ -7,31 +7,133 @@ import { createLimiter } from './util/concurrency.js';
 import { parseArgs } from './util/args.js';
 
 describe('cli help', () => {
-  it('groups command forms with command-specific flags', async () => {
+  it('shows condensed root help with command descriptions', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     try {
       await cli(['--help']);
       const help = logSpy.mock.calls.map(call => call[0]).join('\n');
-      expect(help).toContain('extract <package.unitypackage> [output-dir]');
-      expect(help).toContain('--filter <glob>    Match full package pathnames');
-      expect(help).toContain('--exclude <glob>   Exclude full package pathnames');
-      expect(help).toContain('--path <pathname>  Extract one exact package pathname; repeatable');
-      expect(help).toContain('--path-file <file> Read exact package pathnames');
-      expect(help).toContain('--with-meta        Include sidecars for exact --path asset selections');
-      expect(help).toContain('--dry-run          Plan extraction without writing files');
-      expect(help).toContain('inspect <package.unitypackage>');
-      expect(help).toContain('--json             Write inspect result as JSON');
-      expect(help).toContain('verify <package.unitypackage>');
-      expect(help).toContain('--json             Write verify result as JSON');
-      expect(help).toContain('diff <before.unitypackage> <after.unitypackage>');
-      expect(help).toContain('--json             Write diff result as JSON');
-      expect(help).toContain('web [--port <n>] [--host <host>]');
+      expect(help).toContain('extract');
+      expect(help).toContain('Extract files from a .unitypackage archive');
+      expect(help).toContain('pack');
+      expect(help).toContain('Create a .unitypackage archive');
+      expect(help).toContain('inspect');
+      expect(help).toContain('Inspect contents of a .unitypackage archive');
+      expect(help).toContain('verify');
+      expect(help).toContain('Verify structure and integrity');
+      expect(help).toContain('diff');
+      expect(help).toContain('Compare two .unitypackage archives');
+      expect(help).toContain('web');
+      expect(help).toContain('Launch the web UI');
       expect(help).toContain('--max-output-bytes <n>');
       expect(help).toContain('Safety limit for decompressed package bytes');
-      expect(help).toContain('--max-entries <n>   Safety limit for parsed package entries');
-      expect(help).not.toContain('health <package.unitypackage>');
-      expect(help).not.toContain('Write health checks as JSON');
+      expect(help).toContain('--max-entries <n>');
+      expect(help).toContain("Run 'unitypackage-tools <command> --help'");
+      expect(help).not.toContain('--filter <glob>');
+      expect(help).not.toContain('health');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe('cli per-command help', () => {
+  it('extract --help shows extract-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['extract', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Extract files from a .unitypackage archive');
+      expect(help).toContain('--filter <glob>');
+      expect(help).toContain('--exclude <glob>');
+      expect(help).toContain('--path <pathname>');
+      expect(help).toContain('--path-file <file>');
+      expect(help).toContain('--merge');
+      expect(help).toContain('--force');
+      expect(help).toContain('--skip-existing');
+      expect(help).toContain('--no-meta');
+      expect(help).toContain('--with-meta');
+      expect(help).toContain('--dry-run');
+      expect(help).not.toContain('--strict');
+      expect(help).not.toContain('--format');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('pack --help shows pack-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['pack', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Create a .unitypackage archive');
+      expect(help).toContain('--manifest <file>');
+      expect(help).toContain('--gzip-level <0-9>');
+      expect(help).toContain('--random-guids');
+      expect(help).toContain('--dry-run');
+      expect(help).not.toContain('--filter');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('inspect --help shows inspect-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['inspect', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Inspect contents of a .unitypackage archive');
+      expect(help).toContain('--format <format>');
+      expect(help).toContain('--filter <filter>');
+      expect(help).toContain('--exclude <glob>');
+      expect(help).not.toContain('--strict');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('verify --help shows verify-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['verify', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Verify structure and integrity');
+      expect(help).toContain('--strict');
+      expect(help).not.toContain('--format');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('diff --help shows diff-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['diff', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Compare two .unitypackage archives');
+      expect(help).toContain('--json');
+      expect(help).not.toContain('--strict');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('web --help shows web-specific flags', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await cli(['web', '--help']);
+      const help = logSpy.mock.calls.map(call => call[0]).join('\n');
+      expect(help).toContain('Launch the web UI');
+      expect(help).toContain('--port <n>');
+      expect(help).toContain('--host <host>');
+      expect(help).not.toContain('--strict');
+      expect(help).not.toContain('--filter');
     } finally {
       logSpy.mockRestore();
     }
