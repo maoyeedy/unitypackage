@@ -8,7 +8,7 @@
     "build": "bun run --filter '*' build",
     "build:core": "bun run --filter unitypackage-core build",
     "build:web": "bun run --filter @unitypackage-tools/web build",
-    "build:cli": "node scripts/copy-web-assets.ts && bun run --filter unitypackage-tools build",
+    "build:cli": "bun run build:web && node scripts/copy-web-assets.ts && bun run --filter unitypackage-tools build",
     "test": "bun run --filter '*' test",
     "test:core": "vitest run --project core",
     "test:cli": "vitest run --project cli",
@@ -16,8 +16,10 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "bun run --filter '*' typecheck",
-    "check": "bun run lint && bun run typecheck && bun run build && bun run test",
+    "check": "bun run lint && bun run typecheck && bun run build && bun run test && bun run smoke",
     "dev:web": "bun run --filter @unitypackage-tools/web dev",
+    "clean": "node scripts/clean.ts",
+    "smoke": "node scripts/smoke.ts",
     "pack:dry": "bun run build && npm pack --workspace unitypackage-core --dry-run && npm pack --workspace unitypackage-tools --dry-run"
   },
   "devDependencies": {

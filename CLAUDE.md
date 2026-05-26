@@ -6,17 +6,19 @@
 | `packages/cli` | `unitypackage-tools` | Node CLI, Node ≥24 |
 | `apps/web` | `@unitypackage-tools/web` | Vite 6 + React 19 PWA |
 | `fixtures` | `@unitypackage-tools/fixtures` | synth builders (`generated/`), assets, archived packages (`static/`) |
-| `scripts` | — | `copy-web-assets.ts`, `fixtures-build.ts` |
+| `scripts` | — | `clean.ts`, `copy-web-assets.ts`, `fixtures-build.ts`, `smoke.ts` |
 
 ## Commands
 
 ```
-bun run check                     # lint+typecheck+build+test
+bun run check                     # lint+typecheck+build+test+smoke
 bun run build                     # all packages
 bun run build:cli                 # build:web → copy-assets → build cli
+bun run clean                     # wipe all build artifacts
 bun run dev:web                   # Vite dev server
 bun run lint:fix                  # eslint --fix all
 bun run pack:dry                  # npm pack --dry-run
+bun run smoke                     # ad-hoc smoke tests (inspect, verify, diff, extract)
 bun run test:core                 # vitest --project core
 bun run test:cli                  # vitest --project cli
 bun run test:web                  # vitest --project web
@@ -29,7 +31,7 @@ Smoke test examples (ad-hoc shell, not in CI — agent invokes on demand):
 ```
 bun packages/cli/dist/bin.js inspect "fixtures/static/archives/Polytope_URP.unitypackage" --json   # exit 0, valid JSON
 bun packages/cli/dist/bin.js verify  "fixtures/static/archives/Polytope_URP.unitypackage"          # exit 0
-node scripts/fixtures-build.ts                                                                     # exit 0
+bun scripts/fixtures-build.ts                                                                     # exit 0
 bun packages/cli/dist/bin.js diff fixtures/generated/minimal.unitypackage fixtures/generated/nested.unitypackage --json   # exit 0, entries differ
 bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader"       # exit 0, files created
 bun packages/cli/dist/bin.js extract "fixtures/static/archives/Polytope_URP.unitypackage" /tmp/unitypackage-extract-test --filter "**/*.shader" --merge # exit 0, files created
