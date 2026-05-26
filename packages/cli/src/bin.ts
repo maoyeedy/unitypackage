@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { cli } from './cli.js';
+import { mapCliError } from './util/exit.js';
 
 cli(process.argv.slice(2)).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
+  const mapped = mapCliError(err);
+  console.error(mapped.message);
+  process.exit(mapped.code);
 });

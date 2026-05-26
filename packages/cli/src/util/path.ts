@@ -21,6 +21,7 @@ function sanitizeFilename(name: string): string {
   return sanitized;
 }
 
+// CLI-owned: filesystem extraction and package path input need OS-aware sanitization.
 export function sanitizePackagePath(rawPath: string): string {
   const components = rawPath.split(/[/\\]/);
   const sanitized = components
@@ -42,10 +43,4 @@ export function isInside(parent: string, child: string): boolean {
   const resolvedParent = path.resolve(parent);
   const resolvedChild = path.resolve(child);
   return resolvedChild === resolvedParent || resolvedChild.startsWith(resolvedParent + path.sep);
-}
-
-export function assertInside(parent: string, child: string): void {
-  if (!isInside(parent, child)) {
-    throw new Error(`Path escape: "${child}" is outside "${parent}"`);
-  }
 }

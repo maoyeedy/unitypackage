@@ -4,10 +4,6 @@ export function setJsonMode(enabled: boolean): void {
   jsonMode = enabled;
 }
 
-export function isJsonMode(): boolean {
-  return jsonMode;
-}
-
 export function info(msg: string): void {
   if (!jsonMode) console.log(msg);
 }

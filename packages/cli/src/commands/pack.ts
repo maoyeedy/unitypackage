@@ -1,9 +1,16 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createUnityPackage, type CreateUnityPackageEntry } from 'unitypackage-core';
-import { type Meta, parseMeta, generateMeta, serializeMeta } from '../util/meta.js';
+import {
+  createMinimalMetaFor,
+  generateGuid,
+  guidFromPath,
+  readMetaGuid,
+  tryCreateUnityPackage,
+  type CreateUnityPackageEntry,
+  type CreateUnityPackageDiagnostic,
+} from 'unitypackage-core';
 import { sanitizePackagePath } from '../util/path.js';
-import { safeReadFile, safeGetStats } from '../util/fs.js';
+import { safeGetStats } from '../util/fs.js';
 import { createLimiter, mapConcurrent } from '../util/concurrency.js';
 import { info, progress, warn } from '../util/logger.js';
 import { EXIT, CliError } from '../util/exit.js';
@@ -11,15 +18,37 @@ import { EXIT, CliError } from '../util/exit.js';
 export interface PackOptions {
   manifestPath?: string;
   gzipLevel?: number;
+  randomGuids?: boolean;
 }
 
 const packConcurrency = 16;
 const progressThreshold = 100;
+const textEncoder = new TextEncoder();
 
-async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Promise<T>) => Promise<T>): Promise<Meta | null> {
-  const content = await limitRead(() => safeReadFile(assetPath + '.meta'));
+interface EntryMeta {
+  guid: string;
+  bytes: Uint8Array;
+}
+
+async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Promise<T>) => Promise<T>): Promise<EntryMeta | null> {
+  const content = await limitRead(async () => {
+    try {
+      return await readFile(assetPath + '.meta');
+    } catch {
+      return null;
+    }
+  });
   if (!content) return null;
-  return parseMeta(content);
+  const guid = readMetaGuid(content);
+  return guid === null ? null : { guid, bytes: content };
+}
+
+function createGeneratedMeta(pathInPackage: string, isDirectory: boolean, randomGuids: boolean): EntryMeta {
+  const guid = randomGuids ? generateGuid() : guidFromPath(pathInPackage);
+  return {
+    guid,
+    bytes: textEncoder.encode(createMinimalMetaFor(guid, pathInPackage, isDirectory)),
+  };
 }
 
 async function createPackageEntry(
@@ -28,13 +57,14 @@ async function createPackageEntry(
   isDirectory: boolean,
   limitRead: <T>(task: () => Promise<T>) => Promise<T>,
   onEntry: () => void,
+  randomGuids: boolean,
 ): Promise<CreateUnityPackageEntry> {
-  const meta = (await getExistingMeta(sourcePath, limitRead)) ?? generateMeta(pathInPackage, isDirectory);
+  const meta = (await getExistingMeta(sourcePath, limitRead)) ?? createGeneratedMeta(pathInPackage, isDirectory, randomGuids);
 
   const entry: CreateUnityPackageEntry = {
     guid: meta.guid,
     pathname: pathInPackage,
-    meta: serializeMeta(meta),
+    meta: meta.bytes,
   };
 
   if (!isDirectory) {
@@ -50,6 +80,7 @@ async function collectDirectoryEntries(
   pathInPackageRoot: string,
   limitRead: <T>(task: () => Promise<T>) => Promise<T>,
   onEntry: () => void,
+  randomGuids: boolean,
 ): Promise<CreateUnityPackageEntry[]> {
   const dirEntries = await readdir(sourceDir, { withFileTypes: true });
 
@@ -63,9 +94,13 @@ async function collectDirectoryEntries(
     const entryPathInPackage = path.posix.join(pathInPackageRoot, entry.name);
     const isDirectory = entry.isDirectory();
 
-    const packageEntries = [await createPackageEntry(fullSourcePath, entryPathInPackage, isDirectory, limitRead, onEntry)];
+    const packageEntries = [
+      await createPackageEntry(fullSourcePath, entryPathInPackage, isDirectory, limitRead, onEntry, randomGuids),
+    ];
     if (isDirectory) {
-      packageEntries.push(...(await collectDirectoryEntries(fullSourcePath, entryPathInPackage, limitRead, onEntry)));
+      packageEntries.push(
+        ...(await collectDirectoryEntries(fullSourcePath, entryPathInPackage, limitRead, onEntry, randomGuids)),
+      );
     }
     return packageEntries;
   });
@@ -76,6 +111,7 @@ async function collectDirectoryEntries(
 export async function pack(filesToPack: Record<string, string>, outputFile: string, opts: PackOptions = {}): Promise<void> {
   const startTime = performance.now();
   const gzipLevel = validateGzipLevel(opts.gzipLevel);
+  const randomGuids = opts.randomGuids === true;
   const manifestEntries = opts.manifestPath ? await readManifest(opts.manifestPath) : {};
   const allFilesToPack = { ...manifestEntries, ...filesToPack };
 
@@ -112,10 +148,12 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
     }
 
     const isDirectory = stats.isDirectory();
-    const entries = [await createPackageEntry(absoluteSourcePath, pathInPackage, isDirectory, limitRead, onEntry)];
+    const entries = [
+      await createPackageEntry(absoluteSourcePath, pathInPackage, isDirectory, limitRead, onEntry, randomGuids),
+    ];
 
     if (isDirectory) {
-      entries.push(...(await collectDirectoryEntries(absoluteSourcePath, pathInPackage, limitRead, onEntry)));
+      entries.push(...(await collectDirectoryEntries(absoluteSourcePath, pathInPackage, limitRead, onEntry, randomGuids)));
     }
 
     return entries;
@@ -125,11 +163,27 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
   if (packageEntries.length > progressThreshold) {
     progress(`Pack progress: writing ${packageEntries.length} entries`);
   }
-  const data = createUnityPackage(packageEntries, { gzipLevel });
+  const result = tryCreateUnityPackage(packageEntries, { gzipLevel });
+  if (result.bytes === null) {
+    for (const diagnostic of result.diagnostics) {
+      console.error(formatCreateDiagnostic(diagnostic));
+    }
+    throw new CliError('Package validation failed.', EXIT.ERROR);
+  }
+  const data = result.bytes;
   await writeFile(outputFile, data);
 
   const elapsed = (performance.now() - startTime).toFixed(2);
   info(`Package created at ${outputFile} (${elapsed}ms)`);
+}
+
+function formatCreateDiagnostic(diagnostic: CreateUnityPackageDiagnostic): string {
+  const details = [
+    `ERROR: [${diagnostic.code}] ${diagnostic.message}`,
+    diagnostic.guid === undefined ? undefined : `guid=${diagnostic.guid}`,
+    diagnostic.path === undefined ? undefined : `path=${diagnostic.path}`,
+  ].filter((part): part is string => part !== undefined);
+  return details.join(' ');
 }
 
 async function readManifest(manifestPath: string): Promise<Record<string, string>> {

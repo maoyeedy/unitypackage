@@ -1,8 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import crypto from 'node:crypto';
-import { parseUnityPackageEntries, type UnityPackageEntry } from 'unitypackage-core';
-import { CliError, EXIT } from '../util/exit.js';
+import type { ParseUnityPackageOptions, UnityPackageEntry } from 'unitypackage-core';
 import { info } from '../util/logger.js';
+import { parsePackageBytes, readPackageBytes } from '../util/package.js';
+import { writeJsonResult } from '../util/output.js';
 
 export interface DiffEntry {
   guid: string;
@@ -25,9 +25,14 @@ export interface DiffResult {
   changed: ChangedDiffEntry[];
 }
 
-export async function diff(packageA: string, packageB: string, opts: { json?: boolean } = {}): Promise<DiffResult> {
-  const before = await loadEntries(packageA);
-  const after = await loadEntries(packageB);
+export interface DiffOptions {
+  json?: boolean;
+  parseOptions?: ParseUnityPackageOptions;
+}
+
+export async function diff(packageA: string, packageB: string, opts: DiffOptions = {}): Promise<DiffResult> {
+  const before = await loadEntries(packageA, opts.parseOptions);
+  const after = await loadEntries(packageB, opts.parseOptions);
   const beforeByGuid = new Map(before.map(entry => [entry.guid, toDiffEntry(entry)]));
   const afterByGuid = new Map(after.map(entry => [entry.guid, toDiffEntry(entry)]));
   const added: DiffEntry[] = [];
@@ -61,7 +66,7 @@ export async function diff(packageA: string, packageB: string, opts: { json?: bo
   };
 
   if (opts.json) {
-    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    writeJsonResult(result);
   } else {
     printDiff(result);
   }
@@ -69,11 +74,9 @@ export async function diff(packageA: string, packageB: string, opts: { json?: bo
   return result;
 }
 
-async function loadEntries(packagePath: string): Promise<UnityPackageEntry[]> {
-  const raw = await readFile(packagePath).catch(() => {
-    throw new CliError(`Cannot read file: ${packagePath}`, EXIT.IO);
-  });
-  const { entries } = parseUnityPackageEntries(new Uint8Array(raw));
+async function loadEntries(packagePath: string, parseOptions?: ParseUnityPackageOptions): Promise<UnityPackageEntry[]> {
+  const raw = await readPackageBytes(packagePath);
+  const { entries } = parsePackageBytes(raw, parseOptions);
   return entries;
 }
 

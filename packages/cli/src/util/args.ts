@@ -3,7 +3,7 @@ import { parseArgs as nodeParseArgs } from 'node:util';
 export interface ParsedArgs {
   command: string | undefined;
   positional: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, string | boolean | string[]>;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -16,12 +16,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
       merge: { type: 'boolean' },
       'skip-existing': { type: 'boolean' },
       'no-meta': { type: 'boolean' },
+      'with-meta': { type: 'boolean' },
       strict: { type: 'boolean' },
       manifest: { type: 'string' },
       'gzip-level': { type: 'string' },
       filter: { type: 'string' },
+      path: { type: 'string', multiple: true },
       format: { type: 'string' },
       port: { type: 'string' },
+      host: { type: 'string' },
+      'max-output-bytes': { type: 'string' },
+      'max-entries': { type: 'string' },
     },
     allowPositionals: true,
     strict: false,
@@ -31,15 +36,21 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return {
     command,
     positional: rest,
-    flags: values as Record<string, string | boolean>,
+    flags: values as Record<string, string | boolean | string[]>,
   };
 }
 
-export function flagBool(flags: Record<string, string | boolean>, name: string): boolean {
+export function flagBool(flags: Record<string, string | boolean | string[]>, name: string): boolean {
   return flags[name] === true || flags[name] === 'true';
 }
 
-export function flagStr(flags: Record<string, string | boolean>, name: string): string | undefined {
+export function flagStr(flags: Record<string, string | boolean | string[]>, name: string): string | undefined {
   const v = flags[name];
   return typeof v === 'string' ? v : undefined;
+}
+
+export function flagStrs(flags: Record<string, string | boolean | string[]>, name: string): string[] {
+  const v = flags[name];
+  if (Array.isArray(v)) return v;
+  return typeof v === 'string' ? [v] : [];
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { sanitizePackagePath, sanitizeFsPath, isInside } from './util/path.js';
-import { createGuid, parseMeta, generateMeta } from './util/meta.js';
+import { parseMeta } from './util/meta.js';
+import { EXIT, mapCliError } from './util/exit.js';
 
 describe('sanitizePackagePath', () => {
   it('preserves valid path', () => {
@@ -69,23 +70,8 @@ describe('isInside', () => {
   });
 });
 
-describe('createGuid', () => {
-  it('returns 32-char uppercase hex string', () => {
-    const guid = createGuid('Assets/Test.cs');
-    expect(guid).toMatch(/^[0-9A-F]{32}$/);
-  });
-
-  it('is deterministic', () => {
-    expect(createGuid('Assets/Test.cs')).toBe(createGuid('Assets/Test.cs'));
-  });
-
-  it('differs for different inputs', () => {
-    expect(createGuid('Assets/A.cs')).not.toBe(createGuid('Assets/B.cs'));
-  });
-});
-
 describe('parseMeta', () => {
-  it('parses valid YAML meta with guid', () => {
+  it('reads a valid meta guid', () => {
     const meta = parseMeta('fileFormatVersion: 2\nguid: abcdef1234567890abcdef1234567890\n');
     expect(meta?.guid).toBe('abcdef1234567890abcdef1234567890');
   });
@@ -94,21 +80,22 @@ describe('parseMeta', () => {
     expect(parseMeta('fileFormatVersion: 2\n')).toBeNull();
   });
 
-  it('returns null for invalid YAML', () => {
+  it('returns null for malformed text', () => {
     expect(parseMeta('{')).toBeNull();
   });
 });
 
-describe('generateMeta', () => {
-  it('generates meta for file with 32-char guid', () => {
-    const meta = generateMeta('Assets/Foo.cs', false);
-    expect(meta.fileFormatVersion).toBe(2);
-    expect(meta.guid).toMatch(/^[0-9A-F]{32}$/);
-    expect(meta.folderAsset).toBeUndefined();
-  });
+describe('mapCliError', () => {
+  it('maps core decompression bomb errors to the stable CLI bomb exit', () => {
+    const mapped = mapCliError({
+      name: 'DecompressionBombError',
+      kind: 'entry-count',
+      observed: 2,
+    });
 
-  it('marks folders with folderAsset: true', () => {
-    const meta = generateMeta('Assets/Scripts', true);
-    expect(meta.folderAsset).toBe(true);
+    expect(mapped).toEqual({
+      code: EXIT.BOMB,
+      message: 'Decompression bomb guard triggered: kind=entry-count observed=2',
+    });
   });
 });

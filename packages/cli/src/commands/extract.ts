@@ -1,18 +1,31 @@
 import path from 'node:path';
 import { access, readFile, writeFile } from 'node:fs/promises';
-import { parseUnityPackageEntries } from 'unitypackage-core';
+import {
+  entriesToComponentRecords,
+  resolveMetaSidecarSelection,
+  type ParseUnityPackageOptions,
+  type ResolveMetaSidecarsResult,
+  type SidecarSelectableRecord,
+  type UnityPackageComponentRecord,
+  type UnityPackageEntry,
+  type UnityPackageParseDiagnostic,
+} from 'unitypackage-core';
 import { sanitizeFsPath, isInside } from '../util/path.js';
 import { ensureDir } from '../util/fs.js';
 import { matchesGlob } from '../util/glob.js';
 import { info, progress, warn } from '../util/logger.js';
 import { CliError, EXIT } from '../util/exit.js';
+import { parsePackageBytes, readPackageBytes } from '../util/package.js';
 
 export interface ExtractOptions {
   force?: boolean;
   merge?: boolean;
   skipExisting?: boolean;
   noMeta?: boolean;
+  withMeta?: boolean;
   filter?: string;
+  paths?: readonly string[];
+  parseOptions?: ParseUnityPackageOptions;
 }
 
 interface WriteTask {
@@ -25,52 +38,171 @@ interface PlannedWriteTask extends WriteTask {
   unchanged: boolean;
 }
 
+export interface ExactExtractSelectionResult {
+  records: UnityPackageComponentRecord[];
+  explicitRecords: UnityPackageComponentRecord[];
+  implicitMetaRecords: UnityPackageComponentRecord[];
+  missingMetaForAssetRecords: UnityPackageComponentRecord[];
+  sidecars: ResolveMetaSidecarsResult;
+}
+
 const progressThreshold = 100;
 
 function hasTraversalSegment(rawPath: string): boolean {
   return rawPath.split(/[\\/]+/).some(segment => segment === '..');
 }
 
+/** @internal */
+export function entriesToExtractComponentRecords(
+  entries: UnityPackageEntry[],
+  diagnostics: UnityPackageParseDiagnostic[] = [],
+): UnityPackageComponentRecord[] {
+  return entriesToComponentRecords(entries, diagnostics);
+}
+
+/** @internal */
+export function resolveExactExtractSelection(
+  entries: UnityPackageEntry[],
+  selectedVirtualPaths: readonly string[],
+  diagnostics: UnityPackageParseDiagnostic[] = [],
+): ExactExtractSelectionResult {
+  const records = entriesToExtractComponentRecords(entries, diagnostics);
+  const selectableRecords = records.map(toSidecarSelectableRecord);
+  const selectedPathnames = new Set(selectedVirtualPaths);
+  const selectedIds = records
+    .filter(record => record.component !== 'preview' && selectedPathnames.has(record.virtualPath))
+    .map(record => record.id);
+  const sidecars = resolveMetaSidecarSelection(selectableRecords, selectedIds);
+  const recordById = new Map(records.map(record => [record.id, record]));
+
+  const explicitRecords = sidecars.explicitIds.flatMap(id => {
+      const record = recordById.get(id);
+      return record === undefined ? [] : [record];
+    });
+
+  return {
+    records: explicitRecords,
+    explicitRecords,
+    implicitMetaRecords: sidecars.implicitMetaIds.flatMap(id => {
+      const record = recordById.get(id);
+      return record === undefined ? [] : [record];
+    }),
+    missingMetaForAssetRecords: sidecars.missingMetaForAssetIds.flatMap(id => {
+      const record = recordById.get(id);
+      return record === undefined ? [] : [record];
+    }),
+    sidecars,
+  };
+}
+
+function toSidecarSelectableRecord(record: UnityPackageComponentRecord): SidecarSelectableRecord {
+  return {
+    id: record.id,
+    guid: record.guid,
+    pathname: record.virtualPath,
+    kind: record.component,
+  };
+}
+
 export async function extract(packagePath: string, outputDir?: string, opts: ExtractOptions = {}): Promise<void> {
   const outDir = path.resolve(outputDir ?? process.cwd());
-  const raw = await readFile(packagePath);
-  const { entries } = parseUnityPackageEntries(new Uint8Array(raw));
+  const raw = await readPackageBytes(packagePath);
+  const { entries } = parsePackageBytes(raw, opts.parseOptions);
 
   const tasks: WriteTask[] = [];
   let skippedTraversal = 0;
+  const requestedPaths = opts.paths ?? [];
 
-  for (const entry of entries) {
-    if (opts.filter && !matchesGlob(entry.pathname, opts.filter)) {
-      continue;
+  if (requestedPaths.length > 0 && opts.filter !== undefined) {
+    throw new CliError('extract --filter and --path cannot be combined.', EXIT.ERROR);
+  }
+
+  if (opts.withMeta && requestedPaths.length === 0) {
+    throw new CliError('extract --with-meta requires at least one --path selection.', EXIT.ERROR);
+  }
+
+  if (opts.withMeta && opts.noMeta) {
+    warn('extract --no-meta overrides --with-meta; no meta sidecars will be written.');
+  }
+
+  if (requestedPaths.length > 0) {
+    const selection = resolveExactExtractSelection(entries, requestedPaths);
+    const matchedPathnames = new Set(selection.explicitRecords.map(record => record.virtualPath));
+    const selectedRecords = (opts.withMeta && !opts.noMeta
+      ? [...selection.explicitRecords, ...selection.implicitMetaRecords]
+      : selection.explicitRecords).filter(record => !opts.noMeta || record.component !== 'meta');
+
+    for (const requestedPath of requestedPaths) {
+      if (!matchedPathnames.has(requestedPath)) {
+        warn(`Requested path not found: ${requestedPath}`);
+      }
     }
 
-    if (hasTraversalSegment(entry.pathname)) {
-      skippedTraversal++;
-      warn(`Skipping '${entry.pathname}' — path escapes output directory`);
-      continue;
+    if (opts.withMeta && !opts.noMeta) {
+      for (const record of selection.missingMetaForAssetRecords) {
+        warn(`Meta sidecar not found for selected path: ${record.virtualPath}`);
+      }
     }
 
-    const safePath = sanitizeFsPath(entry.pathname);
-    const dest = path.join(outDir, safePath);
+    for (const record of selectedRecords) {
+      if (record.component === 'preview') continue;
 
-    if (!isInside(outDir, dest)) {
-      skippedTraversal++;
-      warn(`Skipping '${entry.pathname}' — path escapes output directory`);
-      continue;
+      if (hasTraversalSegment(record.virtualPath)) {
+        skippedTraversal++;
+        warn(`Skipping '${record.virtualPath}' - path escapes output directory`);
+        continue;
+      }
+
+      const safePath = sanitizeFsPath(record.virtualPath);
+      const dest = path.join(outDir, safePath);
+
+      if (!isInside(outDir, dest)) {
+        skippedTraversal++;
+        warn(`Skipping '${record.virtualPath}' - path escapes output directory`);
+        continue;
+      }
+
+      tasks.push({ dest, data: record.content });
     }
 
-    if (!entry.asset) {
-      // Folder entry — just ensure directory exists and write meta if present
-      await ensureDir(dest);
+    if (tasks.length === 0) {
+      throw new CliError('None of the requested extract paths exist.', EXIT.ERROR);
+    }
+  } else {
+
+    for (const entry of entries) {
+      if (opts.filter && !matchesGlob(entry.pathname, opts.filter)) {
+        continue;
+      }
+
+      if (hasTraversalSegment(entry.pathname)) {
+        skippedTraversal++;
+        warn(`Skipping '${entry.pathname}' - path escapes output directory`);
+        continue;
+      }
+
+      const safePath = sanitizeFsPath(entry.pathname);
+      const dest = path.join(outDir, safePath);
+
+      if (!isInside(outDir, dest)) {
+        skippedTraversal++;
+        warn(`Skipping '${entry.pathname}' - path escapes output directory`);
+        continue;
+      }
+
+      if (!entry.asset) {
+        // Folder entry - just ensure directory exists and write meta if present.
+        await ensureDir(dest);
+        if (entry.meta && !opts.noMeta) {
+          tasks.push({ dest: dest + '.meta', data: entry.meta });
+        }
+        continue;
+      }
+
+      tasks.push({ dest, data: entry.asset });
       if (entry.meta && !opts.noMeta) {
         tasks.push({ dest: dest + '.meta', data: entry.meta });
       }
-      continue;
-    }
-
-    tasks.push({ dest, data: entry.asset });
-    if (entry.meta && !opts.noMeta) {
-      tasks.push({ dest: dest + '.meta', data: entry.meta });
     }
   }
 
