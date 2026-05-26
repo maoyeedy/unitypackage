@@ -1,12 +1,15 @@
 import { gunzipSync } from 'node:zlib';
 import {
   analyzeUnityPackageEntries,
+  parseUnityPackageEntries,
   type ParseUnityPackageOptions,
   type UnityPackageAnalysisFinding,
+  type UnityPackageParseDiagnostic,
+  type UnityPackageEntry,
 } from 'unitypackage-core';
 import { info, warn, error } from '../util/logger.js';
 import { EXIT, CliError } from '../util/exit.js';
-import { parsePackageBytes, readPackageBytes } from '../util/package.js';
+import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
 export type FindingLevel = 'warn' | 'error';
@@ -45,10 +48,10 @@ export async function verify(packagePath: string, opts: VerifyOptions = {}): Pro
     findings.push({ level, code, message, ...(entry !== undefined && { entry }) });
   }
 
-  let entries: ReturnType<typeof parsePackageBytes>['entries'];
-  let parseDiagnostics: ReturnType<typeof parsePackageBytes>['diagnostics'];
+  let entries: UnityPackageEntry[];
+  let parseDiagnostics: UnityPackageParseDiagnostic[];
   try {
-    const parsed = parsePackageBytes(raw, opts.parseOptions);
+    const parsed = parseUnityPackageEntries(raw, opts.parseOptions);
     entries = parsed.entries;
     parseDiagnostics = parsed.diagnostics;
   } catch (err) {

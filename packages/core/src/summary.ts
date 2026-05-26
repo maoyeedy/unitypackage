@@ -28,7 +28,9 @@ export interface UnityPackageSummary {
  * diagnostics. Pure function; browser-safe; no side effects.
  *
  * `byExtension` is ordered by `count` descending, ties broken by `extension`
- * ascending. Extensions are lower-cased; extensionless assets use `''`.
+ * ascending. Folder entries (`entry.asset === undefined`) are excluded from
+ * `byExtension` entirely; extensionless assets (no dot after the last slash)
+ * still contribute to the `''` row.
  *
  * `diagnosticsBySeverity` is zeroed (`{ info: 0, warning: 0, error: 0 }`)
  * when `diagnostics` is omitted or empty.

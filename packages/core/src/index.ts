@@ -69,7 +69,6 @@ export type {
   StreamParseItemKind,
   StreamParseOptions,
   StreamParseProgressEvent,
-  UnityPackageEntriesResult,
   UnityPackageParseDiagnostic,
   UnityPackageParseDiagnosticCode,
 } from './parse';

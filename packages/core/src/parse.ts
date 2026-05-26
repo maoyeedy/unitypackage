@@ -25,10 +25,6 @@ export interface UnityPackageParseDiagnostic {
   guid?: string;
 }
 
-/** @deprecated Use the `{ entries, diagnostics }` return shape from `parseUnityPackageEntries` instead. */
-export type UnityPackageEntriesResult = UnityPackageEntry[] & {
-  diagnostics: UnityPackageParseDiagnostic[];
-};
 
 /** Default maximum total decompressed output bytes across all entries (4 GiB). */
 export const DEFAULT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024 * 1024;
@@ -301,7 +297,6 @@ function mapUnityEntries(
   diagnostics: UnityPackageParseDiagnostic[],
   options?: ParseUnityPackageOptions,
 ): UnityPackageEntry[] {
-  const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const maxEntries = options?.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const groups = new Map<string, Map<string, Uint8Array>>();
 
@@ -332,7 +327,6 @@ function mapUnityEntries(
   }
 
   const entries: UnityPackageEntry[] = [];
-  let totalOutputBytes = 0;
 
   for (const [guid, files] of groups) {
     const pathnameBuf = files.get('pathname');
@@ -373,11 +367,6 @@ function mapUnityEntries(
     const asset = files.get('asset');
     const meta = files.get('asset.meta') ?? files.get('metaData');
     const preview = files.get('preview.png');
-    const entryBytes = (asset?.byteLength ?? 0) + (meta?.byteLength ?? 0) + (preview?.byteLength ?? 0);
-    totalOutputBytes += entryBytes;
-    if (totalOutputBytes > maxOutputBytes) {
-      throw new DecompressionBombError('output-bytes', totalOutputBytes);
-    }
 
     if (preview !== undefined) {
       diagnostics.push({

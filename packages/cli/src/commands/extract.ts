@@ -2,6 +2,7 @@ import path from 'node:path';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import {
   entriesToComponentRecords,
+  parseUnityPackageEntries,
   resolveMetaSidecarSelection,
   type ParseUnityPackageOptions,
   type ResolveMetaSidecarsResult,
@@ -15,7 +16,7 @@ import { ensureDir } from '../util/fs.js';
 import { matchesGlob } from '../util/glob.js';
 import { info, progress, warn } from '../util/logger.js';
 import { CliError, EXIT } from '../util/exit.js';
-import { parsePackageBytes, readPackageBytes } from '../util/package.js';
+import { readPackageBytes } from '../util/package.js';
 
 export interface ExtractOptions {
   force?: boolean;
@@ -107,7 +108,7 @@ function toSidecarSelectableRecord(record: UnityPackageComponentRecord): Sidecar
 export async function extract(packagePath: string, outputDir?: string, opts: ExtractOptions = {}): Promise<void> {
   const outDir = path.resolve(outputDir ?? process.cwd());
   const raw = await readPackageBytes(packagePath);
-  const { entries } = parsePackageBytes(raw, opts.parseOptions);
+  const { entries } = parseUnityPackageEntries(raw, opts.parseOptions);
 
   const tasks: WriteTask[] = [];
   let skippedTraversal = 0;

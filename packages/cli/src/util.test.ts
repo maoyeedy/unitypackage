@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { sanitizePackagePath, sanitizeFsPath, isInside } from './util/path.js';
-import { parseMeta } from './util/meta.js';
+import { readMetaGuid } from 'unitypackage-core';
 import { EXIT, mapCliError } from './util/exit.js';
 
 describe('sanitizePackagePath', () => {
@@ -70,18 +70,18 @@ describe('isInside', () => {
   });
 });
 
-describe('parseMeta', () => {
+describe('readMetaGuid', () => {
   it('reads a valid meta guid', () => {
-    const meta = parseMeta('fileFormatVersion: 2\nguid: abcdef1234567890abcdef1234567890\n');
-    expect(meta?.guid).toBe('abcdef1234567890abcdef1234567890');
+    const guid = readMetaGuid('fileFormatVersion: 2\nguid: abcdef1234567890abcdef1234567890\n');
+    expect(guid).toBe('abcdef1234567890abcdef1234567890');
   });
 
   it('returns null for missing guid', () => {
-    expect(parseMeta('fileFormatVersion: 2\n')).toBeNull();
+    expect(readMetaGuid('fileFormatVersion: 2\n')).toBeNull();
   });
 
   it('returns null for malformed text', () => {
-    expect(parseMeta('{')).toBeNull();
+    expect(readMetaGuid('{')).toBeNull();
   });
 });
 

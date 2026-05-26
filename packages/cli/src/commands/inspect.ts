@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import {
   summarizePackage,
+  parseUnityPackageEntries,
   type ParseUnityPackageOptions,
   type UnityPackageEntry,
+  type UnityPackageParseDiagnostic,
   type UnityPackageSummary,
 } from 'unitypackage-core';
 import { info } from '../util/logger.js';
-import { parsePackageBytes, readPackageBytes } from '../util/package.js';
+import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
 export interface InspectEntry {
@@ -48,7 +50,7 @@ function matchesExtension(pathname: string, ext: string): boolean {
   return pathname.toLowerCase().endsWith(normalized);
 }
 
-function summarize(entries: UnityPackageEntry[], diagnostics?: ReturnType<typeof parsePackageBytes>['diagnostics']): InspectSummary {
+function summarize(entries: UnityPackageEntry[], diagnostics?: UnityPackageParseDiagnostic[]): InspectSummary {
   const coreSummary = summarizePackage(entries, diagnostics);
   return {
     ...coreSummary,
@@ -97,7 +99,7 @@ function printTree(node: TreeNode, depth = 1): void {
 export async function inspect(packagePath: string, opts: InspectOptions = {}): Promise<InspectResult> {
   const raw = await readPackageBytes(packagePath);
   const sha256 = crypto.createHash('sha256').update(raw).digest('hex');
-  const { entries, diagnostics } = parsePackageBytes(raw, opts.parseOptions);
+  const { entries, diagnostics } = parseUnityPackageEntries(raw, opts.parseOptions);
   const inspectEntries = entries.map(e => ({
     guid: e.guid,
     pathname: e.pathname,

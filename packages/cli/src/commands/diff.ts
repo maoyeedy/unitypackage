@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
-import type { ParseUnityPackageOptions, UnityPackageEntry } from 'unitypackage-core';
+import { parseUnityPackageEntries, type ParseUnityPackageOptions, type UnityPackageEntry } from 'unitypackage-core';
 import { info } from '../util/logger.js';
-import { parsePackageBytes, readPackageBytes } from '../util/package.js';
+import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
 export interface DiffEntry {
@@ -76,7 +76,7 @@ export async function diff(packageA: string, packageB: string, opts: DiffOptions
 
 async function loadEntries(packagePath: string, parseOptions?: ParseUnityPackageOptions): Promise<UnityPackageEntry[]> {
   const raw = await readPackageBytes(packagePath);
-  const { entries } = parsePackageBytes(raw, parseOptions);
+  const { entries } = parseUnityPackageEntries(raw, parseOptions);
   return entries;
 }
 
