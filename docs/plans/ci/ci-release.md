@@ -20,6 +20,10 @@ metadata completeness.
 Add workflows that reflect the commands already documented for this repository.
 Keep secrets and publish behavior explicit and conservative.
 
+Prerequisite: `bunfig.toml` sets `[run] shell = "bun"` for cross-platform
+consistency. Workflow steps can rely on `bun run <script>` using Bun's shell
+on all three OS runners (no bash-specific syntax assumed).
+
 Exit criteria
 ```text
 - Matrix CI runs on ubuntu, windows, and macos for pushes to `main` and runs `bun run check`.

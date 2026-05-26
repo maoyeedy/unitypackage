@@ -1,3 +1,6 @@
 [install]
 exact = false
 peer = true
+
+[run]
+shell = "bun"
