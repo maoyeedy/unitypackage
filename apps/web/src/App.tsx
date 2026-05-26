@@ -20,7 +20,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { estimateUnityPackageSize } from 'unitypackage-core';
-import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic } from 'unitypackage-core';
+import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic, UnityPackageEntryComponent } from 'unitypackage-core';
 
 import './App.css';
 import type { DownloadZipResponse, ParsePackageResponse, CreatePackageResponse } from './workerTypes';
@@ -127,6 +127,7 @@ interface SerializedRawImportedRecord {
   fileName: string;
   extension: string;
   mimeType: string;
+  component: UnityPackageEntryComponent;
   isUnityPreview: boolean;
   content: string;
   byteLength: number;
@@ -440,6 +441,7 @@ function AppContent() {
               fileName: r.fileName,
               extension: r.extension,
               mimeType: r.mimeType,
+              component: r.component ?? (r.isUnityPreview ? 'preview' : r.extension === 'meta' ? 'meta' : 'asset'),
               isUnityPreview: r.isUnityPreview,
               content: r.content ? base64ToUint8Array(r.content) : new Uint8Array(),
               byteLength: r.byteLength,
@@ -991,6 +993,7 @@ function AppContent() {
           fileName,
           extension,
           mimeType: getMimeType(item.pathname),
+          component: 'asset',
           isUnityPreview: false,
           content: item.content,
           byteLength: item.content.byteLength,

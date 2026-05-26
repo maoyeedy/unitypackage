@@ -19,6 +19,7 @@ import {
   type UnityPackageAnalysisFinding,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
+  type UnityPackageComponentRecord,
 } from 'unitypackage-core';
 
 export type { MetaImporterType, PreviewKind, SidecarSelectableRecord, SyntaxLanguage, UnityPackageAnalysisFinding, ResolveMetaSidecarsResult } from 'unitypackage-core';
@@ -32,27 +33,9 @@ export type FilterMatchMode = 'filename' | 'path' | 'guid';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-export interface PackageFileRecord {
-  id: string;
-  guid: string;
-  pathname: string;
-  virtualPath: string;
+export interface PackageFileRecord extends UnityPackageComponentRecord {
   fileName: string;
-  extension: string;
-  mimeType: string;
   isUnityPreview: boolean;
-  content: Uint8Array;
-  byteLength: number;
-  hasAsset: boolean;
-  hasMeta: boolean;
-  hasPreview: boolean;
-  assetSize?: number;
-  metaSize?: number;
-  previewSize?: number;
-  duplicatePathCount: number;
-  previewKind: PreviewKind;
-  syntaxLanguage: SyntaxLanguage;
-  diagnostics: UnityPackageParseDiagnostic[];
   findings: UnityPackageAnalysisFinding[];
   meta?: Uint8Array;
   isRawImported?: boolean;
@@ -136,26 +119,9 @@ export function entriesToRecords(
   diagnostics: UnityPackageParseDiagnostic[],
 ): PackageFileRecord[] {
   return entriesToComponentRecords(entries, diagnostics).map(record => ({
-    id: record.id,
-    guid: record.guid,
-    pathname: record.pathname,
-    virtualPath: record.virtualPath,
+    ...record,
     fileName: record.virtualPath.split('/').pop() ?? record.virtualPath,
-    extension: record.extension,
-    mimeType: record.mimeType,
     isUnityPreview: record.component === 'preview',
-    content: record.content,
-    byteLength: record.byteLength,
-    hasAsset: record.hasAsset,
-    hasMeta: record.hasMeta,
-    hasPreview: record.hasPreview,
-    assetSize: record.assetSize,
-    metaSize: record.metaSize,
-    previewSize: record.previewSize,
-    duplicatePathCount: record.duplicatePathCount,
-    previewKind: record.previewKind,
-    syntaxLanguage: record.syntaxLanguage,
-    diagnostics: record.diagnostics,
     findings: [],
   }));
 }
