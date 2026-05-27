@@ -133,15 +133,20 @@ async function runPack(positional: string[], flags: Record<string, string | bool
     }
   }
 
-  if ((!manifestPath && rest.length === 0) || rest.length % 2 !== 0) {
+  const expanded = rest.flatMap(arg => {
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx > 0) return [arg.slice(0, eqIdx), arg.slice(eqIdx + 1)];
+    return arg;
+  });
+  if ((!manifestPath && expanded.length === 0) || expanded.length % 2 !== 0) {
     throw new CliError(
-      'pack requires --manifest <file.json> or pairs of <source-path> <path-in-package>.\nExample: pack out.unitypackage ./MyScript.cs Assets/MyScript.cs',
+      'pack requires --manifest <file.json> or <source-path>=<path-in-package> pairs.\nExample: pack out.unitypackage ./MyScript.cs=Assets/MyScript.cs',
       EXIT.ERROR,
     );
   }
   const filesToPack: Record<string, string> = {};
-  for (let i = 0; i < rest.length; i += 2) {
-    filesToPack[path.resolve(rest[i])] = rest[i + 1];
+  for (let i = 0; i < expanded.length; i += 2) {
+    filesToPack[path.resolve(expanded[i])] = expanded[i + 1];
   }
   await pack(filesToPack, path.resolve(outputFile), {
     ...(manifestPath !== undefined && { manifestPath: path.resolve(manifestPath) }),

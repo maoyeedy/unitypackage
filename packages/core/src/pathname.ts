@@ -1,4 +1,4 @@
-import type { UnityPackageEntry } from './model';
+import type { UnityPackageEntry } from './model.js';
 
 // ---------------------------------------------------------------------------
 // Path safety helpers

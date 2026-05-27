@@ -1,5 +1,5 @@
-import { isValidGuid } from './guid';
-import { textDecoder } from './tar';
+import { isValidGuid } from './guid.js';
+import { textDecoder } from './tar.js';
 
 // ---------------------------------------------------------------------------
 // Minimal meta YAML generator

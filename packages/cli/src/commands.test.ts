@@ -273,7 +273,7 @@ describe('cli parse guard options', () => {
     }
 
     await expect(cli(['pack', 'out.unitypackage', '--max-output-bytes', 'abc'])).rejects.toThrow(
-      'pack requires --manifest <file.json> or pairs of <source-path> <path-in-package>.',
+      'pack requires --manifest <file.json> or <source-path>=<path-in-package> pairs.',
     );
   });
 

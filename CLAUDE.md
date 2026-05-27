@@ -25,7 +25,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **core browser-safe**: no `node:*`, `fs`, `path`, `crypto`, `os`, `yaml`, HTTP. Only dep: `fflate`.
 - **core barrel**: `packages/core/src/index.ts` is sole entry. No public subpath exports.
 - **core module layout**: `model.ts`, `guid.ts`, `pathname.ts`, `meta.ts`, `parse.ts`, `create.ts`, `classify.ts`, `tar.ts` (private helper). Tests co-located: `parse.test.ts`, `create.test.ts`, `classify.test.ts`, etc.
-- **core build**: `tsconfig.json` omits `moduleResolution` intentionally. Build writes `printf '{"type":"module"}' > dist/esm/package.json` (load-bearing). Do not place non-test helpers under `packages/core/src`.
+- **core build**: `tsconfig.json` omits `moduleResolution` intentionally. CJS/ESM dual output: CJS via `dist/index.js` (with `dist/package.json` `"type":"commonjs"`), ESM via `dist/esm/index.js` (with `dist/esm/package.json` `"type":"module"`). Build writes both `package.json` stubs. ESM tsconfig uses `module: "NodeNext"` + `moduleResolution: "NodeNext"`. Do not place non-test helpers under `packages/core/src`.
 - **CLI imports**: all relative `.ts` imports use `.js` extension (NodeNext).
 - **Node-only TS target**: CLI, fixtures, web node config, and `scripts/*.ts` typecheck against ES2025. Core and browser app runtime stay conservative unless browser support/polyfills are explicitly handled.
 - **Root scripts typecheck**: `tsconfig.scripts.json` covers `scripts/*.ts` with NodeNext, `types: ["node"]`, and `erasableSyntaxOnly` so scripts remain compatible with native Node TS stripping.
@@ -49,7 +49,6 @@ All contexts (dev, CI, published): Node ≥24.
 
 - **CLI glob filters match full package pathnames**: use `**/*.shader` for nested files, `*.shader` for root only.
 - **CLI JSON mode**: route progress/warnings through stderr; keep stdout parseable.
-- **Smoke must use `bun`**, not `node` — Node fails on core ESM barrel's extensionless imports.
 - **`verify` is format-scoped**: do not add Unity YAML schema validation.
 - **`PARSER_IGNORED_PREVIEW` silently skipped** in verify — normal for every `preview.png`.
 - **ESLint in CLI excludes `*.test.ts`** — they lack `@types/node` in tsconfig scope.
