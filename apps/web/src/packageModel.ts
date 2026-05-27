@@ -360,14 +360,6 @@ export function sortRecords(
   });
 }
 
-function getSiblingMetaRecord(
-  records: readonly PackageFileRecord[],
-  record: PackageFileRecord,
-  selectableRecords?: readonly SidecarSelectableRecord[],
-): PackageFileRecord | undefined {
-  return getMetaSidecarForAsset(records, record, selectableRecords);
-}
-
 export function getMetaSidecarForAsset(
   records: readonly PackageFileRecord[],
   record: PackageFileRecord,
@@ -401,7 +393,7 @@ export function getDeclaredMetaInfoForRecord(
   if (record.extension === 'meta') {
     metaBytes = getContent(record.id);
   } else {
-    const sibling = getSiblingMetaRecord(records, record, selectableRecords);
+    const sibling = getMetaSidecarForAsset(records, record, selectableRecords);
     if (sibling) {
       metaBytes = getContent(sibling.id);
     }
