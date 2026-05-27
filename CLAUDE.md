@@ -93,9 +93,15 @@ All contexts (dev, CI, published): Node ≥24.
   - Report: `cd apps/web && bunx playwright show-report`
 - **E2E tests are ESM**: use `path.dirname(fileURLToPath(import.meta.url))`, not `__dirname`.
 - **E2E fixture path from `apps/web/tests/`**: `path.join(..., '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
+- **E2E upload**: use `page.getByLabel('Open Unity package').setInputFiles(fixturePath)`; do not automate OS file pickers.
+- **E2E waits**: prefer Playwright web-first assertions (`await expect(locator).toBeVisible()`, `toHaveText`, `toContainText`) and locator auto-waiting. Do not add fixed sleeps for parse, upload, or render timing.
+- **E2E isolation**: rely on the per-test `page` fixture; Playwright creates a fresh browser context for each test, so do not share page state between tests.
 - **`getByRole` name matching is substring**: use `exact: true` when one label is a substring of another.
 - **E2E explorer rows are virtualized**: search/filter before selecting named rows that may be offscreen. Use file-row selectors or exact file checkbox names when you need a file; broad `getByRole('checkbox', { name: /^Select/ }).first()` can hit folder scope toggles and select many records.
 - **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `README.md` exist.
+- **Preview E2E matrix**: keep persistent coverage for `.cs`/`.shader` text preview, `.mat`/`.terrainlayer` YAML text preview, `.unity`/`.prefab`/binary `.asset` no-preview frame, `.png` image preview, and unsupported `.fbx` no-preview.
+- **Preview frame regression checks**: assert the `.preview-frame` slot stays the same outer height when switching between text and no-preview records, and assert hidden scrollbar CSS (`scrollbar-width: none`) without removing scrollability.
+- **Manual P4 smoke fallback**: if port 4173 is busy, run `cd apps/web && bunx vite preview --port 4174 --strictPort`; rebuild first because Vite preview serves `dist`.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
 - **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react` and `@testing-library/jest-dom`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).

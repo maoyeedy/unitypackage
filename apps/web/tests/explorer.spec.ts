@@ -151,4 +151,60 @@ test.describe('explorer interactions', () => {
     await expect(preview.getByText('Details', { exact: true })).toBeVisible();
     expect(elapsed).toBeLessThan(1000);
   });
+
+  test('preview frame height is stable and hidden scrollbar still scrolls', async ({ page }) => {
+    const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
+    const search = page.getByPlaceholder('Search files by name or path');
+
+    await search.fill('PT_Water_Shader.shader');
+    const shaderRow = page.getByRole('treeitem').filter({ hasText: 'PT_Water_Shader.shader' }).first();
+    await expect(shaderRow).toBeVisible({ timeout: 3_000 });
+    await shaderRow.click();
+    const textFrame = preview.locator('.preview-frame.text-frame');
+    await expect(textFrame).toBeVisible();
+
+    const textHeight = await textFrame.evaluate(element => element.getBoundingClientRect().height);
+    const scrollInfo = await textFrame.evaluate(element => {
+      element.scrollTop = 80;
+      const style = getComputedStyle(element);
+      return {
+        canScroll: element.scrollHeight > element.clientHeight,
+        scrollTop: element.scrollTop,
+        scrollbarWidth: style.scrollbarWidth,
+        overflow: style.overflow,
+      };
+    });
+
+    expect(scrollInfo).toEqual({
+      canScroll: true,
+      scrollTop: 80,
+      scrollbarWidth: 'none',
+      overflow: 'auto',
+    });
+
+    await search.fill('Environment_Free.unity');
+    const sceneRow = page.getByRole('treeitem').filter({ hasText: 'Environment_Free.unity' }).first();
+    await expect(sceneRow).toBeVisible({ timeout: 3_000 });
+    await sceneRow.click();
+    const noPreviewFrame = preview.locator('.preview-frame.no-preview-frame');
+    await expect(noPreviewFrame).toBeVisible();
+    await expect(preview.getByText('No preview', { exact: true })).toBeVisible();
+    await expect(preview.getByText('.unity', { exact: true })).toBeVisible();
+
+    const noPreviewHeight = await noPreviewFrame.evaluate(element => element.getBoundingClientRect().height);
+    expect(noPreviewHeight).toBe(textHeight);
+
+    await search.fill('PT_Grass_01.png');
+    const imageRow = page.getByRole('treeitem').filter({ hasText: 'PT_Grass_01.png' }).first();
+    await expect(imageRow).toBeVisible({ timeout: 3_000 });
+    await imageRow.click();
+    await expect(preview.locator('.preview-frame.image-frame img')).toBeVisible();
+
+    await search.fill('PT_Wooden_Bridge_02.fbx');
+    const fbxRow = page.getByRole('treeitem').filter({ hasText: 'PT_Wooden_Bridge_02.fbx' }).first();
+    await expect(fbxRow).toBeVisible({ timeout: 3_000 });
+    await fbxRow.click();
+    await expect(preview.locator('.preview-frame.no-preview-frame')).toBeVisible();
+    await expect(preview.getByText('.fbx', { exact: true })).toBeVisible();
+  });
 });
