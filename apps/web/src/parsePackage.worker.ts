@@ -12,7 +12,17 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     const { entries } = parseUnityPackageEntries(bytes, options);
 
     const records = entriesToRecords(entries);
-    self.postMessage({ type: 'success', records } satisfies ParsePackageResponse);
+    const transfer: ArrayBuffer[] = [];
+    for (const record of records) {
+      const buffer = record.content.buffer;
+      if (buffer instanceof ArrayBuffer && !transfer.includes(buffer)) {
+        transfer.push(buffer);
+      }
+    }
+    self.postMessage(
+      { type: 'success', records } satisfies ParsePackageResponse,
+      transfer,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to parse package';
     self.postMessage({ type: 'error', message } satisfies ParsePackageResponse);
