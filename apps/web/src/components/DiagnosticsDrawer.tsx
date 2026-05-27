@@ -107,11 +107,11 @@ export function DiagnosticsDrawer({
       <ul className="diagnostics-list">
         {diagnostics.map((diagnostic, index) => {
           const target = diagnostic.guid !== undefined
-            ? (records.find(r => r.guid === diagnostic.guid && !r.isUnityPreview && r.extension !== 'meta')
-               ?? records.find(r => r.guid === diagnostic.guid))
-            : (diagnostic.path !== undefined
-               ? records.find(r => r.id.endsWith(`/${diagnostic.path}`) || r.id === diagnostic.path)
-               : undefined);
+            ? records.find(r => r.guid === diagnostic.guid && !r.isUnityPreview && r.extension !== 'meta')
+              ?? records.find(r => r.guid === diagnostic.guid)
+            : diagnostic.path !== undefined
+              ? records.find(r => r.id.endsWith(`/${diagnostic.path}`) || r.id === diagnostic.path)
+              : undefined;
           const pathToShow = target?.virtualPath ?? diagnostic.path;
 
           return (
