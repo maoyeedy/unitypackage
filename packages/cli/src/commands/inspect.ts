@@ -4,12 +4,16 @@ import {
   matchGlob,
   summarizePackage,
   parseUnityPackageEntries,
+  isUnityYamlBinary,
+  yamlExtensions,
   type ParseUnityPackageOptions,
   type UnityPackageComponentRecord,
   type UnityPackageEntryComponent,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
   type UnityPackageSummary,
+  type PreviewKind,
+  type SyntaxLanguage,
 } from 'unitypackage-core';
 import { info } from '../util/logger.js';
 import { readPackageBytes } from '../util/package.js';
@@ -32,8 +36,8 @@ interface InspectComponent {
   byteLength: number;
   extension: string;
   mimeType: string;
-  previewKind: string;
-  syntaxLanguage: string;
+  previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
   hasAsset: boolean;
   hasMeta: boolean;
@@ -60,21 +64,20 @@ export interface InspectOptions {
   parseOptions?: ParseUnityPackageOptions;
 }
 
-interface TreeNode {
-  children: Map<string, TreeNode>;
-  entry?: InspectEntry;
-}
-
-type InspectSummary = UnityPackageSummary & {
+interface InspectSummary extends UnityPackageSummary {
   entries: number;
   withAsset: number;
   withMeta: number;
   folders: number;
-};
+}
+
+interface TreeNode {
+  entry?: InspectEntry;
+  children: Map<string, TreeNode>;
+}
 
 function matchesExtension(pathname: string, ext: string): boolean {
-  const normalized = ext.startsWith('.') ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
-  return pathname.toLowerCase().endsWith(normalized);
+  return pathname.toLowerCase().endsWith(`.${ext.toLowerCase()}`);
 }
 
 function matchesInspectFilter(pathname: string, filter: string): boolean {
@@ -94,6 +97,75 @@ function summarize(entries: UnityPackageEntry[], diagnostics?: UnityPackageParse
   };
 }
 
+const PREVIEW_SIZE_LIMIT_BYTES = 1 * 1024 * 1024;
+
+const BINARY_ASSET_FILENAME_PATTERNS: RegExp[] = [
+  /[Tt]errain.*\.asset$/,
+  /TerrainData.*\.asset$/,
+  /LightingData.*\.asset$/,
+  /LightmapSnapshot.*\.asset$/,
+  /NavMesh.*\.asset$/,
+  /NavMeshData.*\.asset$/,
+  /OcclusionCulling.*\.asset$/,
+  /OcclusionCullingData.*\.asset$/,
+  /SDF.*\.asset$/,
+  /ProbeVolumeStreamable.*\.asset$/,
+  /ProbeVolumeData.*\.asset$/,
+];
+
+function hasBinaryAssetFilename(pathname: string): boolean {
+  const fileName = pathname.split('/').pop() ?? pathname;
+  for (const pattern of BINARY_ASSET_FILENAME_PATTERNS) {
+    if (pattern.test(fileName)) return true;
+  }
+  return false;
+}
+
+function getPreviewKind(record: UnityPackageComponentRecord): PreviewKind {
+  const ext = record.extension;
+  if (ext === 'pdf') return 'pdf';
+  if (record.mimeType.startsWith('image/')) return 'image';
+  if (record.mimeType.startsWith('audio/')) return 'audio';
+  if (record.mimeType.startsWith('video/')) return 'video';
+  if (record.byteLength > PREVIEW_SIZE_LIMIT_BYTES) return 'unsupported';
+  if (ext === 'yaml' || ext === 'yml') return 'text';
+  if (yamlExtensions.has(ext)) {
+    if (hasBinaryAssetFilename(record.virtualPath)) return 'unsupported';
+    return isUnityYamlBinary(record.content) ? 'unsupported' : 'text';
+  }
+  if (record.mimeType.startsWith('text/') || record.mimeType === 'application/json') return 'text';
+  return 'unsupported';
+}
+
+const jsonExtensions = new Set(['json', 'asmdef', 'asmref', 'inputactions', 'shadergraph', 'shadersubgraph']);
+const xmlExtensions = new Set(['xml', 'uxml']);
+const cssExtensions = new Set(['css', 'uss', 'tss']);
+const csharpExtensions = new Set(['cs']);
+const shaderlabExtensions = new Set(['shader']);
+const hlslExtensions = new Set(['hlsl', 'cginc', 'compute']);
+const glslExtensions = new Set(['glsl']);
+const typescriptExtensions = new Set(['ts', 'tsx']);
+const javascriptExtensions = new Set(['js', 'jsx']);
+const markdownExtensions = new Set(['md']);
+const htmlExtensions = new Set(['html']);
+
+function getSyntaxLanguage(record: UnityPackageComponentRecord): SyntaxLanguage {
+  const ext = record.extension;
+  if (ext === 'meta' || yamlExtensions.has(ext)) return 'yaml';
+  if (jsonExtensions.has(ext)) return 'json';
+  if (xmlExtensions.has(ext)) return 'xml';
+  if (cssExtensions.has(ext)) return 'css';
+  if (csharpExtensions.has(ext)) return 'csharp';
+  if (shaderlabExtensions.has(ext)) return 'shaderlab';
+  if (hlslExtensions.has(ext)) return 'hlsl';
+  if (glslExtensions.has(ext)) return 'glsl';
+  if (typescriptExtensions.has(ext)) return 'typescript';
+  if (javascriptExtensions.has(ext)) return 'javascript';
+  if (markdownExtensions.has(ext)) return 'markdown';
+  if (htmlExtensions.has(ext)) return 'html';
+  return 'text';
+}
+
 function toInspectComponent(record: UnityPackageComponentRecord): InspectComponent {
   return {
     id: record.id,
@@ -104,8 +176,8 @@ function toInspectComponent(record: UnityPackageComponentRecord): InspectCompone
     byteLength: record.byteLength,
     extension: record.extension,
     mimeType: record.mimeType,
-    previewKind: record.previewKind,
-    syntaxLanguage: record.syntaxLanguage,
+    previewKind: getPreviewKind(record),
+    syntaxLanguage: getSyntaxLanguage(record),
     diagnostics: record.diagnostics,
     hasAsset: record.hasAsset,
     hasMeta: record.hasMeta,
