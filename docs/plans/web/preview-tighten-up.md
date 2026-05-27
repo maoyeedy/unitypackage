@@ -63,97 +63,15 @@ Filename patterns (`*SDF.asset`, `*[Tt]errain*`) get this wrong in both directio
 | P8 | Rewrite `docs/reference/extension-map.md` | `docs/reference/extension-map.md` |
 | P9 | Final hygiene pass | `apps/web/**`, `packages/core/**`, lint+typecheck+test+knip |
 
-### P1 -- Content-based binary detection in core
+### P1 -- Content-based binary detection in core  [DONE 2026-05-27]
 
-**Goal:** export a single content-based predicate from core that decides whether a YAML-extension file is operationally binary, combining a `%YAML` magic-byte check with a head+tail line-length scan.
+Shipped: added content-based binary detection (`isUnityYamlBinary`) to check for a `%YAML` magic header and scan line lengths to identify operationally binary files.
+Modified: `packages/core/src/classify.ts` to implement the logic and update `getPreviewKindForPath`; `packages/core/src/index.ts` to export it from the barrel.
 
-**Files:** `packages/core/src/classify.ts`, `packages/core/src/index.ts`.
+### P2 -- Classify tests (inline + fixtures/temp)  [DONE 2026-05-27]
 
-**Approach:**
-
-1. Add and export:
-   ```ts
-   const YAML_MAGIC = Uint8Array.of(0x25, 0x59, 0x41, 0x4D, 0x4C); // %YAML
-   const LF = 0x0A;
-   const MAX_LINE_BYTES = 2048;          // >2KB lines ⇒ embedded binary blob
-   const SAMPLE_WINDOW_BYTES = 32 * 1024; // O(64KB) per file regardless of size
-
-   export function isUnityYamlBinary(bytes: Uint8Array | undefined): boolean {
-     if (!bytes || bytes.byteLength < YAML_MAGIC.length) return true;
-     for (let i = 0; i < YAML_MAGIC.length; i++) {
-       if (bytes[i] !== YAML_MAGIC[i]) return true;
-     }
-     const total = bytes.byteLength;
-     if (hasLongLine(bytes, 0, Math.min(total, SAMPLE_WINDOW_BYTES))) return true;
-     if (total > SAMPLE_WINDOW_BYTES) {
-       if (hasLongLine(bytes, total - SAMPLE_WINDOW_BYTES, total)) return true;
-     }
-     return false;
-   }
-
-   function hasLongLine(bytes: Uint8Array, start: number, end: number): boolean {
-     let lineStart = start;
-     for (let i = start; i < end; i++) {
-       if (bytes[i] === LF) {
-         if (i - lineStart > MAX_LINE_BYTES) return true;
-         lineStart = i + 1;
-       }
-     }
-     return end - lineStart > MAX_LINE_BYTES;
-   }
-   ```
-2. Delete `isLikelyUtf8Text` and its use.
-3. Rewrite `getPreviewKindForPath(pathname, bytes?)`:
-   ```ts
-   if (yamlExtensions.has(extension) || extension === 'meta') {
-     return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
-   }
-   if (textExtensions.has(extension)) return 'text';
-   return 'unsupported';
-   ```
-   Conservative when bytes are absent (returns `unsupported` for YAML-ext files).
-4. Re-export `isUnityYamlBinary` from `packages/core/src/index.ts`.
-5. `packages/core/src/component.ts:79` already passes `content` — no caller change.
-
-**Exit criteria:**
-
-- `isUnityYamlBinary` exported from core barrel.
-- `isLikelyUtf8Text` removed from `classify.ts`.
-- `getPreviewKindForPath` no longer references `isLikelyUtf8Text`; uses `isUnityYamlBinary` for YAML-ext + `meta`.
-- `bun run --filter unitypackage-core typecheck` clean.
-
-### P2 -- Classify tests (inline + fixtures/temp)
-
-**Goal:** lock in `isUnityYamlBinary` behavior with portable inline cases (CI) plus real-fixture cases against `fixtures/temp` (local dev).
-
-**Files:** `packages/core/src/classify.test.ts`.
-
-**Approach:**
-
-1. Inline cases (always run):
-   - `isUnityYamlBinary(undefined)` → `true`
-   - `isUnityYamlBinary(new Uint8Array(0))` → `true`
-   - `isUnityYamlBinary(new Uint8Array([0,0,0,0,0]))` → `true`
-   - `isUnityYamlBinary(encode('%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &1\nfoo: bar\n'))` → `false`
-   - `isUnityYamlBinary(encode('not a yaml file at all'))` → `true`
-   - Long-line discriminator: `encode('%YAML 1.1\n' + 'a'.repeat(3000) + '\n')` → `true`
-   - Trailing-long-line: `%YAML` + short body + padding past 32KB + 3000-char tail line → `true`
-   - `getPreviewKindForPath('Assets/Foo.asset', shortYamlBytes)` → `'text'`
-   - `getPreviewKindForPath('Assets/Foo.asset', longLineYamlBytes)` → `'unsupported'`
-   - `getPreviewKindForPath('Assets/Foo.asset', allNullBytes)` → `'unsupported'`
-2. Real-fixture cases (`describe.skipIf(!existsSync(tempDir))`, `URL` + `readFileSync` pattern from `meta.test.ts`):
-   - `LiberationSans SDF.asset` → `true`
-   - `LoreObj_5.1.asset` → `false`
-   - `Terrain_0_0_<guid>.asset` → `true`
-   - `Terrainstamp_Canyon01_Brush.brush` → `false`
-3. Update the existing `'maps preview kinds consistently with web behavior'` test: `Assets/Data.asset` without bytes now returns `'unsupported'` (conservative).
-
-`fixtures/temp` is git-ignored (`~/.config/git/ignore:29:temp/`); `skipIf` keeps CI green when absent.
-
-**Exit criteria:**
-
-- `bun run test:core` green.
-- When `fixtures/temp` is populated locally, all four real-fixture assertions pass.
+Shipped: added comprehensive unit tests for `isUnityYamlBinary` and preview kind mapping in `packages/core/src/classify.test.ts`.
+Implemented: inline tests for CI and local fixture checks for text/binary SDF assets, terrain assets, and brushes under `fixtures/temp` (using `describe.skipIf`).
 
 ### P3 -- Tri-state preview gate
 
