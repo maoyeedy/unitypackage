@@ -1,70 +1,81 @@
-# Remove Breadcrumb UI
+# Move Breadcrumb Into Details Path Row
 
 ## Context
 
-The breadcrumb in `PreviewPanel` displays the virtual path of the currently previewed file (e.g. `Assets/Scripts/Player.cs`) with clickable ancestor segments that reveal the file's location in the tree explorer. It was judged **KEEP** in a prior feature-bloat analysis, but the owner has decided to remove it regardless.
+The header in `PreviewHeader.tsx` renders a `Breadcrumb` (segments of the file's
+virtual path, each ancestor clickable to reveal in tree) above the file size.
+On deeply nested paths (e.g.
+`Assets/Plugins/Polytope Studio/Lowpoly_Demos/Environment_Free/Helpers/Ground_Layer_02.terrainlayer`)
+it wraps onto 3-5 lines, making the right pane header height jitter as the
+selection changes. The same path is also rendered as plain text in the `Details`
+metadata table -- so the path is shown twice, and the more useful surface (the
+clickable one) is the one causing the layout problem.
 
-The breadcrumb shares the `revealPathInTree` callback with two other surfaces (Metadata panel "Reveal in Tree" links, Explorer extension-list group header "Reveal" buttons). Those are **out of scope** — only the breadcrumb UI is removed.
+This plan **does not delete** the breadcrumb. It moves it from the header into
+the `Path` row of `Details`, which is already in a scrollable region where
+wrapping is expected and fine. The header becomes deterministic-height
+(size + mode switch + Download). The clickable-ancestor affordance is preserved.
+
+The `revealPathInTree` callback is shared with the Metadata "Reveal in tree"
+button and Explorer extension-list "Reveal" buttons -- those are **out of
+scope**, only the breadcrumb's placement changes.
 
 ## Scope
 
 ### In
 
-- `Breadcrumb` component definition in `PreviewPanel.tsx`
-- `<Breadcrumb>` JSX usage in `PreviewPanelContent`
-- Breadcrumb CSS classes (`.breadcrumb`, `.breadcrumb-part`, `.breadcrumb-separator`, `.breadcrumb button`, `.breadcrumb button:hover`)
-- `onRevealInTree` prop on Breadcrumb (not on PreviewPanel)
+- `apps/web/src/components/preview/PreviewHeader.tsx` -- drop `<Breadcrumb>` and
+  the `onRevealInTree` prop (no longer used by header)
+- `apps/web/src/components/preview/Metadata.tsx` -- replace plain-text `Path`
+  `<dd>` with the `Breadcrumb` component
+- `apps/web/src/components/preview/Breadcrumb.tsx` -- keep as-is (still used,
+  now from Metadata)
+- `apps/web/src/styles/preview.css` -- adjust `.breadcrumb*` rules to sit
+  cleanly inside a `dd` (no top/bottom margin, inherit dd font-size, ensure
+  buttons align with surrounding text baseline)
 
 ### Out
 
-- `revealPathInTree` callback in `App.tsx`
-- `expandAncestors` / `getAncestorFolderPaths` in `packageModel.ts`
-- Metadata panel "Reveal in Tree" links
+- `revealPathInTree` callback in `App.tsx` / `useExplorerSelection.ts`
+- `Metadata` heading "Reveal in tree" icon button (the file-level locate
+  affordance stays)
 - Explorer extension-list "Reveal" buttons
-- Any test changes (breadcrumb has no tests)
+- Any structural change to `Details` rows beyond the `Path` `<dd>`
 
 ## Phases
 
-| Phase | Files | Lines removed |
-|-------|-------|---------------|
-| P1 -- Remove Breadcrumb component + JSX | `PreviewPanel.tsx` | ~29 (component) + 1 (JSX call site) |
-| P2 -- Remove breadcrumb CSS | `preview.css` | ~36 |
+| Phase | Files | Net change |
+|-------|-------|------------|
+| P1 -- Remove breadcrumb from header | `PreviewHeader.tsx` | -1 import, -1 JSX line, -1 prop |
+| P2 -- Render breadcrumb in `Details` Path row | `Metadata.tsx` | +1 import, +1 prop wired through, +breadcrumb in `<dd>` |
+| P3 -- Adjust breadcrumb CSS for `dd` context | `preview.css` | minor rule tweaks |
 
-### P1 -- Remove Breadcrumb component + JSX
+### P1 -- Remove breadcrumb from header  [DONE 2026-05-27]
 
-**Goal**: Delete the `Breadcrumb` function component and its single usage in `PreviewPanelContent`.
+Shipped: removed `Breadcrumb` rendering and import from `PreviewHeader.tsx`. Stopped passing `onRevealInTree` to `PreviewHeader` in `PreviewPanel.tsx`.
 
-**Files**: `apps/web/src/components/PreviewPanel.tsx`
+### P2 -- Render breadcrumb in `Details` Path row  [DONE 2026-05-27]
 
-**Changes**:
-- Remove `Breadcrumb` component definition (lines 144--172)
-- Remove `<Breadcrumb virtualPath={...} onRevealInTree={...} />` JSX call (line 99)
-- Do NOT remove `onRevealInTree` from `PreviewPanelProps` — Metadata still uses it at line 135
+Shipped: imported and rendered `Breadcrumb` in `Metadata.tsx` within the Path row's `<dd>` block. Excluded the Path row from the mapped rows list so it renders explicitly first.
 
-**Exit criteria**:
-- `Breadcrumb` identifier no longer exists in any file
-- PreviewPanel renders without a breadcrumb element above the file size `<p>`
-- All other reveal-in-tree functionality (Metadata, ExtensionList) unaffected
+### P3 -- Adjust breadcrumb CSS for `dd` context  [DONE 2026-05-27]
 
-### P2 -- Remove breadcrumb CSS
-
-**Goal**: Delete all breadcrumb-related CSS rules.
-
-**Files**: `apps/web/src/styles/preview.css`
-
-**Changes**:
-- Remove ruleset `.breadcrumb { ... }` (lines 164--172)
-- Remove ruleset `.breadcrumb-part { ... }` (lines 174--177)
-- Remove ruleset `.breadcrumb-separator { ... }` (lines 179--182)
-- Remove ruleset `.breadcrumb button { ... }` (lines 184--195)
-- Remove ruleset `.breadcrumb button:hover { ... }` (lines 197--199)
-
-**Exit criteria**:
-- Grep for `.breadcrumb` in `apps/web/src/styles/preview.css` returns no matches
-- No unused CSS classes remain
+Shipped: adjusted `.breadcrumb` and `.breadcrumb button` rules in `preview.css` to inherit font-size and color from `<dd>`, and removed header-specific top/bottom margins.
 
 ## Verification
 
-1. `bun run check` (lint + typecheck + build + test + smoke)
-2. Manual: open a package in the web app, select a file — preview panel header should show only file size, Download button, and (if applicable) Asset/.meta toggle. No path breadcrumb visible.
-3. Manual: confirm Metadata panel "Reveal in Tree" still works, Explorer extension group "Reveal" buttons still work.
+1. `bun run check` -- lint + typecheck + build + test + smoke
+2. Manual: open `fixtures/static/archives/Polytope_URP.unitypackage` in the web
+   app, select a deep file such as
+   `Assets/Plugins/Polytope Studio/Lowpoly_Demos/Environment_Free/Helpers/Ground_Layer_02.terrainlayer`.
+   Confirm:
+   - Header shows only size, mode switch (if applicable), and Download -- one
+     row, no wrapping, height stable across selections
+   - `Details` `Path` row shows the full path as clickable segments; clicking an
+     ancestor reveals that folder in the tree
+   - Switching between `Asset` and `.meta` modes does not change header height
+3. Manual: select a shallow file (e.g. `Assets/Test.cs` style) and a deep file
+   in sequence; the header height does not jump
+4. Manual: confirm the file-level `Reveal in tree` icon button next to
+   `Details` still reveals the file, and Explorer extension-list `Reveal`
+   buttons still work
