@@ -94,46 +94,13 @@ Shipped: optimized `formatBytes` helper function in `packageModel.ts` using a fo
 Shipped: removed the internal MIME string display from the preview panel header subtitle. Deleted both the `Type` and `MIME` metadata rows from the file details pane. Added assertions in `PreviewPanel.test.tsx` to prevent regression.
 
 
-### P8 -- Rewrite `docs/reference/extension-map.md`
+### P8 -- Rewrite `docs/reference/extension-map.md`  [DONE 2026-05-27]
 
-**Goal:** make the reference doc describe actual post-refactor behavior, not stale ideals.
+Shipped: Rewrote the `docs/reference/extension-map.md` documentation to accurately reflect actual post-refactor behavior. Described immediate, deferred, and hidden rules, referenced the `isUnityYamlBinary` logic with its counter-examples, and mapped icon styling to its single source of truth.
 
-**Files:** `docs/reference/extension-map.md`.
+### P9 -- Final hygiene pass  [DONE 2026-05-27]
 
-**Approach:** sections:
-
-- **Immediate image preview** — image extensions list, rendered via `<img>` blob URL.
-- **Immediate code preview** — syntax-highlighted set (`cs`, `yaml`/`yml`, `json` group, `css`/`uss`/`tss`, `hlsl`/`cginc`/`compute` via GLSL grammar) vs plain (`shader`, `glsl`, `md`, `txt`, `html`, `xml`/`uxml`, `ts`/`tsx`, `js`/`jsx`). No size cap.
-- **Deferred preview ("Load preview" button)** — full Unity-generated set; explain GitHub linguist-generated parallel.
-- **Hidden (download only)** — decided by `isUnityYamlBinary` content sniff (NOT filename patterns from `gitattributes.md`). The check combines `%YAML` magic with a head+tail line-length scan, catching both raw-binary `.asset` (no header) and Force-Text-serialized assets with embedded binary blobs (TMP SDF fonts, lightmaps, shader variants). Counter-examples to call out: `Terrainstamp_Canyon01_Brush.brush` (name contains "Terrain" but text YAML — previewable); `LiberationSans SDF.asset` (text YAML header but 2M-char glyph atlas line — hidden).
-- **Browser-non-native formats** (`ttf`, `fbx`, `dll`, ...) — hidden.
-- **Internal-only fields** — `mimeType` exists only for download Blob construction; never shown.
-- **Icon mapping** — one-liner pointing at `apps/web/src/fileIcons.ts`; no duplicate table.
-
-**Exit criteria:**
-
-- The doc no longer lists PDF / audio / video MIME mappings as previewable.
-- The doc references `isUnityYamlBinary` and explains the two counter-examples.
-- The doc no longer attempts to be the icon-mapping source of truth.
-
-### P9 -- Final hygiene pass
-
-**Goal:** lint, typecheck, test, knip all green; no dead code from earlier phases.
-
-**Files:** repo-wide (read-only scans).
-
-**Approach:**
-
-- `bun run lint:fix && bun run --filter @unitypackage-tools/web typecheck && bun run test:web && bun run test:core && bun run knip`.
-- Re-scan `PreviewPanel.tsx` for now-dead imports.
-- Look for redundant `useMemo` / `useCallback` flagged by React Compiler ESLint.
-- Confirm `fileIcons.ts` extension sets still align with `classify.ts`.
-- Re-grep for `TEXT_PREVIEW_LIMIT`, `isLikelyUtf8Text`, UI-side `mimeType` — none should remain.
-
-**Exit criteria:**
-
-- All commands above exit 0.
-- No remaining references to deleted symbols.
+Shipped: Executed hygiene scans across the workspace, verified that all E2E tests, vitest suites, lint checks, typecheck builders, and knip audits pass with zero errors. Checked for any remaining deleted symbols or dead imports.
 
 ## Verification
 
