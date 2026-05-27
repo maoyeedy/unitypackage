@@ -1,8 +1,6 @@
 # File preview behavior
 
-How `apps/web` decides what to show for each file extension. Two buckets: **immediate** or **hidden**. Image, audio, video, PDF kinds are rendered natively by the browser. Text-class files use synchronous `TextDecoder.decode` + `hljs.highlight`. All decisions flow from extension-only logic in `getPreviewKindForPath(pathname)` in `packages/core/src/classify.ts`.
-
-No content sniffing, no filesize gating, no deferred "Load preview" button -- just extension-based routing. If the extension matches a known text or media type, the file is previewed; if it is a Unity-generated YAML extension, it is hidden. Files that are hidden still appear in the file tree and can be downloaded.
+How `apps/web` decides what to show for each file extension. Image, audio, video, PDF kinds are rendered natively by the browser. Text-class files use synchronous `TextDecoder.decode` + `hljs.highlight`. Preview kind is classified by `getPreviewKindForPath(pathname)` in `apps/web/src/packageModel.ts`. Extension-first routing with content-based refinement: `.asset` files that pass the extension check are then tested by `isUnityYamlBinary` in the parse worker and downgraded to `'unsupported'` if binary. Unsupported kinds render a `NoPreview` component (frame stays visible). Files are downloadable regardless of preview kind.
 
 ## Immediate -- image (`<img>` via blob URL)
 
@@ -33,15 +31,17 @@ Plain `<pre><code>` (no highlight pass -- registered-language `Set.has` short-ci
 
 `glsl`, `md`, `txt`, `html`, `xml`, `uxml`, `ts`, `tsx`, `js`, `jsx`, `meta`.
 
-## Hidden -- preview area collapses; download still works
+## Unsupported -- `NoPreview` component shown; download still works
 
-The preview frame returns `null`. Header (breadcrumb + size + download) and metadata (Path, GUID, Size, optional Meta GUID + Importer) remain.
+Preview frame stays visible with a "No preview" message. Header (breadcrumb + size + download) and metadata (Path, GUID, Size, optional Meta GUID + Importer) remain.
 
-Two reasons a file lands here:
+Three reasons a file lands here:
 
-1. **Extension is a Unity-generated YAML type** (`.unity`, `.prefab`, `.asset`, `.mat`, `.anim`, `.controller`, `.overridecontroller`, `.physicmaterial`, `.physicsmaterial2d`, `.playable`, `.mask`, `.brush`, `.flare`, `.fontsettings`, `.guiskin`, `.giparams`, `.rendertexture`, `.spriteatlas`, `.spriteatlasv2`, `.terrainlayer`, `.mixer`, `.shadervariants`, `.preset`, `.lighting`, `.dwlt`, `.vfx`, `.vfxblock`, `.vfxoperator`). These are always hidden regardless of content or size. Binary YAML embedded in Force-Text files is never loaded into the tab.
+1. **Skip extension check** — `.unity`, `.prefab` are always `unsupported` via `yamlSkipExtensions`.
 
-2. **Browser-non-native binary extensions.** From `docs/reference/gitattributes.md`'s LFS list: `ttf`, `otf`, `fbx`, `obj`, `blend`, `3ds`, `dae`, `dll`, `pdb`, `so`, `a`, `exe`, `apk`, `zip`, `7z`, `rar`, `tar`, `gz`, `bz2`, `unitypackage`, `bundle`, `cubemap`, audio LFS extensions, video LFS extensions, fonts. `PreviewBody` only renders image and text; everything else is hidden.
+2. **Binary YAML detection** — `.asset`, `.mat`, `.anim`, `.controller`, `.overridecontroller`, `.physicmaterial`, `.physicsmaterial2d`, `.playable`, `.mask`, `.brush`, `.flare`, `.fontsettings`, `.guiskin`, `.giparams`, `.rendertexture`, `.spriteatlas`, `.spriteatlasv2`, `.terrainlayer`, `.mixer`, `.shadervariants`, `.preset`, `.lighting`, `.dwlt`, `.vfx`, `.vfxblock`, `.vfxoperator` are initially classified as `'text'` by extension, then binary payloads (textures, font atlases, terrain heightmaps, shader variants) are caught by `isUnityYamlBinary` in the parse worker and downgraded to `'unsupported'`. Non-binary files in this set are rendered as text.
+
+3. **Browser-non-native binary extensions.** From `docs/reference/gitattributes.md`'s LFS list: `ttf`, `otf`, `fbx`, `obj`, `blend`, `3ds`, `dae`, `dll`, `pdb`, `so`, `a`, `exe`, `apk`, `zip`, `7z`, `rar`, `tar`, `gz`, `bz2`, `unitypackage`, `bundle`, `cubemap`, audio LFS extensions, video LFS extensions, fonts. `PreviewBody` only renders image and text; everything else is unsupported.
 
 ## Internal-only field
 

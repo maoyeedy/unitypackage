@@ -23,8 +23,8 @@ The web app should avoid teaching users package internals unless that knowledge 
 - Select files with checkboxes, keyboard range selection, invert selection, and select by extension.
 - Preview basic content:
   - Images render inline.
-  - Text renders as plain decoded text with a bounded preview length.
-  - Unsupported binaries show metadata and a download action.
+  - Text renders as plain decoded text via synchronous `TextDecoder.decode` + `hljs.highlight` (no size cap).
+  - Unsupported binaries show a "No preview" message, metadata, and a download action.
 - Download the current file.
 - Download Selected ZIP and All ZIP.
 - Include matching `.meta` sidecars in ZIP output by default for selected assets and all-assets extraction.
