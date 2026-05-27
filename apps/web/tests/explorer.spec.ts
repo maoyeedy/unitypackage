@@ -68,12 +68,12 @@ test.describe('explorer interactions', () => {
     await expect(fileCount).toHaveText('0 visible files');
   });
 
-  test('hidden meta sidecars can be previewed from the selected file', async ({ page }) => {
+  test('meta sidecar renders immediate text preview', async ({ page }) => {
     const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
     await expect(preview.getByRole('group', { name: 'Preview source' })).toBeVisible();
 
     await preview.getByRole('button', { name: '.meta' }).click();
-    await preview.getByRole('button', { name: 'Load preview' }).click();
+    // Meta is now immediate text (no deferred "Load preview" button)
     await expect(preview.locator('code')).toContainText('fileFormatVersion');
     await expect(preview.getByText('Details', { exact: true })).not.toBeVisible();
 

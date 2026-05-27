@@ -268,7 +268,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(queryByRole('group', { name: 'Preview source' })).not.toBeInTheDocument();
   });
 
-  it('can switch to the hidden meta sidecar preview without showing generic details', () => {
+  it('can switch to the meta sidecar preview without showing generic details', () => {
     const asset = createMockRecord({});
     const meta = createMockRecord({
       id: 'meta-id',
@@ -281,6 +281,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       extension: 'meta',
       mimeType: 'text/plain;charset=utf-8',
       syntaxLanguage: 'yaml',
+      previewKind: 'text',
       hasMeta: true,
     });
 
@@ -296,57 +297,28 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(getByRole('group', { name: 'Preview source' })).toBeInTheDocument();
     fireEvent.click(getByRole('button', { name: '.meta' }));
 
-    // Click the "Load preview" button since .meta is deferred.
-    fireEvent.click(getByRole('button', { name: 'Load preview' }));
-
+    // Meta is now immediate text preview (no deferred "Load preview" button)
     expect(container.querySelector('code')?.textContent).toContain('MonoImporter');
     expect(queryByText('Details')).not.toBeInTheDocument();
   });
 
-  it('renders deferred preview for Unity-generated assets and resets on selection change', () => {
-    const asset1 = createMockRecord({
-      id: 'asset-1',
+  it('collapses preview body for Unity-generated YAML extensions (now unsupported)', () => {
+    const asset = createMockRecord({
       extension: 'prefab',
-      previewKind: 'text',
-      content: encoder.encode('prefab content 1'),
-    });
-    const asset2 = createMockRecord({
-      id: 'asset-2',
-      extension: 'prefab',
-      previewKind: 'text',
-      content: encoder.encode('prefab content 2'),
+      previewKind: 'unsupported',
+      content: encoder.encode('prefab content'),
     });
 
-    const { getByRole, container, rerender } = render(
+    const { container } = render(
       <PreviewPanel
-        record={asset1}
+        record={asset}
         onDownload={onDownload}
         onRevealInTree={onRevealInTree}
       />
     );
 
-    // Should show the load button, not the code preview content
-    expect(getByRole('button', { name: 'Load preview' })).toBeInTheDocument();
-    expect(container.querySelector('code')).not.toBeInTheDocument();
-
-    // Click load
-    fireEvent.click(getByRole('button', { name: 'Load preview' }));
-
-    // Code preview should be visible now
-    expect(container.querySelector('code')?.textContent).toBe('prefab content 1');
-
-    // Rerender with asset2
-    rerender(
-      <PreviewPanel
-        record={asset2}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
-
-    // Selection changed: state should reset back to deferred (showing load button, no code content)
-    expect(getByRole('button', { name: 'Load preview' })).toBeInTheDocument();
-    expect(container.querySelector('code')).not.toBeInTheDocument();
+    // Should not render any preview-frame container (no deferred button)
+    expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
   });
 
   it('collapses preview body entirely (returns null) for unsupported preview kind', () => {

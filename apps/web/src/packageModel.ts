@@ -4,11 +4,12 @@ import {
   readDeclaredMetaImporter,
   readMetaGuid,
   resolveMetaSidecarSelection,
+  type PreviewKind,
   type SidecarSelectableRecord,
+  type SyntaxLanguage,
   type UnityPackageEntry,
   type UnityPackageComponentRecord,
   type UnityPackageParseDiagnostic,
-  yamlExtensions,
 } from 'unitypackage-core';
 
 export type { SidecarSelectableRecord } from 'unitypackage-core';
@@ -19,17 +20,57 @@ export type RecordCategory = 'asset' | 'meta';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-const UNITY_GENERATED_EXTENSIONS = new Set<string>(
-  [...yamlExtensions, 'meta'].filter(ext => ext !== 'yaml' && ext !== 'yml')
-);
+const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'apng', 'avif', 'webp', 'svg']);
+const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'webm']);
+const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm']);
+const yamlExtensions = new Set([
+  'unity', 'prefab', 'asset', 'mat', 'anim', 'controller', 'overridecontroller',
+  'physicmaterial', 'physicsmaterial2d', 'playable', 'mask', 'brush', 'flare',
+  'fontsettings', 'guiskin', 'giparams', 'rendertexture', 'spriteatlas', 'spriteatlasv2',
+  'terrainlayer', 'mixer', 'shadervariants', 'preset', 'lighting', 'dwlt', 'vfx',
+  'vfxblock', 'vfxoperator', 'yaml', 'yml',
+]);
+const codeExtensions = new Set([
+  'cs', 'ts', 'tsx', 'js', 'jsx', 'shader', 'hlsl', 'cginc', 'compute', 'glsl',
+  'css', 'uss', 'tss', 'json', 'asmdef', 'asmref', 'inputactions', 'shadergraph',
+  'shadersubgraph', 'xml', 'uxml', 'html',
+]);
+const textExtensions = new Set([...yamlExtensions, ...codeExtensions, 'md', 'meta', 'txt']);
 
-export function isUnityGeneratedExtension(extension: string): boolean {
-  return UNITY_GENERATED_EXTENSIONS.has(extension);
+function getPreviewKindForPath(pathname: string): PreviewKind {
+  const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'pdf';
+  if (imageExtensions.has(ext)) return 'image';
+  if (audioExtensions.has(ext)) return 'audio';
+  if (videoExtensions.has(ext)) return 'video';
+  if (ext === 'yaml' || ext === 'yml') return 'text';
+  if (yamlExtensions.has(ext)) return 'unsupported';
+  if (textExtensions.has(ext)) return 'text';
+  return 'unsupported';
+}
+
+function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
+  const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'meta' || yamlExtensions.has(ext)) return 'yaml';
+  if (ext === 'json' || ext === 'asmdef' || ext === 'asmref' || ext === 'inputactions' || ext === 'shadergraph' || ext === 'shadersubgraph') return 'json';
+  if (ext === 'xml' || ext === 'uxml') return 'xml';
+  if (ext === 'css' || ext === 'uss' || ext === 'tss') return 'css';
+  if (ext === 'cs') return 'csharp';
+  if (ext === 'shader') return 'shaderlab';
+  if (ext === 'hlsl' || ext === 'cginc' || ext === 'compute') return 'hlsl';
+  if (ext === 'glsl') return 'glsl';
+  if (ext === 'ts' || ext === 'tsx') return 'typescript';
+  if (ext === 'js' || ext === 'jsx') return 'javascript';
+  if (ext === 'md') return 'markdown';
+  if (ext === 'html') return 'html';
+  return 'text';
 }
 
 export interface PackageFileRecord extends UnityPackageComponentRecord {
   fileName: string;
   isUnityPreview: false;
+  previewKind: PreviewKind;
+  syntaxLanguage: SyntaxLanguage;
 }
 
 export function getRecordCategory(record: PackageFileRecord): RecordCategory {
@@ -107,6 +148,8 @@ export function entriesToRecords(
       ...record,
       fileName: record.virtualPath.split('/').pop() ?? record.virtualPath,
       isUnityPreview: false,
+      previewKind: getPreviewKindForPath(record.virtualPath),
+      syntaxLanguage: getSyntaxLanguageForPath(record.virtualPath),
     }));
 }
 

@@ -1,13 +1,6 @@
 import type { UnityPackageEntry } from './model';
 import type { UnityPackageParseDiagnostic } from './parse';
-import {
-  getMimeTypeForPath,
-  getPathExtension,
-  getPreviewKindForPath,
-  getSyntaxLanguageForPath,
-  type PreviewKind,
-  type SyntaxLanguage,
-} from './classify';
+import { getMimeTypeForPath, getPathExtension } from './classify';
 
 export type UnityPackageEntryComponent = 'asset' | 'meta' | 'preview';
 
@@ -21,8 +14,6 @@ export interface UnityPackageComponentRecord {
   byteLength: number;
   extension: string;
   mimeType: string;
-  previewKind: PreviewKind;
-  syntaxLanguage: SyntaxLanguage;
   diagnostics: UnityPackageParseDiagnostic[];
   hasAsset: boolean;
   hasMeta: boolean;
@@ -76,8 +67,6 @@ function createComponentRecord(
     byteLength: content.byteLength,
     extension: getPathExtension(virtualPath),
     mimeType: getMimeTypeForPath(virtualPath),
-    previewKind: getPreviewKindForPath(virtualPath, content),
-    syntaxLanguage: getSyntaxLanguageForPath(virtualPath),
     diagnostics: getComponentDiagnostics(entry, component, diagnostics),
     hasAsset: Boolean(entry.asset),
     hasMeta: Boolean(entry.meta),

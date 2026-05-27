@@ -11,7 +11,6 @@ import type { SyntaxLanguage } from 'unitypackage-core';
 import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
-  isUnityGeneratedExtension,
   type PackageFileRecord,
 } from '../packageModel';
 
@@ -151,24 +150,8 @@ function Breadcrumb({
 
 function PreviewBody({ record }: { record: PackageFileRecord }) {
   if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} />;
-  if (record.previewKind === 'text') {
-    if (isUnityGeneratedExtension(record.extension)) {
-      return <DeferredTextPreview key={record.id} record={record} />;
-    }
-    return <TextPreview record={record} />;
-  }
+  if (record.previewKind === 'text') return <TextPreview record={record} />;
   return null;
-}
-
-function DeferredTextPreview({ record }: { record: PackageFileRecord }) {
-  const [loaded, setLoaded] = useState(false);
-  if (loaded) return <TextPreview record={record} />;
-  return (
-    <div className="preview-frame deferred-frame">
-      <p>Unity-generated asset ({formatBytes(record.byteLength)})</p>
-      <button type="button" onClick={() => setLoaded(true)}>Load preview</button>
-    </div>
-  );
 }
 
 function ImagePreview({ record }: { record: PackageFileRecord }) {

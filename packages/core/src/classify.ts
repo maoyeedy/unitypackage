@@ -159,11 +159,6 @@ const LF = 0x0A;
 const MAX_LINE_BYTES = 2048;          // >2KB lines -> embedded binary blob
 const SAMPLE_WINDOW_BYTES = 32 * 1024; // O(64KB) per file regardless of size
 
-// Hard cap on text preview size. Force-Text Unity assets can embed multi-MB hex
-// blobs in the middle of a YAML file, past the head/tail sniff window. Synchronous
-// TextDecoder + highlight.js on multi-MB strings freezes the tab for seconds.
-export const PREVIEW_SIZE_LIMIT_BYTES = 1 * 1024 * 1024;
-
 /**
  * Detects if a Unity YAML file contains binary contents.
  * Treats missing bytes (undefined) as binary because the only caller never passes undefined.
@@ -181,33 +176,6 @@ export function isUnityYamlBinary(bytes: Uint8Array | undefined): boolean {
   return false;
 }
 
-// Filename patterns from docs/reference/gitattributes.md that Unity convention
-// marks as binary .asset payloads (heightmaps, lightmaps, navmesh, occlusion data,
-// TextMeshPro SDF glyph atlases, probe volumes). Used as a fast-path before the
-// content sniff so sub-cap binary assets get hidden too. Additive only -- a miss
-// falls through to isUnityYamlBinary.
-const BINARY_ASSET_FILENAME_PATTERNS: RegExp[] = [
-  /[Tt]errain.*\.asset$/,
-  /TerrainData.*\.asset$/,
-  /LightingData.*\.asset$/,
-  /LightmapSnapshot.*\.asset$/,
-  /NavMesh.*\.asset$/,
-  /NavMeshData.*\.asset$/,
-  /OcclusionCulling.*\.asset$/,
-  /OcclusionCullingData.*\.asset$/,
-  /SDF.*\.asset$/,
-  /ProbeVolumeStreamable.*\.asset$/,
-  /ProbeVolumeData.*\.asset$/,
-];
-
-function hasBinaryAssetFilename(pathname: string): boolean {
-  const fileName = pathname.split('/').pop() ?? pathname;
-  for (const pattern of BINARY_ASSET_FILENAME_PATTERNS) {
-    if (pattern.test(fileName)) return true;
-  }
-  return false;
-}
-
 function hasLongLine(bytes: Uint8Array, start: number, end: number): boolean {
   let lineStart = start;
   for (let i = start; i < end; i++) {
@@ -219,35 +187,4 @@ function hasLongLine(bytes: Uint8Array, start: number, end: number): boolean {
   return end - lineStart > MAX_LINE_BYTES;
 }
 
-export function getPreviewKindForPath(pathname: string, bytes?: Uint8Array): PreviewKind {
-  const extension = getPathExtension(pathname);
-  if (extension === 'pdf') return 'pdf';
-  if (imageMimeTypes.has(extension)) return 'image';
-  if (audioMimeTypes.has(extension)) return 'audio';
-  if (videoMimeTypes.has(extension)) return 'video';
-  if (bytes && bytes.byteLength > PREVIEW_SIZE_LIMIT_BYTES) return 'unsupported';
-  if (extension === 'yaml' || extension === 'yml') return 'text';
-  if (yamlExtensions.has(extension)) {
-    if (hasBinaryAssetFilename(pathname)) return 'unsupported';
-    return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
-  }
-  if (textExtensions.has(extension)) return 'text';
-  return 'unsupported';
-}
 
-export function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
-  const extension = getPathExtension(pathname);
-  if (extension === 'meta' || yamlExtensions.has(extension)) return 'yaml';
-  if (jsonExtensions.has(extension)) return 'json';
-  if (xmlExtensions.has(extension)) return 'xml';
-  if (cssExtensions.has(extension)) return 'css';
-  if (csharpExtensions.has(extension)) return 'csharp';
-  if (shaderlabExtensions.has(extension)) return 'shaderlab';
-  if (hlslExtensions.has(extension)) return 'hlsl';
-  if (glslExtensions.has(extension)) return 'glsl';
-  if (typescriptExtensions.has(extension)) return 'typescript';
-  if (javascriptExtensions.has(extension)) return 'javascript';
-  if (markdownExtensions.has(extension)) return 'markdown';
-  if (htmlExtensions.has(extension)) return 'html';
-  return 'text';
-}
