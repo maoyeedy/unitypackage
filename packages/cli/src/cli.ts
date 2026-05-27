@@ -124,20 +124,37 @@ async function runPack(positional: string[], flags: Record<string, string | bool
     }
   }
 
-  if ((!manifestPath && rest.length === 0) || rest.length % 2 !== 0) {
+  const maxDepDepthStr = flagStr(flags, 'max-dep-depth');
+  let maxDepDepth: number | undefined;
+  if (maxDepDepthStr !== undefined) {
+    maxDepDepth = Number(maxDepDepthStr);
+    if (!Number.isInteger(maxDepDepth) || maxDepDepth < 0) {
+      throw new CliError(`Invalid max-dep-depth: ${maxDepDepthStr}`, EXIT.ERROR);
+    }
+  }
+
+  const expanded = rest.flatMap(arg => {
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx > 0) return [arg.slice(0, eqIdx), arg.slice(eqIdx + 1)];
+    return arg;
+  });
+  if ((!manifestPath && expanded.length === 0) || expanded.length % 2 !== 0) {
     throw new CliError(
-      'pack requires --manifest <file.json> or pairs of <source-path> <path-in-package>.\nExample: pack out.unitypackage ./MyScript.cs Assets/MyScript.cs',
+      'pack requires --manifest <file.json> or <source-path>=<path-in-package> pairs.\nExample: pack out.unitypackage ./MyScript.cs=Assets/MyScript.cs',
       EXIT.ERROR,
     );
   }
   const filesToPack: Record<string, string> = {};
-  for (let i = 0; i < rest.length; i += 2) {
-    filesToPack[path.resolve(rest[i])] = rest[i + 1];
+  for (let i = 0; i < expanded.length; i += 2) {
+    filesToPack[path.resolve(expanded[i])] = expanded[i + 1];
   }
   await pack(filesToPack, path.resolve(outputFile), {
     ...(manifestPath !== undefined && { manifestPath: path.resolve(manifestPath) }),
     ...(gzipLevel !== undefined && { gzipLevel }),
+    ...(maxDepDepth !== undefined && { maxDepDepth }),
     randomGuids: flagBool(flags, 'random-guids'),
+    resolveDeps: flagBool(flags, 'resolve-deps'),
+    depRoot: flagStr(flags, 'dep-root'),
     dryRun: flagBool(flags, 'dry-run'),
     json: flagBool(flags, 'json'),
   });
@@ -172,7 +189,7 @@ const commandFlags: Record<string, Set<string>> = {
     'dry-run',
     'json',
   ]),
-  pack: new Set(['manifest', 'gzip-level', 'random-guids', 'dry-run', 'json']),
+  pack: new Set(['manifest', 'gzip-level', 'random-guids', 'resolve-deps', 'dep-root', 'max-dep-depth', 'dry-run', 'json']),
   inspect: new Set(['json', 'format', 'filter', 'exclude']),
   verify: new Set(['json', 'strict']),
   diff: new Set(['json']),
@@ -280,6 +297,11 @@ Compression:
 
 GUID handling:
     --random-guids     Generate non-reproducible GUIDs for missing .meta
+
+Dependency resolution:
+    --resolve-deps     Automatically resolve and include Unity GUID dependencies
+    --dep-root <path>  Root Assets directory for dependency resolution (default: auto-detect)
+    --max-dep-depth <n> Maximum dependency depth (default: unlimited)
 
 Operational:
     --dry-run          Validate and plan package creation without writing

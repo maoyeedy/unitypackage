@@ -2,42 +2,42 @@ export type {
   ExtractedFileContent,
   UnityPackageDiagnosticSeverity,
   UnityPackageEntry,
-} from './model';
+} from './model.js';
 export {
   generateGuid,
   guidFromPath,
   isValidGuid,
-} from './guid';
+} from './guid.js';
 export type {
   PathnameCollision,
   PathnameRejectionReason,
   PathnameValidationResult,
-} from './pathname';
+} from './pathname.js';
 export {
   detectPathnameCollisions,
   metaSidecarPathForAsset,
   validatePathname,
-} from './pathname';
+} from './pathname.js';
 export type {
   DeclaredMetaImporter,
   MetaImporterType,
-} from './meta';
+} from './meta.js';
 export {
   createMinimalMetaFor,
   readDeclaredMetaImporter,
   readMetaGuid,
   writeMetaGuid,
-} from './meta';
+} from './meta.js';
 export type {
   UnityFileCategory,
-} from './classify';
+} from './classify.js';
 export {
   getMimeTypeForPath,
   getPathExtension,
   getUnityFileCategory,
   isUnityYamlBinary,
   yamlExtensions,
-} from './classify';
+} from './classify.js';
 export type {
   IterEntriesDiagnostic,
   IterEntriesEntry,
@@ -47,7 +47,7 @@ export type {
   ParseUnityPackageOptions,
   UnityPackageParseDiagnostic,
   UnityPackageParseDiagnosticCode,
-} from './parse';
+} from './parse.js';
 export {
   DEFAULT_MAX_ENTRIES,
   DEFAULT_MAX_OUTPUT_BYTES,
@@ -55,15 +55,15 @@ export {
   iterUnityPackageEntries,
   parseUnityPackage,
   parseUnityPackageEntries,
-} from './parse';
+} from './parse.js';
 export type {
   CreateUnityPackageDiagnostic,
   CreateUnityPackageDiagnosticCode,
   CreateUnityPackageEntry,
   CreateUnityPackageOptions,
-} from './create';
+} from './create.js';
 export {
   createUnityPackage,
   estimateUnityPackageSize,
   tryCreateUnityPackage,
-} from './create';
+} from './create.js';

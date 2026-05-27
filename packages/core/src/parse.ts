@@ -1,6 +1,6 @@
 import { Gunzip } from 'fflate';
-import type { ExtractedFileContent, UnityPackageDiagnosticSeverity, UnityPackageEntry } from './model';
-import { BLOCK_SIZE, concatUint8Arrays, textDecoder } from './tar';
+import type { ExtractedFileContent, UnityPackageDiagnosticSeverity, UnityPackageEntry } from './model.js';
+import { BLOCK_SIZE, concatUint8Arrays, textDecoder } from './tar.js';
 
 export type UnityPackageParseDiagnosticCode =
   | 'asset-missing'

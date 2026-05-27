@@ -5,6 +5,7 @@ import { guidFromPath, parseUnityPackageEntries, readMetaGuid } from 'unitypacka
 import { extract } from './extract.js';
 import { inspect } from './inspect.js';
 import { pack } from './pack.js';
+import { verify } from './verify.js';
 import { decoder, makeTempDir } from '../test-utils.js';
 
 describe('pack', () => {
@@ -334,6 +335,153 @@ describe('pack', () => {
     } finally {
       stderrSpy.mockRestore();
     }
+  });
+
+  describe('--resolve-deps', () => {
+    const GUID_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const GUID_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+    it('includes transitive deps in dry-run JSON output', async () => {
+      const dir = await makeTempDir();
+      const assetsDir = path.join(dir, 'Assets');
+      const mainAsset = path.join(assetsDir, 'Main.asset');
+      const depAsset = path.join(assetsDir, 'Dep.asset');
+      const packageFile = path.join(dir, 'out.unitypackage');
+
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(mainAsset, `{fileID: 11500000, guid: ${GUID_B}, type: 3}`);
+      await writeFile(mainAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+      await writeFile(depAsset, '');
+      await writeFile(depAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_B}\n`);
+
+      const result = await pack({ [mainAsset]: 'Assets/Main.asset' }, packageFile, {
+        resolveDeps: true, depRoot: assetsDir, dryRun: true,
+      });
+
+      expect(result.resolvedDeps).toBeDefined();
+      expect(result.resolvedDeps!.transitiveGuids).toEqual([GUID_B]);
+      expect(result.entries.some(e => e.pathname === 'Assets/Dep.asset')).toBe(true);
+    });
+
+    it('produces valid .unitypackage that passes verify', async () => {
+      const dir = await makeTempDir();
+      const assetsDir = path.join(dir, 'Assets');
+      const mainAsset = path.join(assetsDir, 'Main.asset');
+      const depAsset = path.join(assetsDir, 'Dep.asset');
+      const packageFile = path.join(dir, 'out.unitypackage');
+
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(mainAsset, `{fileID: 11500000, guid: ${GUID_B}, type: 3}`);
+      await writeFile(mainAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+      await writeFile(depAsset, '');
+      await writeFile(depAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_B}\n`);
+
+      await pack({ [mainAsset]: 'Assets/Main.asset', [depAsset]: 'Assets/Dep.asset' }, packageFile, {
+        resolveDeps: true, depRoot: assetsDir,
+      });
+
+      const result = await verify(packageFile);
+      expect(result.ok).toBe(true);
+    });
+
+    it('auto-detects depRoot from Assets/ ancestor when --dep-root is omitted', async () => {
+      const dir = await makeTempDir();
+      const assetsDir = path.join(dir, 'Assets');
+      const mainAsset = path.join(assetsDir, 'Main.asset');
+      const depAsset = path.join(assetsDir, 'Dep.asset');
+      const packageFile = path.join(dir, 'out.unitypackage');
+
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(mainAsset, `{fileID: 11500000, guid: ${GUID_B}, type: 3}`);
+      await writeFile(mainAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+      await writeFile(depAsset, '');
+      await writeFile(depAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_B}\n`);
+
+      const result = await pack({ [mainAsset]: 'Assets/Main.asset' }, packageFile, {
+        resolveDeps: true, dryRun: true,
+      });
+
+      expect(result.resolvedDeps).toBeDefined();
+      expect(result.resolvedDeps!.transitiveGuids).toContain(GUID_B);
+    });
+
+    it('--dep-root pointing to wrong directory causes resolver error', async () => {
+      const dir = await makeTempDir();
+      const assetsDir = path.join(dir, 'Assets');
+      const mainAsset = path.join(assetsDir, 'Main.asset');
+      const depAsset = path.join(assetsDir, 'Dep.asset');
+      const packageFile = path.join(dir, 'out.unitypackage');
+
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(mainAsset, `{fileID: 11500000, guid: ${GUID_B}, type: 3}`);
+      await writeFile(mainAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+      await writeFile(depAsset, '');
+      await writeFile(depAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_B}\n`);
+
+      await expect(
+        pack({ [mainAsset]: 'Assets/Main.asset' }, packageFile, { resolveDeps: true, depRoot: dir }),
+      ).rejects.toThrow();
+    });
+
+    it('--max-dep-depth 0 produces same entries as without the flag', async () => {
+      const dir = await makeTempDir();
+      const sourceFile = path.join(dir, 'Main.asset');
+      const packageFile1 = path.join(dir, 'out1.unitypackage');
+      const packageFile2 = path.join(dir, 'out2.unitypackage');
+
+      await writeFile(sourceFile, '');
+      await writeFile(sourceFile + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+
+      const resultWithout = await pack({ [sourceFile]: 'Assets/Main.asset' }, packageFile1, { dryRun: true });
+      const resultWith = await pack({ [sourceFile]: 'Assets/Main.asset' }, packageFile2, {
+        resolveDeps: true, depRoot: dir, maxDepDepth: 0, dryRun: true,
+      });
+
+      expect(resultWithout.entries).toEqual(resultWith.entries);
+      expect(resultWith.resolvedDeps).toBeDefined();
+      expect(resultWith.resolvedDeps!.transitiveGuids).toEqual([]);
+    });
+
+    it('pack without --resolve-deps leaves resolvedDeps undefined', async () => {
+      const dir = await makeTempDir();
+      const sourceFile = path.join(dir, 'Script.cs');
+      const packageFile = path.join(dir, 'out.unitypackage');
+
+      await writeFile(sourceFile, 'public class Script {}');
+      await writeFile(sourceFile + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+
+      const result = await pack({ [sourceFile]: 'Assets/Script.cs' }, packageFile, { dryRun: true });
+
+      expect(result.resolvedDeps).toBeUndefined();
+    });
+
+    it('dry-run JSON output includes resolvedDeps field', async () => {
+      const dir = await makeTempDir();
+      const assetsDir = path.join(dir, 'Assets');
+      const mainAsset = path.join(assetsDir, 'Main.asset');
+      const depAsset = path.join(assetsDir, 'Dep.asset');
+      const packageFile = path.join(dir, 'out.unitypackage');
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await mkdir(assetsDir, { recursive: true });
+      await writeFile(mainAsset, `{fileID: 11500000, guid: ${GUID_B}, type: 3}`);
+      await writeFile(mainAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_A}\n`);
+      await writeFile(depAsset, '');
+      await writeFile(depAsset + '.meta', `fileFormatVersion: 2\nguid: ${GUID_B}\n`);
+
+      try {
+        await pack({ [mainAsset]: 'Assets/Main.asset' }, packageFile, {
+          resolveDeps: true, depRoot: assetsDir, dryRun: true, json: true,
+        });
+
+        const output = stdoutSpy.mock.calls.map(call => call[0]).join('');
+        const parsed = JSON.parse(output) as { resolvedDeps: unknown };
+        expect(parsed.resolvedDeps).toBeDefined();
+        expect((parsed.resolvedDeps as { transitiveGuids: string[] }).transitiveGuids).toContain(GUID_B);
+      } finally {
+        stdoutSpy.mockRestore();
+      }
+    });
   });
 });
 

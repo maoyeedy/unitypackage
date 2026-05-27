@@ -61,6 +61,7 @@
       },
       "dependencies": {
         "unitypackage-core": "workspace:*",
+        "unitypackage-depgraph": "workspace:*",
       },
     },
     "packages/core": {
@@ -68,6 +69,13 @@
       "version": "0.1.0",
       "dependencies": {
         "fflate": "^0.8.3",
+      },
+    },
+    "packages/depgraph": {
+      "name": "unitypackage-depgraph",
+      "version": "0.1.0",
+      "dependencies": {
+        "unitypackage-core": "workspace:*",
       },
     },
   },
@@ -727,6 +735,8 @@
     "undici-types": ["undici-types@7.24.6", "", {}, "sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg=="],
 
     "unitypackage-core": ["unitypackage-core@workspace:packages/core"],
+
+    "unitypackage-depgraph": ["unitypackage-depgraph@workspace:packages/depgraph"],
 
     "unitypackage-tools": ["unitypackage-tools@workspace:packages/cli"],
 

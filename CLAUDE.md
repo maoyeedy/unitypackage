@@ -3,6 +3,7 @@
 | Path | Package | Notes |
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | browser-safe, CJS+ESM |
+| `packages/depgraph` | `unitypackage-depgraph` | Node-only GUID dependency graph resolver |
 | `packages/cli` | `unitypackage-tools` | Node CLI, Node ≥24 |
 | `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 view/extract web UI |
 | `fixtures` | `@unitypackage-tools/fixtures` | synth builders (`generated/`), assets, archived packages (`static/`) |
@@ -14,10 +15,17 @@ All contexts (dev, CI, published): Node ≥24.
 
 ## Architecture
 
+- **depgraph Node-only**: `packages/depgraph` depends on `unitypackage-core` and `node:fs`. Not browser-safe. Exports: `scanGuids`, `buildPathnameIndex`, `resolveDependencies`. Module layout: `guidScanner.ts` (regex PPtr extraction), `pathnameIndex.ts` (GUID-to-pathname via .meta walk), `dependencyResolver.ts` (BFS transitive closure). Test co-located.
+- **depgraph scanning**: uses anchored regex `/\{fileID:\s*\d+\s*,\s*guid:\s*([0-9a-fA-F]{32})\s*,\s*type:\s*\d+\s*\}/g` to extract cross-file GUID refs from Unity YAML. Filters built-in GUIDs (`0000000000...e000...`, `0000000000...f000...`). Skips binary extensions and `isUnityYamlBinary` hits. Pure function, no I/O.
+- **depgraph index**: `buildPathnameIndex(rootDir)` sync-walks `Assets/` for `.meta` files, reads GUIDs via `readMetaGuid()` from core, returns `Map<guid, relativePath>`. Skips `node_modules`, `Library`, `Temp`, `obj`, `Packages`. First-wins on duplicate GUIDs.
+- **depgraph resolver**: `resolveDependencies({explicitPaths, depRoot, index, maxDepth?})` runs BFS with visited-set cycle detection. Returns `{explicitGuids, transitiveGuids, edges, stats}`. Reads asset files during traversal via sync `readFileSync`. Depth-limited and cycle-safe.
+- **CLI dep resolution**: wired via `pack --resolve-deps` (flags: `--dep-root`, `--max-dep-depth`). Runs after file collection, before archive assembly. Auto-detects `Assets/` ancestor from source paths. Dry-run/JSON compatible — `resolvedDeps` included in `PackResult`.
+- **Build order**: `build:cli` chains `build:web` then copies assets. `unitypackage-depgraph` builds independently before CLI (declared dep, bun workspace handles ordering).
+
 - **core browser-safe**: no `node:*`, `fs`, `path`, `crypto`, `os`, `yaml`, HTTP. Only dep: `fflate`.
 - **core barrel**: `packages/core/src/index.ts` is sole entry. No public subpath exports.
 - **core module layout**: `model.ts`, `guid.ts`, `pathname.ts`, `meta.ts`, `parse.ts`, `create.ts`, `classify.ts`, `tar.ts` (private helper). Tests co-located: `parse.test.ts`, `create.test.ts`, `classify.test.ts`, etc.
-- **core build**: `tsconfig.json` omits `moduleResolution` intentionally. Build writes `printf '{"type":"module"}' > dist/esm/package.json` (load-bearing). Do not place non-test helpers under `packages/core/src`.
+- **core build**: `tsconfig.json` omits `moduleResolution` intentionally. CJS/ESM dual output: CJS via `dist/index.js` (with `dist/package.json` `"type":"commonjs"`), ESM via `dist/esm/index.js` (with `dist/esm/package.json` `"type":"module"`). Build writes both `package.json` stubs. ESM tsconfig uses `module: "NodeNext"` + `moduleResolution: "NodeNext"`. Do not place non-test helpers under `packages/core/src`.
 - **CLI imports**: all relative `.ts` imports use `.js` extension (NodeNext).
 - **Node-only TS target**: CLI, fixtures, web node config, and `scripts/*.ts` typecheck against ES2025. Core and browser app runtime stay conservative unless browser support/polyfills are explicitly handled.
 - **Root scripts typecheck**: `tsconfig.scripts.json` covers `scripts/*.ts` with NodeNext, `types: ["node"]`, and `erasableSyntaxOnly` so scripts remain compatible with native Node TS stripping.
@@ -41,7 +49,6 @@ All contexts (dev, CI, published): Node ≥24.
 
 - **CLI glob filters match full package pathnames**: use `**/*.shader` for nested files, `*.shader` for root only.
 - **CLI JSON mode**: route progress/warnings through stderr; keep stdout parseable.
-- **Smoke must use `bun`**, not `node` — Node fails on core ESM barrel's extensionless imports.
 - **`verify` is format-scoped**: do not add Unity YAML schema validation.
 - **`PARSER_IGNORED_PREVIEW` silently skipped** in verify — normal for every `preview.png`.
 - **ESLint in CLI excludes `*.test.ts`** — they lack `@types/node` in tsconfig scope.
@@ -68,7 +75,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **Preview E2E matrix**: keep persistent coverage for `.cs`/`.shader` text preview, `.mat`/`.terrainlayer` YAML text preview, `.unity`/`.prefab`/binary `.asset` no-preview frame, `.png` image preview, and unsupported `.fbx` no-preview.
 - **Preview frame regression checks**: assert the `.preview-frame` slot stays the same outer height when switching between text and no-preview records, and assert hidden scrollbar CSS (`scrollbar-width: none`) without removing scrollability.
 - **Manual P4 smoke fallback**: if port 4173 is busy, run `cd apps/web && bunx vite preview --port 4174 --strictPort`; rebuild first because Vite preview serves `dist`.
-- **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
+- **`vitest.config.ts` at root**: projects for core, cli, depgraph, web. Per-package `bun run --filter <pkg> test` works standalone (except depgraph — use `bunx vitest run --project depgraph` or root `bun run test`).
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
 - **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react` and `@testing-library/jest-dom`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
 - **React Compiler ESLint rule**: `eslint-plugin-react-compiler` is active in the web-app block. Errors indicate the compiler will skip that component/hook. Fix violations to maximize compiler coverage.
@@ -80,6 +87,7 @@ All contexts (dev, CI, published): Node ≥24.
 - `docs/reference/archive-format-spec.md` — `.unitypackage` format
 - `docs/product/product-web.md` - web product scope, dependency boundaries, and acceptance checks
 - `docs/product/product-cli.md` - CLI product scope, command surface, gaps, and acceptance checks
+- `docs/plans/cli/resolve-deps/` - implementation plan for `pack --resolve-deps`
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/` — phase plans and ship records; check before adding roadmap-scale features

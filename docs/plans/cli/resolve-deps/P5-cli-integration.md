@@ -1,0 +1,3 @@
+## Goal  [DONE 2026-05-27]
+
+Shipped: `--resolve-deps`, `--dep-root`, `--max-dep-depth` flags on `pack` command. Modified `packages/cli/src/cli.ts` (flag parsing, validation, help text in Dependency resolution section). Modified `packages/cli/src/commands/pack.ts` (resolver integration step between collection and assembly, `autoDetectRoot` heuristic, `createDepEntry` helper, `resolvedDeps` in `PackResult` JSON output, warning-based diagnostics for missing dep files). Added runtime exports in `packages/depgraph/src/index.ts` (`resolveDependencies`, `buildPathnameIndex`, `NO_REFERENCE`). No regressions: 341 tests pass, `pack --help` shows new flags, `verify` OK on existing packages.

@@ -1,6 +1,6 @@
 import { gzipSync } from 'fflate';
-import type { UnityPackageDiagnosticSeverity } from './model';
-import { BLOCK_SIZE, concatUint8Arrays, createTarEntry, textEncoder } from './tar';
+import type { UnityPackageDiagnosticSeverity } from './model.js';
+import { BLOCK_SIZE, concatUint8Arrays, createTarEntry, textEncoder } from './tar.js';
 
 export interface CreateUnityPackageEntry {
   guid: string;

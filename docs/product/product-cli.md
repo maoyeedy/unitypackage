@@ -2,11 +2,11 @@
 
 ## TLDR
 
-`unitypackage-tools` is a zero-framework CLI for the full `.unitypackage` lifecycle: extract, pack, inspect, verify, diff, and serve a web UI. It is the robust, automatable, technical surface complementing the web app's browse-and-extract UX. All archive parsing and creation is delegated to `unitypackage-core` (browser-safe library). The CLI itself is a thin shell of command routing, safety guards, output formatting, and filesystem I/O.
+`unitypackage-tools` is a zero-framework CLI for the full `.unitypackage` lifecycle: extract, pack (with recursive dependency resolution), inspect, verify, diff, and serve a web UI. It is the robust, automatable, technical surface complementing the web app's browse-and-extract UX. All archive parsing and creation is delegated to `unitypackage-core` (browser-safe library). The CLI itself is a thin shell of command routing, safety guards, output formatting, and filesystem I/O.
 
 ## Product Goal
 
-Give Unity developers and CI pipelines a complete set of command-line primitives for working with `.unitypackage` archives. The CLI answers six questions:
+Give Unity developers and CI pipelines a complete set of command-line primitives for working with `.unitypackage` archives. The CLI answers seven questions:
 
 1. **extract** — What files are inside, and can I write selected ones to disk?
 2. **pack** — Can I create a `.unitypackage` from loose source files with correct `.meta` sidecars?
@@ -20,7 +20,7 @@ The CLI avoids teaching Unity project internals unless that knowledge directly h
 ## In Scope
 
 - **extract**: Write asset, meta, and preview files to disk with glob filter, exact path selection, path-file input, exclude, force, skip-existing, merge, dry-run, and JSON output.
-- **pack**: Create `.unitypackage` archives from source files. Read adjacent `.meta` sidecars automatically. Generate importer-aware metas (MonoImporter, TextScriptImporter, DefaultImporter, folderAsset). Support deterministic path-based GUIDs or random GUIDs. Support manifest files for bulk entry. Support configurable gzip level (0-9). Dry-run with JSON output.
+- **pack**: Create `.unitypackage` archives from source files. Read adjacent `.meta` sidecars automatically. Generate importer-aware metas (MonoImporter, TextScriptImporter, DefaultImporter, folderAsset). Support deterministic path-based GUIDs or random GUIDs. Support manifest files for bulk entry. Support configurable gzip level (0-9). Dry-run with JSON output. **Recursive dependency resolution** via `--resolve-deps` flag: scans Unity YAML for `{fileID, guid, type}` PPtr references, builds a GUID-to-pathname index from project `.meta` files, and BFS-resolves the transitive closure of referenced assets. Built on `unitypackage-depgraph`.
 - **inspect**: List or tree-format display of package entries. Filter by extension or glob, exclude by glob. JSON output with component-level metadata (byte length, extension, MIME type, preview kind, syntax language, parser diagnostics). SHA-256 of raw package bytes.
 - **verify**: Structural and format health checks. Parser diagnostics, GUID/meta consistency, duplicate GUIDs, duplicate paths, case-colliding paths, unsafe pathnames, backslash pathnames, pathnames outside `Assets/`, oversized pathnames, importer mismatches, missing metas, zero-byte assets, malformed tar entries. Strict mode promotes warnings to errors.
 - **diff**: GUID-based comparison of two packages. SHA-256 hash comparison per component (asset, meta, preview). Reports added, removed, and changed entries with per-component change detail.
@@ -67,7 +67,7 @@ These are genuine gaps: commonly expected CLI features that are absent but do no
 
 The CLI is the robust, technical, and automatable surface. These capabilities are CLI-only:
 
-- **pack**: create `.unitypackage` files from source files.
+- **pack**: create `.unitypackage` files from source files, including recursive dependency resolution (`--resolve-deps`, `--dep-root`, `--max-dep-depth`).
 - **verify**: expose parser and analysis diagnostics, including warnings that may not matter to a normal user.
 - **inspect**: detailed JSON/tree output for automation and debugging.
 - **diff**: package-to-package comparison.
@@ -77,7 +77,7 @@ The web app is the easiest path for casual browsing and extraction. The CLI is t
 
 ## Product Constraints
 
-- CLI must remain self-contained with no runtime dependencies beyond `unitypackage-core` (workspace). No `commander`, `yargs`, `chalk`, or other CLI framework dependencies.
+- CLI must remain self-contained with no runtime dependencies beyond `unitypackage-core` and `unitypackage-depgraph` (both workspace). No `commander`, `yargs`, `chalk`, or other CLI framework dependencies.
 - JSON mode must keep stdout parseable at all times. Every warning, progress line, and error must go to stderr.
 - Safety guards must prevent resource exhaustion on malicious or malformed packages.
 - Path security must prevent directory traversal attacks during extraction.
@@ -92,6 +92,7 @@ The web app is the easiest path for casual browsing and extraction. The CLI is t
 - `unitypackage-tools extract pkg.unitypackage out --dry-run --json` produces parseable JSON with planned writes and no side effects.
 - `unitypackage-tools pack out.unitypackage src/Foo.cs Assets/Foo.cs` produces a valid `.unitypackage` that round-trips through extract.
 - `unitypackage-tools pack out.unitypackage src/Foo.cs Assets/Foo.cs --manifest manifest.json` reads the manifest and packs all entries.
+- `unitypackage-tools pack out.unitypackage src/GameLevel.unity Assets/GameLevel.unity --resolve-deps --dep-root ./Assets` packs the scene with all transitive GUID dependencies (prefabs, materials, textures, scripts, terrain data).
 - `unitypackage-tools inspect pkg.unitypackage --json` outputs parseable JSON with component-level metadata.
 - `unitypackage-tools inspect pkg.unitypackage --format tree` renders a directory tree for `Assets/`.
 - `unitypackage-tools verify pkg.unitypackage --strict` exits non-zero for packages with warnings.
