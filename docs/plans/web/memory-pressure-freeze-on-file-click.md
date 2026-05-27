@@ -65,22 +65,6 @@ Shipped: updated `apps/web/src/App.tsx`, `apps/web/src/packageModel.ts`, and `ap
 
 Shipped: updated `apps/web/src/components/PreviewPanel.tsx` and `apps/web/src/components/PreviewPanel.test.tsx` to remove the keyed remount on `PreviewPanelContent`, tracking prop-derived ID changes to reset the preview mode in place.
 
-
-### P6 -- Production-build manual smoke on Polytope
-
-See `memory-pressure-freeze-agentic-debug.md` for the full agentic debug procedure. This section documents only the simplified manual validation checklist.
-
-**Procedure (brief).**
-
-1. `bun run check` -- lint + typecheck + build + test + smoke green.
-2. `cd apps/web && bunx vite preview --port 4173 --strictPort`
-3. Open clean Chromium (no DevTools). Navigate to `http://localhost:4173/`.
-4. Load `Polytope_URP.unitypackage`. Note post-parse RSS.
-5. Click 5 files (`.cs`, `.shader`, `TerrainData_*.asset`, `.png`, `.fbx`). Each click < 200 ms. RSS delta < 100 MB total.
-6. Rapid 10-click cycle. No freeze. RSS settles near baseline.
-7. "All ZIP" download. ZIP contains 139+ entries. RSS settles in < 5 s.
-8. `cd apps/web && bunx playwright test` -- all pass.
-
 **Pass thresholds.**
 
 | Criterion                            | Pass threshold |
