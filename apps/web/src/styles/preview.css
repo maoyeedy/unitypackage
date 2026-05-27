@@ -19,6 +19,9 @@
 }
 
 .preview-frame {
+  box-sizing: border-box;
+  flex: 0 0 min(360px, 46vh);
+  height: min(360px, 46vh);
   min-height: 230px;
   max-height: 46vh;
   margin: 12px;
