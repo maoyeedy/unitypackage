@@ -94,6 +94,10 @@ describe('package model helpers', () => {
 
     expect(sorted[0]?.byteLength).toBeGreaterThanOrEqual(sorted[1]?.byteLength ?? 0);
     expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatBytes(1024 ** 4)).toBe('1.0 TB');
+    expect(formatBytes(10 * 1024 ** 4)).toBe('10 TB');
+    expect(formatBytes(1024 ** 3)).toBe('1.0 GB');
+    expect(formatBytes(10 * 1024 ** 3)).toBe('10 GB');
   });
 
   it('supports selection state and keyboard range selection', () => {
