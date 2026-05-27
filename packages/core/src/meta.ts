@@ -6,25 +6,6 @@ import { textDecoder } from './tar';
 // ---------------------------------------------------------------------------
 
 /**
- * Returns a Unity-compatible minimal `.meta` YAML text for the given GUID.
- * Uses the `DefaultImporter` shape; the caller encodes to UTF-8 bytes when
- * persisting.
- *
- * Throws when `isValidGuid(guid)` is false -- the error message names the
- * offending value.
- *
- * Does not parse YAML; emits a literal template string. No `yaml` dep.
- * Browser-safe; no `node:*` imports.
- */
-export function createMinimalMeta(guid: string): string {
-  if (!isValidGuid(guid)) {
-    throw new Error(`createMinimalMeta: invalid GUID "${guid}" -- must be exactly 32 lowercase hexadecimal characters`);
-  }
-  const lowerGuid = guid.toLowerCase();
-  return `fileFormatVersion: 2\nguid: ${lowerGuid}\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n`;
-}
-
-/**
  * Discriminates the YAML importer block written into a `.meta` file.
  * - `DefaultImporter`       -- generic asset (binary, texture, etc.)
  * - `DefaultImporterFolder` -- folder entry (`folderAsset: yes` variant)
@@ -159,7 +140,7 @@ const YAML_EXTENSIONS = new Set(['yaml', 'yml']);
  *
  * Browser-safe; no `node:*` imports.
  */
-export function detectMetaImporterType(pathname: string, isDir?: boolean): MetaImporterType {
+function detectMetaImporterType(pathname: string, isDir?: boolean): MetaImporterType {
   if (isDir === true) {
     return 'DefaultImporterFolder';
   }
@@ -216,17 +197,4 @@ export function createMinimalMetaFor(guid: string, pathname: string, isDir?: boo
   }
 }
 
-/**
- * Generates a Unity-compatible minimal folder `.meta` YAML string for the
- * given GUID. Equivalent to calling `createMinimalMetaFor(guid, '', true)`.
- *
- * Validates the GUID with `isValidGuid`; throws on failure.
- *
- * Browser-safe; no `node:*` imports.
- */
-export function createMinimalFolderMeta(guid: string): string {
-  if (!isValidGuid(guid)) {
-    throw new Error(`createMinimalFolderMeta: invalid GUID "${guid}" -- must be exactly 32 lowercase hexadecimal characters`);
-  }
-  return defaultImporterFolderTemplate(guid.toLowerCase());
-}
+

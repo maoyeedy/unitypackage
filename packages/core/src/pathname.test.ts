@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assetPathForMetaSidecar,
   detectPathnameCollisions,
-  isMetaSidecarPath,
   metaSidecarPathForAsset,
   tryCreateUnityPackage,
   validatePathname,
@@ -11,49 +9,28 @@ import {
 const encoder = new TextEncoder();
 
 describe('meta sidecar path helpers', () => {
-  it('detects normal asset sidecar pathnames', () => {
-    expect(isMetaSidecarPath('Assets/Texture.png.meta')).toBe(true);
-    expect(isMetaSidecarPath('Assets/Texture.png')).toBe(false);
-  });
-
-  it('maps normal asset sidecar pathnames back to asset pathnames', () => {
-    expect(assetPathForMetaSidecar('Assets/Texture.png.meta')).toBe('Assets/Texture.png');
-    expect(assetPathForMetaSidecar('Assets/Texture.png')).toBeNull();
-  });
-
   it('creates sidecar pathnames for normal assets', () => {
     expect(metaSidecarPathForAsset('Assets/Texture.png')).toBe('Assets/Texture.png.meta');
   });
 
   it('handles extensionless assets', () => {
-    expect(isMetaSidecarPath('Assets/Texture.meta')).toBe(true);
-    expect(assetPathForMetaSidecar('Assets/Texture.meta')).toBe('Assets/Texture');
     expect(metaSidecarPathForAsset('Assets/Texture')).toBe('Assets/Texture.meta');
   });
 
   it('handles nested paths without normalization', () => {
-    expect(isMetaSidecarPath('Assets/Nested/Texture.png.meta')).toBe(true);
-    expect(assetPathForMetaSidecar('Assets/Nested/Texture.png.meta')).toBe(
-      'Assets/Nested/Texture.png',
-    );
     expect(metaSidecarPathForAsset('Assets/Nested/Texture.png')).toBe(
       'Assets/Nested/Texture.png.meta',
     );
   });
 
   it('treats already-meta paths as assets when creating a sidecar path', () => {
-    expect(isMetaSidecarPath('Assets/Texture.png.meta')).toBe(true);
-    expect(assetPathForMetaSidecar('Assets/Texture.png.meta')).toBe('Assets/Texture.png');
     expect(metaSidecarPathForAsset('Assets/Texture.png.meta')).toBe(
       'Assets/Texture.png.meta.meta',
     );
   });
 
-  it('handles empty strings without validation or normalization', () => {
-    expect(isMetaSidecarPath('')).toBe(false);
-    expect(assetPathForMetaSidecar('')).toBeNull();
+  it('handles empty strings', () => {
     expect(metaSidecarPathForAsset('')).toBe('.meta');
-    expect(assetPathForMetaSidecar('.meta')).toBe('');
   });
 });
 

@@ -8,44 +8,27 @@ export {
   guidFromPath,
   isValidGuid,
 } from './guid';
-export { matchGlob } from './glob';
 export type {
   PathnameCollision,
   PathnameRejectionReason,
   PathnameValidationResult,
 } from './pathname';
 export {
-  assetPathForMetaSidecar,
   detectPathnameCollisions,
-  isMetaSidecarPath,
   metaSidecarPathForAsset,
   validatePathname,
 } from './pathname';
-export type {
-  ResolveMetaSidecarsResult,
-  SidecarSelectableKind,
-  SidecarSelectableRecord,
-} from './sidecar';
-export {
-  findMetaSidecarForAsset,
-  resolveMetaSidecarSelection,
-} from './sidecar';
 export type {
   DeclaredMetaImporter,
   MetaImporterType,
 } from './meta';
 export {
-  createMinimalFolderMeta,
-  createMinimalMeta,
   createMinimalMetaFor,
-  detectMetaImporterType,
   readDeclaredMetaImporter,
   readMetaGuid,
   writeMetaGuid,
 } from './meta';
 export type {
-  PreviewKind,
-  SyntaxLanguage,
   UnityFileCategory,
 } from './classify';
 export {
@@ -55,19 +38,6 @@ export {
   isUnityYamlBinary,
   yamlExtensions,
 } from './classify';
-export type {
-  UnityPackageAnalysisFinding,
-  UnityPackageAnalysisFindingCode,
-  UnityPackageAnalysisResult,
-  UnityPackageAnalysisSummary,
-} from './analyze';
-export { analyzeUnityPackageEntries } from './analyze';
-export type {
-  ContentlessRecord,
-  UnityPackageComponentRecord,
-  UnityPackageEntryComponent,
-} from './component';
-export { entriesToComponentRecords } from './component';
 export type {
   IterEntriesDiagnostic,
   IterEntriesEntry,
@@ -97,5 +67,3 @@ export {
   estimateUnityPackageSize,
   tryCreateUnityPackage,
 } from './create';
-export type { UnityPackageSummary } from './summary';
-export { summarizePackage } from './summary';
