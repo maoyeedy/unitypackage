@@ -27,11 +27,11 @@ Syntax-highlighted by `highlight.js`:
 | `yaml`, `yml` | yaml |
 | `json`, `asmdef`, `asmref`, `inputactions`, `shadergraph`, `shadersubgraph` | json |
 | `css`, `uss`, `tss` | css |
-| `hlsl`, `cginc`, `compute` | glsl (HLSL has no first-party grammar; GLSL is close enough) |
+| `hlsl`, `cginc`, `compute`, `shader` | glsl (Unity `.shader` is ShaderLab with embedded HLSL blocks. highlight.js has no ShaderLab grammar; GLSL is close enough for the HLSL portions) |
 
 Plain `<pre><code>` (no highlight pass -- registered-language `Set.has` short-circuit):
 
-`shader` (ShaderLab), `glsl`, `md`, `txt`, `html`, `xml`, `uxml`, `ts`, `tsx`, `js`, `jsx`, `meta`.
+`glsl`, `md`, `txt`, `html`, `xml`, `uxml`, `ts`, `tsx`, `js`, `jsx`, `meta`.
 
 ## Hidden -- preview area collapses; download still works
 

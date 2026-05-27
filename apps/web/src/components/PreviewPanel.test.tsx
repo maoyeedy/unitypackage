@@ -210,15 +210,15 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(codeElement?.textContent).toBe(hlslContent);
   });
 
-  it('renders unregistered shaderlab language as plain text without highlights', () => {
-    const shaderlabContent = 'Shader "Custom/Test" { SubShader { Pass {} } }';
+  it('highlights .shader files with hlsl (glsl) grammar', () => {
+    const shaderContent = 'Shader "Custom/Test" { SubShader { Pass { CGPROGRAM\\nvoid main() { gl_Position = vec4(1.0); }\\nENDCG } } }';
     const record = createMockRecord({
-      syntaxLanguage: 'shaderlab',
+      syntaxLanguage: 'hlsl',
       pathname: 'Assets/test.shader',
       virtualPath: 'Assets/test.shader',
       fileName: 'test.shader',
       extension: 'shader',
-      content: encoder.encode(shaderlabContent),
+      content: encoder.encode(shaderContent),
     });
 
     const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
@@ -227,9 +227,9 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(codeElement).toBeInTheDocument();
 
     const spans = codeElement?.querySelectorAll('span');
-    expect(spans?.length).toBe(0);
-    expect(codeElement?.innerHTML).not.toContain('<span');
-    expect(codeElement?.textContent).toBe(shaderlabContent);
+    expect(spans?.length).toBeGreaterThan(0);
+    expect(codeElement?.innerHTML).not.toBe(shaderContent);
+    expect(codeElement?.textContent).toBe(shaderContent);
   });
 
 

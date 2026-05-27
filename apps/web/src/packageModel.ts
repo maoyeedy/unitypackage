@@ -56,7 +56,7 @@ function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
   if (ext === 'xml' || ext === 'uxml') return 'xml';
   if (ext === 'css' || ext === 'uss' || ext === 'tss') return 'css';
   if (ext === 'cs') return 'csharp';
-  if (ext === 'shader') return 'shaderlab';
+  if (ext === 'shader') return 'hlsl';
   if (ext === 'hlsl' || ext === 'cginc' || ext === 'compute') return 'hlsl';
   if (ext === 'glsl') return 'glsl';
   if (ext === 'ts' || ext === 'tsx') return 'typescript';
