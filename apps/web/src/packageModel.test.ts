@@ -37,10 +37,6 @@ import {
   sortRecords,
   toSidecarSelectableRecords,
   validatePackDraft,
-  computeHeadHash,
-  getRecentPackages,
-  addRecentPackage,
-  removeRecentPackage,
   pairDroppedItems,
   getUniqueGuid,
   updateMetaBytesGuid,
@@ -1854,19 +1850,6 @@ describe('P2 tree ergonomics helpers', () => {
       },
     ], []);
     expect(getAllFolderPaths(records)).toEqual([]);
-  });
-
-  it('computeHeadHash computes hash of file', async () => {
-    const file = new Blob([new TextEncoder().encode('Hello World')], { type: 'text/plain' });
-    const hash = await computeHeadHash(file);
-    expect(hash).toBeDefined();
-    expect(typeof hash).toBe('string');
-  });
-
-  it('IndexedDB operations gracefully handle environment without indexedDB', async () => {
-    await expect(getRecentPackages()).resolves.toEqual([]);
-    await expect(addRecentPackage({ key: 'test|123|abc', name: 'test', size: 123, headHash: 'abc' })).resolves.toBeUndefined();
-    await expect(removeRecentPackage('test|123|abc')).resolves.toBeUndefined();
   });
 
   describe('P5 Raw File Import', () => {

@@ -104,53 +104,6 @@ test.describe('pack mode', () => {
     await expect(page.locator('.pack-status.success')).not.toBeVisible();
   });
 
-  test('Reloading the page restores draft state, and Clear draft wipes it', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Open package').setInputFiles(fixturePath);
-    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
-
-    // Stage two valid assets (without preview files to keep validation ready)
-    await selectFileByName(page, 'Ground_Layer_01.terrainlayer');
-    await selectFileByName(page, 'Ground_Layer_02.terrainlayer');
-    await page.getByRole('button', { name: 'Stage for pack' }).click();
-
-    // Now in Pack tab, change gzipLevel and output filename
-    await page.locator('#export-filename').fill('test-reload-persist.unitypackage');
-    await page.locator('#gzip-level').selectOption('9');
-
-    // Wait 500ms to allow React state updates and useEffect to write to localStorage
-    await page.waitForTimeout(500);
-
-    // Reload page
-    await page.reload();
-
-    // Verify it is restored
-    await page.getByRole('button', { name: 'Pack', exact: true }).click();
-    await expect(page.locator('#export-filename')).toHaveValue('test-reload-persist.unitypackage');
-    await expect(page.locator('#gzip-level')).toHaveValue('9');
-
-    // Reopen package so we can verify the staged row displays
-    await page.getByLabel('Open package').setInputFiles(fixturePath);
-    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
-    await page.getByRole('button', { name: 'Pack', exact: true }).click();
-
-    // Staged list should show 2 staged items
-    const explorerPanel = page.getByRole('region', { name: 'Package explorer' });
-    await expect(explorerPanel).toContainText('2 future package entries staged');
-
-    // Now test Clear draft
-    await page.getByRole('button', { name: 'Clear draft' }).click();
-    await expect(page.locator('#export-filename')).not.toHaveValue('test-reload-persist.unitypackage');
-    await expect(page.locator('#gzip-level')).toHaveValue('6');
-    await expect(explorerPanel).toContainText('0 future package entries staged');
-
-    // Reload page to verify localStorage draft is gone
-    await page.reload();
-    await page.getByRole('button', { name: 'Pack', exact: true }).click();
-    await expect(page.locator('#export-filename')).not.toHaveValue('test-reload-persist.unitypackage');
-    await expect(page.locator('#gzip-level')).toHaveValue('6');
-  });
-
   test('Stage records, export package, and verify round-trip parsing', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Open package').setInputFiles(fixturePath);

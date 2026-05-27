@@ -42,51 +42,5 @@ test.describe('package loading', () => {
     await expect(page.getByRole('button', { name: 'All ZIP' })).toBeEnabled();
   });
 
-  test('reopen from recents entry after page reload', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Open package').setInputFiles(fixturePath);
-    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
 
-    // Verify recents list contains the package
-    await page.getByRole('button', { name: 'Recent packages' }).click();
-    await expect(page.locator('.recent-item')).toContainText('Polytope_URP.unitypackage');
-
-    // Reload page
-    await page.reload();
-
-    // Verify it is still in recents and tree is empty
-    await page.getByRole('button', { name: 'Recent packages' }).click();
-    await expect(page.locator('.recent-item')).toContainText('Polytope_URP.unitypackage');
-    await expect(page.getByRole('heading', { name: 'No records loaded' })).toBeVisible();
-
-    // Click recent item to trigger reopen prompt
-    await page.locator('.recent-item').click();
-    await expect(page.getByRole('heading', { name: 'Reopen Recent Package' })).toBeVisible();
-
-    // Select the file in modal file input
-    await page.locator('.modal-dropzone input[type="file"]').setInputFiles(fixturePath);
-
-    // Verify the package loaded and modal closed
-    await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('heading', { name: 'Reopen Recent Package' })).not.toBeVisible();
-  });
-
-  test('persistence and rehydration of grouping and sort preferences', async ({ page }) => {
-    await page.goto('/');
-
-    // Change sort and grouping
-    await page.locator('#sort-key').selectOption('size');
-    await page.getByRole('button', { name: 'Extension', exact: true }).click();
-
-    // Verify immediately applied
-    await expect(page.locator('#sort-key')).toHaveValue('size');
-    await expect(page.getByRole('button', { name: 'Extension', exact: true })).toHaveClass(/active/);
-
-    // Reload page
-    await page.reload();
-
-    // Verify rehydrated values
-    await expect(page.locator('#sort-key')).toHaveValue('size');
-    await expect(page.getByRole('button', { name: 'Extension', exact: true })).toHaveClass(/active/);
-  });
 });

@@ -21,7 +21,7 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { estimateUnityPackageSize } from 'unitypackage-core';
-import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic, UnityPackageEntryComponent } from 'unitypackage-core';
+import type { UnityPackageParseDiagnostic, CreateUnityPackageDiagnostic } from 'unitypackage-core';
 
 import './App.css';
 import type { DownloadZipResponse, ParsePackageResponse, CreatePackageResponse } from './workerTypes';
@@ -44,22 +44,14 @@ import {
   getPreviewKind,
   getRecordCategory,
   getSyntaxLanguage,
-  computeHeadHash,
-  getRecentPackages,
-  addRecentPackage,
-  removeRecentPackage,
   pairDroppedItems,
   type RawDroppedFile,
   type GroupingMode,
   type PackageFileRecord,
-  type PreviewKind,
   type SortDirection,
   type SortKey,
-  type SyntaxLanguage,
   type UnityPackageAnalysisFinding,
   type WorkspaceMode,
-  type RecentPackage,
-  type FileSystemFileHandle,
 } from './packageModel';
 
 import { ModeTabs } from './components/ModeTabs';
@@ -71,8 +63,6 @@ import { DiagnosticsDrawer } from './components/DiagnosticsDrawer';
 import { PackPanel } from './components/PackPanel';
 import { ToastStack } from './components/ToastStack';
 import type { Toast } from './components/ToastStack';
-import { RecentsMenu } from './components/RecentsMenu.js';
-import { SettingsMenu } from './components/SettingsMenu.js';
 
 interface ParseResult {
   records: PackageFileRecord[];
@@ -99,62 +89,7 @@ interface AppErrorBoundaryState {
   hasError: boolean;
 }
 
-const packDraftStorageKey = 'unitypackage:pack-draft:v1';
-const maxPersistedImportedRecordBytes = 2 * 1024 * 1024;
 
-function uint8ArrayToBase64(arr: Uint8Array): string {
-  let binary = '';
-  const len = arr.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(arr[i]);
-  }
-  return window.btoa(binary);
-}
-
-function base64ToUint8Array(str: string): Uint8Array {
-  const binary = window.atob(str);
-  const len = binary.length;
-  const arr = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    arr[i] = binary.charCodeAt(i);
-  }
-  return arr;
-}
-
-interface SerializedRawImportedRecord {
-  id: string;
-  guid: string;
-  pathname: string;
-  virtualPath: string;
-  fileName: string;
-  extension: string;
-  mimeType: string;
-  component: UnityPackageEntryComponent;
-  isUnityPreview: boolean;
-  content: string;
-  byteLength: number;
-  hasAsset: boolean;
-  hasMeta: boolean;
-  hasPreview: boolean;
-  assetSize?: number;
-  metaSize?: number;
-  previewSize?: number;
-  duplicatePathCount: number;
-  previewKind: PreviewKind;
-  syntaxLanguage: SyntaxLanguage;
-  diagnostics: UnityPackageParseDiagnostic[];
-  findings: UnityPackageAnalysisFinding[];
-  meta?: string;
-  isRawImported?: boolean;
-  isDirectory?: boolean;
-}
-
-interface PackDraft {
-  stagedRecordIds?: string[];
-  importedRecords?: SerializedRawImportedRecord[];
-  gzipLevel?: number;
-  exportFilename?: string;
-}
 
 function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
@@ -317,75 +252,31 @@ function getDefaultFilename(): string {
 
 function AppContent() {
   const [mode, setMode] = useState<WorkspaceMode>('extract');
-  const [groupingMode, setGroupingMode] = useState<GroupingMode>(() => {
-    const val = localStorage.getItem('unitypackage-groupingMode');
-    return (val === 'tree' || val === 'extension') ? val : 'tree';
-  });
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>('tree');
   const [records, setRecords] = useState<PackageFileRecord[]>([]);
   const [diagnostics, setDiagnostics] = useState<UnityPackageParseDiagnostic[]>([]);
   const [analysis, setAnalysis] = useState<UnityPackageAnalysisFinding[]>([]);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
-  const [rawStagedRecordIds, setStagedRecordIds] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem(packDraftStorageKey);
-      if (saved) {
-        const draft = JSON.parse(saved) as PackDraft;
-        if (draft.stagedRecordIds && Array.isArray(draft.stagedRecordIds)) {
-          return new Set(draft.stagedRecordIds);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load stagedRecordIds from draft:', err);
-    }
-    return new Set();
-  });
+  const [rawStagedRecordIds, setStagedRecordIds] = useState<Set<string>>(new Set());
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
-  // detailsRecordId: overrides which record is shown in the details/preview pane
-  // without changing the explorer selection. Resets to null whenever activeRecordId
-  // changes so the pane tracks the explorer by default.
   const [detailsRecordId, setDetailsRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [keyboardRangeBaseIds, setKeyboardRangeBaseIds] = useState<Set<string> | null>(null);
   const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
-  const [isRecentsOpen, setIsRecentsOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [maintainStructure, setMaintainStructure] = useState<boolean>(() => {
-    const stored = localStorage.getItem('unitypackage-maintainStructure');
-    return stored === null ? true : stored === 'true';
-  });
+  const [maintainStructure, setMaintainStructure] = useState<boolean>(true);
   const [includeMetaSidecars, setIncludeMetaSidecars] = useState(false);
-  const [showPreviews, setShowPreviews] = useState<boolean>(() => {
-    return localStorage.getItem('unitypackage-showPreviews') === 'true';
-  });
+  const [showPreviews, setShowPreviews] = useState<boolean>(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [caseSensitive] = useState<boolean>(() => {
-    return localStorage.getItem('unitypackage-caseSensitive') === 'true';
-  });
-  const [globMode] = useState<boolean>(() => {
-    return localStorage.getItem('unitypackage-globMode') === 'true';
-  });
   const [diagCodeFilter, setDiagCodeFilter] = useState<Set<string>>(new Set());
-  const [sortKey, setSortKey] = useState<SortKey>(() => {
-    const val = localStorage.getItem('unitypackage-sortKey');
-    return (val === 'name' || val === 'size' || val === 'extension' || val === 'guid') ? val : 'name';
-  });
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
-    const val = localStorage.getItem('unitypackage-sortDirection');
-    return (val === 'asc' || val === 'desc') ? val : 'asc';
-  });
-  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('leftPaneCollapsed') === 'true';
-  });
-  const [rightPaneCollapsed, setRightPaneCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('rightPaneCollapsed') === 'true';
-  });
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(false);
+  const [rightPaneCollapsed, setRightPaneCollapsed] = useState<boolean>(false);
 
-  const [recents, setRecents] = useState<RecentPackage[]>([]);
-  const [recentToPrompt, setRecentToPrompt] = useState<RecentPackage | null>(null);
   const [packageName, setPackageName] = useState<string | null>(null);
   // currentOp: label shown while an async operation is in flight (cleared when done)
   const [currentOp, setCurrentOp] = useState<string | null>(null);
@@ -398,79 +289,11 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPacking, setIsPacking] = useState(false);
   const [packDiagnostics, setPackDiagnostics] = useState<CreateUnityPackageDiagnostic[]>([]);
-  const [gzipLevel, setGzipLevel] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(packDraftStorageKey);
-      if (saved) {
-        const draft = JSON.parse(saved) as PackDraft;
-        if (typeof draft.gzipLevel === 'number') {
-          return draft.gzipLevel;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load gzipLevel from draft:', err);
-    }
-    return 6;
-  });
-  const [exportFilename, setExportFilename] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem(packDraftStorageKey);
-      if (saved) {
-        const draft = JSON.parse(saved) as PackDraft;
-        if (typeof draft.exportFilename === 'string') {
-          return draft.exportFilename;
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load exportFilename from draft:', err);
-    }
-    return getDefaultFilename();
-  });
+  const [gzipLevel, setGzipLevel] = useState<number>(6);
+  const [exportFilename, setExportFilename] = useState<string>(getDefaultFilename());
   const [successExport, setSuccessExport] = useState<{ bytes: Uint8Array; filename: string; draftKey: string } | null>(null);
   const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null);
-  const [importedRecords, setImportedRecords] = useState<PackageFileRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(packDraftStorageKey);
-      if (saved) {
-        const draft = JSON.parse(saved) as PackDraft;
-        if (draft.importedRecords && Array.isArray(draft.importedRecords)) {
-          return draft.importedRecords.map((r: SerializedRawImportedRecord) => {
-            const mapped: PackageFileRecord = {
-              id: r.id,
-              guid: r.guid,
-              pathname: r.pathname,
-              virtualPath: r.virtualPath,
-              fileName: r.fileName,
-              extension: r.extension,
-              mimeType: r.mimeType,
-              component: r.component ?? (r.isUnityPreview ? 'preview' : r.extension === 'meta' ? 'meta' : 'asset'),
-              isUnityPreview: r.isUnityPreview,
-              content: r.content ? base64ToUint8Array(r.content) : new Uint8Array(),
-              byteLength: r.byteLength,
-              hasAsset: r.hasAsset,
-              hasMeta: r.hasMeta,
-              hasPreview: r.hasPreview,
-              assetSize: r.assetSize,
-              metaSize: r.metaSize,
-              previewSize: r.previewSize,
-              duplicatePathCount: r.duplicatePathCount,
-              previewKind: r.previewKind,
-              syntaxLanguage: r.syntaxLanguage,
-              diagnostics: r.diagnostics,
-              findings: r.findings,
-              meta: r.meta ? base64ToUint8Array(r.meta) : undefined,
-              isRawImported: r.isRawImported,
-              isDirectory: r.isDirectory,
-            };
-            return mapped;
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load importedRecords from draft:', err);
-    }
-    return [];
-  });
+  const [importedRecords, setImportedRecords] = useState<PackageFileRecord[]>([]);
 
   const stagedRecordIds = useMemo(() => {
     if (records.length === 0) return rawStagedRecordIds;
@@ -515,89 +338,18 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  useEffect(() => {
-    try {
-      if (stagedRecordIds.size === 0 && importedRecords.length === 0) {
-        localStorage.removeItem(packDraftStorageKey);
-      } else {
-        const importedPayloadBytes = importedRecords.reduce(
-          (sum, record) => sum + record.content.byteLength + (record.meta?.byteLength ?? 0),
-          0
-        );
-        const shouldPersistImportedRecords = importedPayloadBytes <= maxPersistedImportedRecordBytes;
-        const draft: PackDraft = {
-          stagedRecordIds: Array.from(stagedRecordIds),
-          gzipLevel,
-          exportFilename,
-        };
-
-        if (shouldPersistImportedRecords) {
-          draft.importedRecords = importedRecords.map(r => ({
-            ...r,
-            content: uint8ArrayToBase64(r.content),
-            meta: r.meta ? uint8ArrayToBase64(r.meta) : undefined,
-          }));
-        }
-
-        localStorage.setItem(packDraftStorageKey, JSON.stringify(draft));
-      }
-    } catch (err) {
-      console.warn('Failed to persist pack draft:', err);
-    }
-  }, [stagedRecordIds, importedRecords, gzipLevel, exportFilename]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-groupingMode', groupingMode);
-  }, [groupingMode]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-sortKey', sortKey);
-  }, [sortKey]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-sortDirection', sortDirection);
-  }, [sortDirection]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-globMode', String(globMode));
-  }, [globMode]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-caseSensitive', String(caseSensitive));
-  }, [caseSensitive]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-maintainStructure', String(maintainStructure));
-  }, [maintainStructure]);
-
-  useEffect(() => {
-    localStorage.setItem('unitypackage-showPreviews', String(showPreviews));
-  }, [showPreviews]);
-
-  useEffect(() => {
-    localStorage.setItem('leftPaneCollapsed', String(leftPaneCollapsed));
-  }, [leftPaneCollapsed]);
-
-  useEffect(() => {
-    localStorage.setItem('rightPaneCollapsed', String(rightPaneCollapsed));
-  }, [rightPaneCollapsed]);
-
-  useEffect(() => {
-    void getRecentPackages().then(setRecents);
-  }, []);
-
   const visibleRecords = useMemo(() => {
     const filtered = filterRecords(records, {
       query: debouncedQuery,
-      caseSensitive,
-      globMode,
+      caseSensitive: false,
+      globMode: false,
       diagCodes: diagCodeFilter,
       includeMetaSidecars,
       showPreviews,
     });
     return sortRecords(filtered, sortKey, sortDirection);
   }, [
-    records, debouncedQuery, caseSensitive, globMode,
+    records, debouncedQuery,
     diagCodeFilter, includeMetaSidecars, showPreviews,
     sortKey, sortDirection,
   ]);
@@ -716,7 +468,7 @@ function AppContent() {
   const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
   const packValidation = useMemo(() => validatePackDraft(stagedRecords, records), [stagedRecords, records]);
 
-  const handlePackageFileWithHandle = async (file: File, fileHandle: FileSystemFileHandle | null) => {
+  const handlePackageFileWithHandle = async (file: File) => {
     setIsLoading(true);
     setError(null);
     setPackageName(file.name);
@@ -749,18 +501,6 @@ function AppContent() {
       setActiveRecordId(result.records[0]?.id ?? null);
       completeOp(`Parsed ${file.name}`);
       addToast(`Parsed ${result.records.length.toString()} records from ${file.name} in ${elapsed.toString()} ms`);
-
-      const headHash = await computeHeadHash(file);
-      const recentKey = `${file.name}|${file.size.toString()}|${headHash}`;
-      await addRecentPackage({
-        key: recentKey,
-        name: file.name,
-        size: file.size,
-        headHash,
-        fileHandle,
-      });
-      const updatedRecents = await getRecentPackages();
-      setRecents(updatedRecents);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to parse package';
       setError(message);
@@ -772,7 +512,7 @@ function AppContent() {
   };
 
   const handlePackageFile = (file: File) => {
-    void handlePackageFileWithHandle(file, null);
+    void handlePackageFileWithHandle(file);
   };
 
   const handlePackageFileRef = useRef(handlePackageFileWithHandle);
@@ -789,7 +529,7 @@ function AppContent() {
           if (fileHandle) {
             try {
               const file = await fileHandle.getFile();
-              void handlePackageFileRef.current(file, fileHandle);
+              void handlePackageFileRef.current(file);
             } catch (err) {
               console.error('Failed to open file from launchQueue:', err);
             }
@@ -798,61 +538,6 @@ function AppContent() {
       });
     }
   }, []);
-
-  const handleRecentClick = async (recent: RecentPackage) => {
-    if (recent.fileHandle) {
-      try {
-        const handle = recent.fileHandle;
-        const options = { mode: 'read' as const };
-        let permission = await handle.queryPermission(options);
-        if (permission !== 'granted') {
-          permission = await handle.requestPermission(options);
-        }
-        if (permission === 'granted') {
-          const file = await handle.getFile();
-          void handlePackageFileWithHandle(file, handle);
-          return;
-        }
-      } catch (err) {
-        console.error('Failed to access file handle:', err);
-      }
-    }
-    setRecentToPrompt(recent);
-  };
-
-  const handleRemoveRecent = async (key: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    await removeRecentPackage(key);
-    const updatedRecents = await getRecentPackages();
-    setRecents(updatedRecents);
-  };
-
-  const handleClearAllRecents = async () => {
-    for (const recent of recents) {
-      await removeRecentPackage(recent.key);
-    }
-    setRecents([]);
-  };
-
-  const handleResetSettings = () => {
-    const keysToRemove = [
-      'unitypackage-groupingMode',
-      'unitypackage-sortKey',
-      'unitypackage-sortDirection',
-      'unitypackage-maintainStructure',
-      'unitypackage-showPreviews',
-      'unitypackage-caseSensitive',
-      'unitypackage-globMode',
-    ];
-    for (const key of keysToRemove) {
-      localStorage.removeItem(key);
-    }
-    setGroupingMode('tree');
-    setSortKey('name');
-    setSortDirection('asc');
-    setMaintainStructure(true);
-    handleShowPreviewsChange(false);
-  };
 
   const handlePathnameChange = useCallback((id: string, newPathname: string) => {
     setImportedRecords(prev =>
@@ -1302,21 +987,6 @@ function AppContent() {
               }}
             />
           </label>
-          <RecentsMenu
-            recents={recents}
-            isOpen={isRecentsOpen}
-            onToggle={() => { setIsRecentsOpen(prev => !prev); setIsSettingsOpen(false); }}
-            onOpen={(recent) => { void handleRecentClick(recent); }}
-            onRemove={(key, e) => { void handleRemoveRecent(key, e); }}
-            onClearAll={() => { void handleClearAllRecents(); }}
-            onClose={() => { setIsRecentsOpen(false); }}
-          />
-          <SettingsMenu
-            isOpen={isSettingsOpen}
-            onToggle={() => { setIsSettingsOpen(prev => !prev); setIsRecentsOpen(false); }}
-            onResetSettings={handleResetSettings}
-            onClose={() => { setIsSettingsOpen(false); }}
-          />
         </div>
       </header>
 
@@ -1590,7 +1260,6 @@ function AppContent() {
                 setImportedRecords([]);
               }}
               onClearDraft={() => {
-                localStorage.removeItem(packDraftStorageKey);
                 setStagedRecordIds(new Set());
                 setImportedRecords([]);
                 setGzipLevel(6);
@@ -1712,67 +1381,6 @@ function AppContent() {
             {(diagnostics.length + analysis.length).toString()} findings
           </button>
         ) : null}
-        {recentToPrompt && (
-          <div className="modal-overlay" onClick={() => setRecentToPrompt(null)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>Reopen Recent Package</h3>
-                <button
-                  type="button"
-                  className="recent-remove-btn"
-                  style={{ width: '24px', height: '24px', fontSize: '1.2rem', minHeight: '24px' }}
-                  onClick={() => setRecentToPrompt(null)}
-                  aria-label="Close dialog"
-                >
-                  &times;
-                </button>
-              </div>
-              <div className="modal-body">
-                <p>
-                  Direct file access is not available for <strong>{recentToPrompt.name}</strong>.
-                  Please select the file or drop it below to reopen.
-                </p>
-                <div
-                  className="modal-dropzone"
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const file = e.dataTransfer.files[0];
-                    if (file?.name === recentToPrompt.name) {
-                      void handlePackageFileWithHandle(file, null);
-                      setRecentToPrompt(null);
-                    } else if (file) {
-                      setError(`Dropped file "${file.name}" does not match "${recentToPrompt.name}".`);
-                    }
-                  }}
-                >
-                  <span>Drop <strong>{recentToPrompt.name}</strong> here</span>
-                  <label className="file-open-button" style={{ marginTop: '8px' }}>
-                    <span>Choose File</span>
-                    <input
-                      type="file"
-                      accept=".unitypackage"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file?.name === recentToPrompt.name) {
-                          void handlePackageFileWithHandle(file, null);
-                          setRecentToPrompt(null);
-                        } else if (file) {
-                          setError(`Selected file "${file.name}" does not match "${recentToPrompt.name}".`);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" onClick={() => setRecentToPrompt(null)}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
       </footer>
     </main>
   );
