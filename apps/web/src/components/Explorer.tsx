@@ -6,7 +6,6 @@ import {
   FileArchive,
   Folder,
   FolderOpen,
-  Locate,
 } from 'lucide-react';
 import {
   formatBytes,
@@ -41,7 +40,6 @@ interface ExplorerProps {
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
-  onRevealInTree: (recordId: string) => void;
   focusedRowId: string | null;
   onFocusRow: (id: string | null) => void;
   selectionAnchorId: string | null;
@@ -69,7 +67,6 @@ export function Explorer({
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
-  onRevealInTree,
   focusedRowId,
   onFocusRow,
   selectionAnchorId,
@@ -120,7 +117,6 @@ export function Explorer({
       onToggleSelected={onToggleSelected}
       onScopeSelect={onScopeSelect}
       onReplaceSelection={onReplaceSelection}
-      onRevealInTree={onRevealInTree}
       focusedRowId={focusedRowId}
       onFocusRow={onFocusRow}
       selectionAnchorId={selectionAnchorId}
@@ -457,7 +453,6 @@ function ExtensionList({
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
-  onRevealInTree,
   focusedRowId,
   onFocusRow,
   selectionAnchorId,
@@ -473,7 +468,6 @@ function ExtensionList({
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
-  onRevealInTree: (recordId: string) => void;
   focusedRowId: string | null;
   onFocusRow: (id: string | null) => void;
   selectionAnchorId: string | null;
@@ -636,7 +630,6 @@ function ExtensionList({
             const { group } = item;
             const recordIds = group.records.map(r => r.id);
             const selState = getSelectionState(recordIds, selectedIds);
-            const firstId = group.records[0]?.id;
             const hdrId = `hdr-${group.extension}`;
             return (
               <ExtensionHeaderRow
@@ -657,13 +650,6 @@ function ExtensionList({
                 onSelect={() => {
                   onScopeSelect(recordIds, selState);
                 }}
-                onReveal={
-                  firstId !== undefined
-                    ? () => {
-                        onRevealInTree(firstId);
-                      }
-                    : undefined
-                }
               />
             );
           }
@@ -813,7 +799,6 @@ interface ExtensionHeaderRowProps {
   style?: CSSProperties;
   onClick: () => void;
   onSelect: () => void;
-  onReveal: (() => void) | undefined;
 }
 
 const ExtensionHeaderRow = memo(({
@@ -826,7 +811,6 @@ const ExtensionHeaderRow = memo(({
   style,
   onClick,
   onSelect,
-  onReveal,
 }: ExtensionHeaderRowProps) => {
   return (
     <div
@@ -848,20 +832,6 @@ const ExtensionHeaderRow = memo(({
       </div>
       <div className="ext-group-header-right">
         <span>{fileCount.toString()} files, {formatBytes(totalBytes)}</span>
-        {onReveal !== undefined && (
-          <button
-            type="button"
-            className="reveal-in-tree-btn"
-            aria-label={`Reveal ${extension} in tree`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onReveal();
-            }}
-          >
-            <Locate aria-hidden="true" size={14} />
-            <span>Reveal</span>
-          </button>
-        )}
       </div>
     </div>
   );
@@ -876,9 +846,7 @@ const ExtensionHeaderRow = memo(({
     prevProps.style?.height === nextProps.style?.height &&
     prevProps.style?.transform === nextProps.style?.transform &&
     prevProps.onClick === nextProps.onClick &&
-    prevProps.onSelect === nextProps.onSelect &&
-    prevProps.onReveal === nextProps.onReveal &&
-    (prevProps.onReveal === undefined) === (nextProps.onReveal === undefined)
+    prevProps.onSelect === nextProps.onSelect
   );
 });
 
