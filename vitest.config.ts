@@ -20,6 +20,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: { label: 'depgraph', color: 'magenta' },
+          root: './packages/depgraph',
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: { label: 'web', color: 'green' },
           root: './apps/web',
           include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],

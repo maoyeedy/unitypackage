@@ -1,0 +1,19 @@
+{
+  "name": "unitypackage-depgraph",
+  "version": "0.1.0",
+  "description": "Unity package dependency graph resolver",
+  "type": "module",
+  "exports": {
+    "./*": "./dist/*",
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "unitypackage-core": "workspace:*"
+  }
+}

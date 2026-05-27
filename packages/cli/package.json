@@ -18,6 +18,7 @@
     "prepublishOnly": "npm run build && npm run lint && npm run test"
   },
   "dependencies": {
-    "unitypackage-core": "workspace:*"
+    "unitypackage-core": "workspace:*",
+    "unitypackage-depgraph": "workspace:*"
   }
 }
