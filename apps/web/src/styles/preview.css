@@ -170,9 +170,6 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  margin: 0 0 2px;
-  font-size: 0.82rem;
-  color: var(--muted);
   gap: 0;
 }
 
@@ -193,7 +190,6 @@
   border: 0;
   background: transparent;
   color: var(--accent);
-  font-size: 0.82rem;
   text-decoration: underline;
   text-decoration-color: transparent;
   cursor: pointer;
