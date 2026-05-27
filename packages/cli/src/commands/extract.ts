@@ -1,17 +1,14 @@
 import path from 'node:path';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import {
-  entriesToComponentRecords,
-  matchGlob,
   parseUnityPackageEntries,
-  resolveMetaSidecarSelection,
   type ParseUnityPackageOptions,
-  type ResolveMetaSidecarsResult,
-  type SidecarSelectableRecord,
-  type UnityPackageComponentRecord,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
 } from 'unitypackage-core';
+import { matchGlob } from '../util/glob.js';
+import { entriesToComponentRecords, type UnityPackageComponentRecord } from '../util/component.js';
+import { resolveMetaSidecarSelection, type ResolveMetaSidecarsResult, type SidecarSelectableRecord } from '../util/sidecar.js';
 import { sanitizeFsPath, isInside } from '../util/path.js';
 import { ensureDir } from '../util/fs.js';
 

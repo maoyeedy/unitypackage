@@ -1,11 +1,13 @@
 import {
-  analyzeUnityPackageEntries,
   parseUnityPackageEntries,
   type ParseUnityPackageOptions,
-  type UnityPackageAnalysisFinding,
   type UnityPackageParseDiagnostic,
   type UnityPackageEntry,
 } from 'unitypackage-core';
+import {
+  analyzeUnityPackageEntries,
+  type UnityPackageAnalysisFinding,
+} from '../util/analyze.js';
 import { info, warn, error } from '../util/logger.js';
 import { EXIT, CliError } from '../util/exit.js';
 import { readPackageBytes } from '../util/package.js';

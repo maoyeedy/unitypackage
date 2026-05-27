@@ -1,20 +1,16 @@
 import crypto from 'node:crypto';
 import {
-  entriesToComponentRecords,
-  matchGlob,
-  summarizePackage,
   parseUnityPackageEntries,
   isUnityYamlBinary,
   yamlExtensions,
   type ParseUnityPackageOptions,
-  type UnityPackageComponentRecord,
-  type UnityPackageEntryComponent,
   type UnityPackageEntry,
   type UnityPackageParseDiagnostic,
-  type UnityPackageSummary,
-  type PreviewKind,
-  type SyntaxLanguage,
 } from 'unitypackage-core';
+import { matchGlob } from '../util/glob.js';
+import { entriesToComponentRecords, type UnityPackageComponentRecord, type UnityPackageEntryComponent } from '../util/component.js';
+import { summarizePackage, type UnityPackageSummary } from '../util/summary.js';
+import type { PreviewKind, SyntaxLanguage } from '../util/types.js';
 import { info } from '../util/logger.js';
 import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
