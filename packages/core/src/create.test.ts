@@ -199,7 +199,8 @@ describe('tryCreateUnityPackage', () => {
         guid,
         pathname: 'Assets/NoMeta.cs',
         asset: encoder.encode('content'),
-        meta: undefined as unknown as Uint8Array,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        meta: undefined as any,
       },
     ]);
     expect(result.bytes).toBeNull();

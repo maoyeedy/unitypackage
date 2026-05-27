@@ -26,7 +26,10 @@ export type {
   SidecarSelectableKind,
   SidecarSelectableRecord,
 } from './sidecar';
-export { resolveMetaSidecarSelection } from './sidecar';
+export {
+  findMetaSidecarForAsset,
+  resolveMetaSidecarSelection,
+} from './sidecar';
 export type {
   DeclaredMetaImporter,
   MetaImporterType,
@@ -48,9 +51,9 @@ export type {
 export {
   getMimeTypeForPath,
   getPathExtension,
-  getPreviewKindForPath,
-  getSyntaxLanguageForPath,
   getUnityFileCategory,
+  isUnityYamlBinary,
+  yamlExtensions,
 } from './classify';
 export type {
   UnityPackageAnalysisFinding,
@@ -60,6 +63,7 @@ export type {
 } from './analyze';
 export { analyzeUnityPackageEntries } from './analyze';
 export type {
+  ContentlessRecord,
   UnityPackageComponentRecord,
   UnityPackageEntryComponent,
 } from './component';

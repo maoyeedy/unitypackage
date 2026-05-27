@@ -1,9 +1,6 @@
 /// <reference lib="webworker" />
 
-import {
-  analyzeUnityPackageEntries,
-  parseUnityPackageEntries,
-} from 'unitypackage-core';
+import { isUnityYamlBinary, parseUnityPackageEntries } from 'unitypackage-core';
 import { entriesToRecords } from './packageModel';
 import type { ParsePackageRequest, ParsePackageResponse } from './workerTypes';
 
@@ -12,11 +9,29 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     const bytes = new Uint8Array(data.buffer);
     const options = data.maxOutputBytes !== undefined ? { maxOutputBytes: data.maxOutputBytes } : undefined;
 
-    const { entries, diagnostics } = parseUnityPackageEntries(bytes, options);
+    const { entries } = parseUnityPackageEntries(bytes, options);
 
-    const records = entriesToRecords(entries, diagnostics);
-    const { findings: analysis } = analyzeUnityPackageEntries(entries, diagnostics);
-    self.postMessage({ type: 'success', records, diagnostics, analysis } satisfies ParsePackageResponse);
+    const { records, contents } = entriesToRecords(entries);
+    for (const record of records) {
+      if (record.extension !== 'asset') continue;
+      if (record.previewKind !== 'text') continue;
+
+      const bytes = contents[record.id];
+      if (bytes && isUnityYamlBinary(bytes)) {
+        record.previewKind = 'unsupported';
+      }
+    }
+
+    const transferSet = new Set<ArrayBuffer>();
+    for (const bytes of Object.values(contents)) {
+      if (bytes.buffer instanceof ArrayBuffer) {
+        transferSet.add(bytes.buffer);
+      }
+    }
+    self.postMessage(
+      { type: 'success', records, contents } satisfies ParsePackageResponse,
+      [...transferSet],
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to parse package';
     self.postMessage({ type: 'error', message } satisfies ParsePackageResponse);

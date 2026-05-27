@@ -20,10 +20,10 @@ test('statusbar has no initial text on fresh load', async ({ page }) => {
   await expect(opSpan).toBeEmpty();
 });
 
-test('shows Extract and Pack mode tabs', async ({ page }) => {
+test('does not show Pack mode controls', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Extract' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Pack', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Extract' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pack', exact: true })).not.toBeVisible();
 });
 
 test('shows empty state when no package is loaded', async ({ page }) => {
@@ -39,21 +39,18 @@ test('shows no-selection prompt in preview panel', async ({ page }) => {
 
 test('preview panel shows file content and metadata after clicking a record', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Open package').setInputFiles(fixturePath);
-  await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+  await page.getByLabel('Open Unity package').setInputFiles(fixturePath);
+  await expect(page.getByText(/Parsed \d+ files/)).toBeVisible({ timeout: 15_000 });
   const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
   await expect(preview.getByText('Path', { exact: true })).toBeVisible();
   await expect(preview.getByText('GUID', { exact: true })).toBeVisible();
 });
 
-test('meta rows are not visible in tree when Include .meta with assets is off', async ({ page }) => {
+test('meta rows are not visible in tree', async ({ page }) => {
   await page.goto('/');
-  await page.getByLabel('Open package').setInputFiles(fixturePath);
-  await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
-  const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
-  await expect(metaCheckbox).not.toBeChecked();
+  await page.getByLabel('Open Unity package').setInputFiles(fixturePath);
+  await expect(page.getByText(/Parsed \d+ files/)).toBeVisible({ timeout: 15_000 });
   const tree = page.getByRole('tree', { name: 'Package file tree' });
-  // With setting off, no treeitem label should end with .meta
   const metaItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.meta/ });
   await expect(metaItems.first()).not.toBeVisible();
 });

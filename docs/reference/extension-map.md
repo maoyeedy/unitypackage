@@ -1,106 +1,48 @@
-# File tree icon mapping
+# File preview behavior
 
-## Image
+How `apps/web` decides what to show for each file extension. Image, audio, video, PDF kinds are rendered natively by the browser. Text-class files use synchronous `TextDecoder.decode` + `hljs.highlight`. Preview kind is classified by `getPreviewKindForPath(pathname)` in `apps/web/src/packageModel.ts`. Extension-first routing with content-based refinement: `.asset` files that pass the extension check are then tested by `isUnityYamlBinary` in the parse worker and downgraded to `'unsupported'` if binary. Unsupported kinds render a `NoPreview` component (frame stays visible). Files are downloadable regardless of preview kind.
 
-| Extension              | MIME type           |
-|------------------------|---------------------|
-| png                    | image/png           |
-| jpg, jpeg              | image/jpeg          |
-| gif                    | image/gif           |
-| bmp                    | image/bmp           |
-| apng                   | image/apng          |
-| avif                   | image/avif          |
-| webp                   | image/webp          |
-| svg                    | image/svg+xml       |
+## Immediate -- image (`<img>` via blob URL)
 
-## Audio
+| Extension | MIME (internal) |
+|-----------|-----------------|
+| png       | image/png       |
+| jpg, jpeg | image/jpeg      |
+| gif       | image/gif       |
+| bmp       | image/bmp       |
+| apng      | image/apng      |
+| avif      | image/avif      |
+| webp      | image/webp      |
+| svg       | image/svg+xml   |
 
-| Extension                          | MIME type           |
-|------------------------------------|---------------------|
-| aac                                | audio/aac           |
-| flac                               | audio/flac          |
-| m4a                                | audio/mp4           |
-| mp3                                | audio/mpeg          |
-| ogg                                | audio/ogg           |
-| wav                                | audio/wav           |
-| webm                               | audio/webm          |
+## Immediate -- code (`<pre><code>`, full content)
 
-## Video
+Syntax-highlighted by `highlight.js`:
 
-| Extension              | MIME type           |
-|------------------------|---------------------|
-| m4v                    | video/mp4           |
-| mov                    | video/quicktime     |
-| mp4                    | video/mp4           |
-| ogv                    | video/ogg           |
-| webm                   | video/webm          |
+| Extension(s) | Grammar |
+|---|---|
+| `cs` | csharp |
+| `yaml`, `yml` | yaml |
+| `json`, `asmdef`, `asmref`, `inputactions`, `shadergraph`, `shadersubgraph` | json |
+| `css`, `uss`, `tss` | css |
+| `hlsl`, `cginc`, `compute`, `shader` | glsl (Unity `.shader` is ShaderLab with embedded HLSL blocks. highlight.js has no ShaderLab grammar; GLSL is close enough for the HLSL portions) |
 
-## PDF
+Plain `<pre><code>` (no highlight pass -- registered-language `Set.has` short-circuit):
 
-| Extension | MIME type        |
-|-----------|------------------|
-| pdf       | application/pdf  |
+`glsl`, `md`, `txt`, `html`, `xml`, `uxml`, `ts`, `tsx`, `js`, `jsx`, `meta`.
 
-## Code / developer files
+## Unsupported -- `NoPreview` component shown; download still works
 
-| Extension                                | Notes                  |
-|------------------------------------------|------------------------|
-| cs                                       | C#                     |
-| ts, tsx                                  | TypeScript             |
-| js, jsx                                  | JavaScript             |
-| shader                                   | ShaderLab              |
-| hlsl, cginc, compute                     | HLSL                   |
-| glsl                                     | GLSL                   |
-| css, uss, tss                            | CSS                    |
-| json, asmdef, asmref, inputactions, shadergraph, shadersubgraph | JSON  |
-| xml, uxml                                | XML / UXML             |
-| html                                     | HTML                   |
+Preview frame stays visible with a "No preview" message. Header (size + download) and metadata (Path [breadcrumb], GUID, Size, optional Meta GUID + Importer) remain.
 
-## Unity YAML assets
+Three reasons a file lands here:
 
-| Extension         | Notes                        |
-|-------------------|------------------------------|
-| unity             | Scene                        |
-| prefab            | Prefab                       |
-| asset             | ScriptableObject / generic   |
-| mat               | Material                     |
-| anim              | Animation clip               |
-| controller        | Animator controller          |
-| overridecontroller| Animator override controller |
-| physicmaterial    | Physic material              |
-| physicsmaterial2d | Physics material 2D          |
-| playable          | Playable asset               |
-| mask              | Mask                         |
-| brush             | Brush                        |
-| flare             | Flare                        |
-| fontsettings      | Font settings                |
-| guiskin           | GUI skin                     |
-| giparams          | GI parameters                |
-| rendertexture     | Render texture               |
-| spriteatlas       | Sprite atlas                 |
-| spriteatlasv2     | Sprite atlas v2              |
-| terrainlayer      | Terrain layer                |
-| mixer             | Audio mixer                  |
-| shadervariants    | Shader variants              |
-| preset            | Preset                       |
-| lighting          | Lighting settings            |
-| dwlt              | DWL tag (Editor internals)   |
-| vfx, vfxblock, vfxoperator | VFX Graph asset    |
-| yaml, yml         | Raw YAML                     |
+1. **Skip extension check** — `.unity`, `.prefab` are always `unsupported` via `yamlSkipExtensions`.
 
-## Meta
+2. **Binary YAML detection** — `.asset`, `.mat`, `.anim`, `.controller`, `.overridecontroller`, `.physicmaterial`, `.physicsmaterial2d`, `.playable`, `.mask`, `.brush`, `.flare`, `.fontsettings`, `.guiskin`, `.giparams`, `.rendertexture`, `.spriteatlas`, `.spriteatlasv2`, `.terrainlayer`, `.mixer`, `.shadervariants`, `.preset`, `.lighting`, `.dwlt`, `.vfx`, `.vfxblock`, `.vfxoperator` are initially classified as `'text'` by extension, then binary payloads (textures, font atlases, terrain heightmaps, shader variants) are caught by `isUnityYamlBinary` in the parse worker and downgraded to `'unsupported'`. Non-binary files in this set are rendered as text.
 
-| Extension | Notes                                    |
-|-----------|------------------------------------------|
-| meta      | Unity meta (same icon as YAML assets)    |
+3. **Browser-non-native binary extensions.** From `docs/reference/gitattributes.md`'s LFS list: `ttf`, `otf`, `fbx`, `obj`, `blend`, `3ds`, `dae`, `dll`, `pdb`, `so`, `a`, `exe`, `apk`, `zip`, `7z`, `rar`, `tar`, `gz`, `bz2`, `unitypackage`, `bundle`, `cubemap`, audio LFS extensions, video LFS extensions, fonts. `PreviewBody` only renders image and text; everything else is unsupported.
 
-## Documents
+## Internal-only field
 
-| Extension | MIME type        |
-|-----------|------------------|
-| md        | text/markdown    |
-| txt       | text/plain       |
-
-## Fallback
-
-Any extension not listed above maps to a generic binary icon.
+`UnityPackageComponentRecord.mimeType` exists for download `Blob` construction in `App.tsx` and the image-preview `Blob` in `PreviewPanel.tsx`. It is **never displayed** in any UI surface -- not in the header, not in the metadata panel, not in tooltips. Treat it as an internal serialization detail.

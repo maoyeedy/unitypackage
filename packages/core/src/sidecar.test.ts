@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  findMetaSidecarForAsset,
   resolveMetaSidecarSelection,
   type SidecarSelectableRecord,
 } from './index';
@@ -151,5 +152,46 @@ describe('resolveMetaSidecarSelection', () => {
       implicitMetaIds: [],
       missingMetaForAssetIds: ['asset-c'],
     });
+  });
+});
+
+describe('findMetaSidecarForAsset', () => {
+  it('returns the same-guid sidecar for an asset', () => {
+    const records = [
+      record('asset-a', 'asset', 'guid-a', 'Assets/A.png'),
+      record('meta-a', 'meta', 'guid-a', 'Assets/A.png.meta'),
+    ];
+
+    expect(findMetaSidecarForAsset(records, records[0]!)).toBe(records[1]);
+  });
+
+  it('prefers same-guid sidecars over duplicate-path fallback candidates', () => {
+    const records = [
+      record('asset-a', 'asset', 'guid-a', 'Assets/Duplicate.png'),
+      record('meta-wrong-guid', 'meta', 'guid-b', 'Assets/Duplicate.png.meta'),
+      record('meta-a', 'meta', 'guid-a', 'Assets/Duplicate.png.meta'),
+    ];
+
+    expect(findMetaSidecarForAsset(records, records[0]!)).toBe(records[2]);
+  });
+
+  it('falls back to a unique pathname match when guid differs', () => {
+    const records = [
+      record('asset-a', 'asset', 'guid-a', 'Assets/A.png'),
+      record('meta-other-guid', 'meta', 'guid-b', 'Assets/A.png.meta'),
+    ];
+
+    expect(findMetaSidecarForAsset(records, records[0]!)).toBe(records[1]);
+  });
+
+  it('returns undefined for ambiguous fallback matches and non-assets', () => {
+    const records = [
+      record('asset-c', 'asset', 'guid-c', 'Assets/X'),
+      record('meta-a', 'meta', 'guid-a', 'Assets/X.meta'),
+      record('meta-b', 'meta', 'guid-b', 'Assets/X.meta'),
+    ];
+
+    expect(findMetaSidecarForAsset(records, records[0]!)).toBeUndefined();
+    expect(findMetaSidecarForAsset(records, records[1]!)).toBeUndefined();
   });
 });

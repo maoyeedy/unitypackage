@@ -24,11 +24,11 @@ export class CliError extends Error {
   }
 }
 
-export function isDecompressionBombError(err: unknown): err is DecompressionBombLike {
+function isDecompressionBombError(err: unknown): err is DecompressionBombLike {
   return typeof err === 'object' && err !== null && 'name' in err && err.name === 'DecompressionBombError';
 }
 
-export function formatDecompressionBombError(err: DecompressionBombLike): string {
+function formatDecompressionBombError(err: DecompressionBombLike): string {
   const kind = typeof err.kind === 'string' ? err.kind : 'unknown';
   const observed = typeof err.observed === 'number' || typeof err.observed === 'string'
     ? String(err.observed)

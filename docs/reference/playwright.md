@@ -15,15 +15,19 @@ bunx playwright codegen           # record actions, generate locator drafts
 
 ## Config
 
-- `apps/web/playwright.config.ts` - project Chromium; expects Vite preview on port 5173.
+- `apps/web/playwright.config.ts` - project Chromium; expects Vite preview on port 4173.
 
 ## Best practices
 
 - Use role/text/test-id locators (`getByRole`, `getByLabel`, `getByTestId`) - resilient to DOM changes.
 - Use web-first assertions (`await expect(locator).toBeVisible()`).
+- Let Playwright auto-wait through locators/assertions; do not add arbitrary sleeps for parse, render, or upload timing.
+- Use the per-test `page` fixture; Playwright creates an isolated browser context for each test.
+- Use `setInputFiles()` for `.unitypackage` uploads; do not automate OS file pickers.
+- Search/filter before clicking virtualized explorer rows; offscreen package files are not attached to the DOM.
+- Rebuild with `bun run build` before E2E when testing production preview output.
 - Keep 5-10 smoke tests per app covering survival-critical paths.
-- Use `page.route()` for network mocking.
-- Use `storageState` for auth setups.
+- Keep browser smoke matrix cases as persistent tests when they caught a regression once: supported text, unsupported no-preview, image preview, frame height, and scroll behavior.
 
 ## Detailed API reference
 

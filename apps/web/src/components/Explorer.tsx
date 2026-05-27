@@ -6,11 +6,9 @@ import {
   FileArchive,
   Folder,
   FolderOpen,
-  Locate,
 } from 'lucide-react';
 import {
   formatBytes,
-  getFolderRecordIds,
   getKeyboardRangeSelection,
   getSelectionState,
   type ExtensionGroup,
@@ -42,7 +40,6 @@ interface ExplorerProps {
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
-  onRevealInTree: (recordId: string) => void;
   focusedRowId: string | null;
   onFocusRow: (id: string | null) => void;
   selectionAnchorId: string | null;
@@ -70,7 +67,6 @@ export function Explorer({
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
-  onRevealInTree,
   focusedRowId,
   onFocusRow,
   selectionAnchorId,
@@ -83,7 +79,7 @@ export function Explorer({
       <div className="empty-state">
         <FileArchive aria-hidden="true" size={42} />
         <h2>No records loaded</h2>
-        <p>Open a Unity package to inspect its tree, previews, metadata, diagnostics, and extractable files.</p>
+        <p>Open a Unity package to view and extract its files.</p>
       </div>
     );
   }
@@ -91,7 +87,6 @@ export function Explorer({
   return groupingMode === 'tree' ? (
     <VirtualTree
       rows={treeRows}
-      records={records}
       orderedRecordIds={treeFileRecordIds}
       selectedIds={selectedIds}
       activeId={activeId}
@@ -122,7 +117,6 @@ export function Explorer({
       onToggleSelected={onToggleSelected}
       onScopeSelect={onScopeSelect}
       onReplaceSelection={onReplaceSelection}
-      onRevealInTree={onRevealInTree}
       focusedRowId={focusedRowId}
       onFocusRow={onFocusRow}
       selectionAnchorId={selectionAnchorId}
@@ -135,7 +129,6 @@ export function Explorer({
 
 function VirtualTree({
   rows,
-  records,
   orderedRecordIds,
   selectedIds,
   activeId,
@@ -157,7 +150,6 @@ function VirtualTree({
   onSetKeyboardRangeBase,
 }: {
   rows: TreeRow[];
-  records: PackageFileRecord[];
   orderedRecordIds: string[];
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
@@ -298,9 +290,8 @@ function VirtualTree({
           if (currentRow.type === 'file') {
             onToggleSelected(currentRow.record.id);
           } else {
-            const folderRecordIds = getFolderRecordIds(records, currentRow.path);
-            const selectionState = getSelectionState(folderRecordIds, selectedIds);
-            onScopeSelect(folderRecordIds, selectionState);
+            const selectionState = getSelectionState(currentRow.recordIds, selectedIds);
+            onScopeSelect(currentRow.recordIds, selectionState);
           }
         }
       }
@@ -391,8 +382,7 @@ function VirtualTree({
 
             if (row.type === 'folder') {
               const collapsed = collapsedFolders.has(row.path);
-              const folderRecordIds = getFolderRecordIds(records, row.path);
-              const selectionState = getSelectionState(folderRecordIds, selectedIds);
+              const selectionState = getSelectionState(row.recordIds, selectedIds);
               return (
                 <FolderRow
                   key={row.id}
@@ -401,7 +391,7 @@ function VirtualTree({
                   path={row.path}
                   depth={row.depth}
                   collapsed={collapsed}
-                  fileCount={folderRecordIds.length}
+                  fileCount={row.recordIds.length}
                   selectionState={selectionState}
                   focused={focusedRowId === row.id}
                   style={style}
@@ -413,7 +403,7 @@ function VirtualTree({
                     onToggleFolder(row.path);
                   }}
                   onSelect={() => {
-                    onScopeSelect(folderRecordIds, selectionState);
+                    onScopeSelect(row.recordIds, selectionState);
                   }}
                 />
               );
@@ -463,7 +453,6 @@ function ExtensionList({
   onToggleSelected,
   onScopeSelect,
   onReplaceSelection,
-  onRevealInTree,
   focusedRowId,
   onFocusRow,
   selectionAnchorId,
@@ -479,7 +468,6 @@ function ExtensionList({
   onToggleSelected: (recordId: string) => void;
   onScopeSelect: (recordIds: readonly string[], state: SelectionState) => void;
   onReplaceSelection: (selectedIds: Set<string>) => void;
-  onRevealInTree: (recordId: string) => void;
   focusedRowId: string | null;
   onFocusRow: (id: string | null) => void;
   selectionAnchorId: string | null;
@@ -642,7 +630,6 @@ function ExtensionList({
             const { group } = item;
             const recordIds = group.records.map(r => r.id);
             const selState = getSelectionState(recordIds, selectedIds);
-            const firstId = group.records[0]?.id;
             const hdrId = `hdr-${group.extension}`;
             return (
               <ExtensionHeaderRow
@@ -663,13 +650,6 @@ function ExtensionList({
                 onSelect={() => {
                   onScopeSelect(recordIds, selState);
                 }}
-                onReveal={
-                  firstId !== undefined
-                    ? () => {
-                        onRevealInTree(firstId);
-                      }
-                    : undefined
-                }
               />
             );
           }
@@ -819,7 +799,6 @@ interface ExtensionHeaderRowProps {
   style?: CSSProperties;
   onClick: () => void;
   onSelect: () => void;
-  onReveal: (() => void) | undefined;
 }
 
 const ExtensionHeaderRow = memo(({
@@ -832,7 +811,6 @@ const ExtensionHeaderRow = memo(({
   style,
   onClick,
   onSelect,
-  onReveal,
 }: ExtensionHeaderRowProps) => {
   return (
     <div
@@ -854,20 +832,6 @@ const ExtensionHeaderRow = memo(({
       </div>
       <div className="ext-group-header-right">
         <span>{fileCount.toString()} files, {formatBytes(totalBytes)}</span>
-        {onReveal !== undefined && (
-          <button
-            type="button"
-            className="reveal-in-tree-btn"
-            aria-label={`Reveal ${extension} in tree`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onReveal();
-            }}
-          >
-            <Locate aria-hidden="true" size={14} />
-            <span>Reveal</span>
-          </button>
-        )}
       </div>
     </div>
   );
@@ -882,9 +846,7 @@ const ExtensionHeaderRow = memo(({
     prevProps.style?.height === nextProps.style?.height &&
     prevProps.style?.transform === nextProps.style?.transform &&
     prevProps.onClick === nextProps.onClick &&
-    prevProps.onSelect === nextProps.onSelect &&
-    prevProps.onReveal === nextProps.onReveal &&
-    (prevProps.onReveal === undefined) === (nextProps.onReveal === undefined)
+    prevProps.onSelect === nextProps.onSelect
   );
 });
 

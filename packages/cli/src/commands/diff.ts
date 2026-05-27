@@ -4,7 +4,7 @@ import { info } from '../util/logger.js';
 import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
-export interface DiffEntry {
+interface DiffEntry {
   guid: string;
   pathname: string;
   assetHash: string | null;
@@ -12,7 +12,7 @@ export interface DiffEntry {
   previewHash: string | null;
 }
 
-export interface ChangedDiffEntry {
+interface ChangedDiffEntry {
   guid: string;
   before: DiffEntry;
   after: DiffEntry;

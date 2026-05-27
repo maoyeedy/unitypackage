@@ -53,6 +53,7 @@ m_Script: {fileID: 11500000, guid: f5ee4a4c1e4c3b448a97448840cdf0f41, type: 3}
 
 - **`packages/core`** (browser-safe, no `node:*`): `parseUnityPackageEntries` (GUID-aware, preferred, buffered, includes structured diagnostics, supports `chunkSize`), `iterUnityPackageEntries` (iterator-based; yields entries and diagnostics; supports `onProgress` and bomb guards), `parseUnityPackage` (flat alias), `createUnityPackage` (gzip 0–9, default 6, rejects duplicate input GUIDs). Deps: `fflate` only.
 - `packages/core/src/index.ts` is the public barrel. Implementation lives in domain modules (`guid`, `pathname`, `meta`, `parse`, `create`, `summary`) plus shared `model` types and private `tar` helpers. Public consumers should import from `unitypackage-core`, not internal files.
+- `classify.ts` exposes content-aware helpers used by consumers: `getMimeTypeForPath(pathname)`, `getSyntaxLanguageForPath(pathname)`, and `isUnityYamlBinary(bytes)`. The last is a content sniff that combines a `%YAML` magic-byte check with a head+tail line-length scan (32 KB windows, 2048-byte max line) to distinguish pure-text YAML from Force-Text serialized YAML that embeds binary blobs (textures, font atlases, lightmap data, shader variants). Note: `getPreviewKindForPath` lives in `apps/web/src/packageModel.ts`, not in core. Filename patterns from `gitattributes.md` are not used.
 - **`packages/cli`**: extract, pack, inspect, verify, diff, web.
 
 | Aspect | Detail |

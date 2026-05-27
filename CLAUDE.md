@@ -4,7 +4,7 @@
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | Node CLI, Node ≥24 |
-| `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 PWA |
+| `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 view/extract web UI |
 | `fixtures` | `@unitypackage-tools/fixtures` | synth builders (`generated/`), assets, archived packages (`static/`) |
 | `scripts` | — | `clean.ts`, `copy-web-assets.ts`, `fixtures-build.ts`, `smoke.ts` |
 
@@ -58,12 +58,17 @@ All contexts (dev, CI, published): Node ≥24.
 - **CLI parse**: use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage`. Web uses entry-aware parsing via parse worker and `apps/web/src/packageModel.ts`.
 - **Build order**: `build:cli` chains `build:web` then copies assets. Never run `scripts/copy-web-assets.ts` standalone.
 - **`apps/web` typecheck**: `tsc -b` (not `--noEmit` — skips project ref resolution).
+- **`apps/web` product scope**: see `docs/product/product-web.md`. Web is view/extract only: open, browse, preview basics, select, and ZIP extract. Pack, verify, diagnostics, diff, rich source preview, and PWA behavior stay out of web scope.
 - **`apps/web` English-only**: no translations, language selectors, or `language` URL state.
-- **`apps/web` Pack mode**: shell only. `.unitypackage` export disabled. ZIP remains Extract-mode.
 - **`apps/web` has React Compiler**: enabled via `@rolldown/plugin-babel` + `reactCompilerPreset` in `vite.config.ts`. Auto-memoizes components at build time. Manual `useMemo`/`useCallback`/`React.memo` can be removed incrementally after verifying via React DevTools "Memo ✨" badge. Does not apply to hooks that mutate DOM props directly (use `scrollElementNearEdge` helper pattern).
 - **TanStack Virtual + React Compiler**: components that call `useVirtualizerCompat` need a local `'use no memo'` directive. Hiding `useVirtualizer` behind a custom hook removes lint noise, but component-level compiler opt-out is required or virtual rows can fail to render in E2E.
-- **`PackageFileRecord` has no `kind`**: use `extension` + `isUnityPreview` primitives, or `getRecordCategory(record)` for a single discriminator. Do not reintroduce `kind`. Extension is authoritative.
+- **Web `PackageFileRecord` has no `kind`**: web drops Unity preview records during `entriesToRecords`; use `extension` or `getRecordCategory(record)` for asset/meta discrimination. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
+- **`highlight.js` usage**: Import and register languages explicitly from core (`highlight.js/lib/core`). Registered set: `csharp`, `yaml`, `json`, `css`, `glsl` (also aliased to `hlsl` since highlight.js has no first-party HLSL grammar). Do not import the main entry point — keeps the bundle small. Anything not in the registered set renders as plain `<pre><code>` via a `Set.has` short-circuit.
+- **Web preview structure**: Preview components live under `apps/web/src/components/preview/`. `PreviewPanel.tsx` owns selected-record UI state, `PreviewBody.tsx` owns image/text routing, `Metadata.tsx` reads bytes through `ContentContext`. Do not prop-drill `getContent` back through the preview tree.
+- **Web preview binary**: `PreviewBody` routes into image / text / unsupported. Image via blob URL; text via sync `TextDecoder` + `hljs.highlight` (no size cap, no deferred). Unsupported kinds render a `NoPreview` component (frame stays visible). Preview kind classified by `getPreviewKindForPath` in `packageModel.ts`: `yamlSkipExtensions` (`.unity`, `.prefab`) → `'unsupported'`; `yamlTextExtensions` (`.asset`, `.mat`, `.anim`, etc.) → `'text'` with binary content downgraded via `isUnityYamlBinary` in the parse worker. Only `yaml`/`yml`/`meta` and code/doc extensions get `'text'`. Source of truth: `docs/reference/extension-map.md`.
+- **`isUnityYamlBinary` (core)**: content-based detector for Unity YAML payloads, exported from `unitypackage-core`. Combines `%YAML` magic-byte check with a head+tail line-length scan (32 KB windows, 2048-byte max line). **No longer called** by `getPreviewKindForPath` -- instead called directly in `parsePackage.worker.ts` to downgrade binary `.asset` files from `'text'` to `'unsupported'` post-classification. Also used by CLI `inspect` command.
+- **Rebuild core after editing `packages/core/src/`**: `apps/web` and `packages/cli` import `unitypackage-core` via its `exports` field -> `dist/esm/index.js`. There is no Vite source alias and no live workspace-source resolution. Source-only edits in core will not reach the running web dev server or CLI until you run `bun run --filter unitypackage-core build` (or `bun run build`). HMR also won't surface the change. Symptom of forgetting: a behavior change that passes `bun run test:core` but appears to do nothing in `bun run dev:web`.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
 
 ## Pitfalls
@@ -77,6 +82,8 @@ All contexts (dev, CI, published): Node ≥24.
 - **Generated fixtures**: `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, `truncated`. Static fixtures cover common Unity file types. Archive: `fixtures/static/archives/Polytope_URP.unitypackage`.
 - **React effect state**: `react-hooks/set-state-in-effect` is enabled via the React Hooks recommended config. Do not use effects for derived-state or prop-change resets; derive during render or remount keyed children. Keep effects for external sync, subscriptions, timers, async callbacks, and cleanup.
 - **`bun run test` runs all 3 vitest projects in parallel** via `vitest run` at root (~2.8s). Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
+- **Force-Text YAML may embed binary**: Unity's Force-Text serialization writes a `%YAML` header but inlines large binary payloads (texture pixels, font glyph atlases, lightmap data, shader variants, terrain heightmaps) as one very long hex/base64 line. A naive `%YAML` magic check is not enough; use `isUnityYamlBinary` from core. Counter-example fixture: `LiberationSans SDF.asset` (text YAML header, 2-million-char glyph atlas line — must be hidden).
+- **`TextPreview` is fully synchronous**: `TextDecoder.decode` + `hljs.highlight` run on the main thread with no chunking or Web Worker offload. In practice the 5--30 second worst case is avoided: multi-MB Unity YAML files (`.asset`, `.mat`, etc.) are caught by `isUnityYamlBinary` in the parse worker and downgraded to `'unsupported'`. Only code/doc files (`.cs`, `.shader`, `.json`, `.md`, `.yaml`) reach `TextPreview`, and these are typically <200 KB. A 1 MB `.cs` file could still freeze for 1-3 seconds, so avoid attaching giant text files to a test package.
 
 ## Testing
 
@@ -86,18 +93,25 @@ All contexts (dev, CI, published): Node ≥24.
   - Report: `cd apps/web && bunx playwright show-report`
 - **E2E tests are ESM**: use `path.dirname(fileURLToPath(import.meta.url))`, not `__dirname`.
 - **E2E fixture path from `apps/web/tests/`**: `path.join(..., '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
-- **`getByRole` name matching is substring**: use `exact: true` when label is a substring of another (e.g., `'Pack'` matches "Stage for pack").
+- **E2E upload**: use `page.getByLabel('Open Unity package').setInputFiles(fixturePath)`; do not automate OS file pickers.
+- **E2E waits**: prefer Playwright web-first assertions (`await expect(locator).toBeVisible()`, `toHaveText`, `toContainText`) and locator auto-waiting. Do not add fixed sleeps for parse, upload, or render timing.
+- **E2E isolation**: rely on the per-test `page` fixture; Playwright creates a fresh browser context for each test, so do not share page state between tests.
+- **`getByRole` name matching is substring**: use `exact: true` when one label is a substring of another.
 - **E2E explorer rows are virtualized**: search/filter before selecting named rows that may be offscreen. Use file-row selectors or exact file checkbox names when you need a file; broad `getByRole('checkbox', { name: /^Select/ }).first()` can hit folder scope toggles and select many records.
 - **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `README.md` exist.
+- **Preview E2E matrix**: keep persistent coverage for `.cs`/`.shader` text preview, `.mat`/`.terrainlayer` YAML text preview, `.unity`/`.prefab`/binary `.asset` no-preview frame, `.png` image preview, and unsupported `.fbx` no-preview.
+- **Preview frame regression checks**: assert the `.preview-frame` slot stays the same outer height when switching between text and no-preview records, and assert hidden scrollbar CSS (`scrollbar-width: none`) without removing scrollability.
+- **Manual P4 smoke fallback**: if port 4173 is busy, run `cd apps/web && bunx vite preview --port 4174 --strictPort`; rebuild first because Vite preview serves `dist`.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
-- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
+- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react` and `@testing-library/jest-dom`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
 - **React Compiler ESLint rule**: `eslint-plugin-react-compiler` is active in the web-app block. Errors indicate the compiler will skip that component/hook. Fix violations to maximize compiler coverage.
 - **Knip** (`bun run knip`): detects unused files, exports, dependencies. Config at `knip.ts`. Run after structural changes to catch dead code.
 
 ## Reference
 
 - `docs/reference/archive-format-spec.md` — `.unitypackage` format
+- `docs/product/product-web.md` - web product scope, dependency boundaries, and acceptance checks
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/ci/ci-release.md` — publishing checklist

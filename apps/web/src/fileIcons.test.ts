@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { getFileIconDescriptor, normalizeExtension } from './fileIcons';
-import type { PackageFileRecord, PreviewKind, SyntaxLanguage } from './packageModel';
+import type { PreviewKind, SyntaxLanguage } from 'unitypackage-core';
+import type { PackageFileRecord } from './packageModel';
 
 const referenceExtensions = [
   'png',

@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   getMimeTypeForPath,
   getPathExtension,
-  getPreviewKindForPath,
-  getSyntaxLanguageForPath,
   getUnityFileCategory,
+  isUnityYamlBinary,
 } from './index';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const staticDirUrl = new URL('../../../fixtures/static', import.meta.url);
+const staticDir = fileURLToPath(staticDirUrl);
 
 describe('file classification', () => {
   it('extracts lower-case extensions and handles extensionless paths', () => {
@@ -17,6 +22,9 @@ describe('file classification', () => {
   it('maps documented media and document MIME types', () => {
     expect(getMimeTypeForPath('Assets/Image.bmp')).toBe('image/bmp');
     expect(getMimeTypeForPath('Assets/Image.avif')).toBe('image/avif');
+    expect(getMimeTypeForPath('tex.tga')).toBe('image/x-tga');
+    expect(getMimeTypeForPath('tex.tif')).toBe('image/tiff');
+    expect(getMimeTypeForPath('tex.tiff')).toBe('image/tiff');
     expect(getMimeTypeForPath('Assets/Sound.flac')).toBe('audio/flac');
     expect(getMimeTypeForPath('Assets/Movie.mov')).toBe('video/quicktime');
     expect(getMimeTypeForPath('Assets/Manual.pdf')).toBe('application/pdf');
@@ -27,33 +35,65 @@ describe('file classification', () => {
   it('classifies Unity and developer files', () => {
     expect(getUnityFileCategory('Assets/Scene.unity')).toBe('unity-yaml');
     expect(getUnityFileCategory('Assets/Script.cs')).toBe('code');
+    expect(getUnityFileCategory('Assets/Image.tga')).toBe('image');
     expect(getUnityFileCategory('Assets/File.meta')).toBe('meta');
     expect(getUnityFileCategory('Assets/Data.bin')).toBe('binary');
   });
 
-  it('maps preview kinds consistently with web behavior', () => {
-    expect(getPreviewKindForPath('Assets/Image.png')).toBe('image');
-    expect(getPreviewKindForPath('Assets/Manual.pdf')).toBe('pdf');
-    expect(getPreviewKindForPath('Assets/Sound.wav')).toBe('audio');
-    expect(getPreviewKindForPath('Assets/Movie.mp4')).toBe('video');
-    expect(getPreviewKindForPath('Assets/Data.asset')).toBe('text');
-    expect(getPreviewKindForPath('Assets/Data.bytes', new Uint8Array([0, 1, 2]))).toBe('unsupported');
+  describe('isUnityYamlBinary', () => {
+    const encoder = new TextEncoder();
+    const encode = (str: string) => encoder.encode(str);
+
+    it('treats undefined/empty/non-yaml bytes as binary', () => {
+      expect(isUnityYamlBinary(undefined)).toBe(true);
+      expect(isUnityYamlBinary(new Uint8Array(0))).toBe(true);
+      expect(isUnityYamlBinary(new Uint8Array([0, 0, 0, 0, 0]))).toBe(true);
+      expect(isUnityYamlBinary(encode('not a yaml file at all'))).toBe(true);
+    });
+
+    it('accepts short clean YAML', () => {
+      const bytes = encode('%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &1\nfoo: bar\n');
+      expect(isUnityYamlBinary(bytes)).toBe(false);
+    });
+
+    it('rejects YAML with head long lines', () => {
+      expect(isUnityYamlBinary(encode('%YAML 1.1\n' + 'a'.repeat(3000) + '\n'))).toBe(true);
+    });
+
+    it('rejects YAML with trailing long lines past 32KB', () => {
+      const prefix = '%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!114 &1\n';
+      const padding = 'a\n'.repeat(17000);
+      const suffix = 'b'.repeat(3000) + '\n';
+      expect(isUnityYamlBinary(encode(prefix + padding + suffix))).toBe(true);
+    });
   });
 
-  it('maps syntax languages for documented text extensions', () => {
-    expect(getSyntaxLanguageForPath('Assets/File.meta')).toBe('yaml');
-    expect(getSyntaxLanguageForPath('Assets/File.prefab')).toBe('yaml');
-    expect(getSyntaxLanguageForPath('Assets/File.shadergraph')).toBe('json');
-    expect(getSyntaxLanguageForPath('Assets/File.uxml')).toBe('xml');
-    expect(getSyntaxLanguageForPath('Assets/File.uss')).toBe('css');
-    expect(getSyntaxLanguageForPath('Assets/File.cs')).toBe('csharp');
-    expect(getSyntaxLanguageForPath('Assets/File.shader')).toBe('shaderlab');
-    expect(getSyntaxLanguageForPath('Assets/File.compute')).toBe('hlsl');
-    expect(getSyntaxLanguageForPath('Assets/File.glsl')).toBe('glsl');
-    expect(getSyntaxLanguageForPath('Assets/File.tsx')).toBe('typescript');
-    expect(getSyntaxLanguageForPath('Assets/File.jsx')).toBe('javascript');
-    expect(getSyntaxLanguageForPath('Assets/File.md')).toBe('markdown');
-    expect(getSyntaxLanguageForPath('Assets/File.html')).toBe('html');
-    expect(getSyntaxLanguageForPath('Assets/File.txt')).toBe('text');
+  describe('real-fixture YAML binary detection', () => {
+    it('identifies LiberationSans SDF.asset as binary', () => {
+      const filePath = join(staticDir, 'LiberationSans SDF.asset');
+      const bytes = readFileSync(filePath);
+      expect(isUnityYamlBinary(bytes)).toBe(true);
+    });
+
+    it('identifies scriptable.asset as text', () => {
+      const filePath = join(staticDir, 'scriptable.asset');
+      const bytes = readFileSync(filePath);
+      expect(isUnityYamlBinary(bytes)).toBe(false);
+    });
+
+    it('identifies TerrainData_<guid>.asset as binary', () => {
+      const files = readdirSync(staticDir);
+      const terrainFile = files.find(f => f.startsWith('TerrainData_') && f.endsWith('.asset'));
+      expect(terrainFile).toBeDefined();
+      const filePath = join(staticDir, terrainFile!);
+      const bytes = readFileSync(filePath);
+      expect(isUnityYamlBinary(bytes)).toBe(true);
+    });
+
+    it('identifies stamp.brush as text', () => {
+      const filePath = join(staticDir, 'stamp.brush');
+      const bytes = readFileSync(filePath);
+      expect(isUnityYamlBinary(bytes)).toBe(false);
+    });
   });
 });

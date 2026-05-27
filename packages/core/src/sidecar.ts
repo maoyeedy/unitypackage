@@ -18,19 +18,18 @@ export interface ResolveMetaSidecarsResult {
 
 const keyForGuidPathname = (guid: string, pathname: string): string => `${guid}\0${pathname}`;
 
-export function resolveMetaSidecarSelection(
-  records: readonly SidecarSelectableRecord[],
-  selectedIds: readonly string[],
-): ResolveMetaSidecarsResult {
-  const recordById = new Map<string, SidecarSelectableRecord>();
-  const metaByGuidPathname = new Map<string, SidecarSelectableRecord>();
-  const metaByPathname = new Map<string, SidecarSelectableRecord[]>();
+interface MetaSidecarIndex<TRecord extends SidecarSelectableRecord> {
+  metaByGuidPathname: Map<string, TRecord>;
+  metaByPathname: Map<string, TRecord[]>;
+}
+
+function buildMetaSidecarIndex<TRecord extends SidecarSelectableRecord>(
+  records: readonly TRecord[],
+): MetaSidecarIndex<TRecord> {
+  const metaByGuidPathname = new Map<string, TRecord>();
+  const metaByPathname = new Map<string, TRecord[]>();
 
   for (const record of records) {
-    if (!recordById.has(record.id)) {
-      recordById.set(record.id, record);
-    }
-
     if (record.kind !== 'meta') {
       continue;
     }
@@ -45,6 +44,43 @@ export function resolveMetaSidecarSelection(
       metaByPathname.set(record.pathname, [record]);
     } else {
       existing.push(record);
+    }
+  }
+
+  return { metaByGuidPathname, metaByPathname };
+}
+
+function findMetaSidecarForAssetInIndex<TRecord extends SidecarSelectableRecord>(
+  index: MetaSidecarIndex<TRecord>,
+  assetRecord: SidecarSelectableRecord,
+): TRecord | undefined {
+  if (assetRecord.kind !== 'asset') return undefined;
+
+  const metaPathname = metaSidecarPathForAsset(assetRecord.pathname);
+  const sameGuidMeta = index.metaByGuidPathname.get(keyForGuidPathname(assetRecord.guid, metaPathname));
+  const fallbackCandidates = index.metaByPathname.get(metaPathname);
+  const fallbackMeta =
+    fallbackCandidates?.length === 1 ? fallbackCandidates[0] : undefined;
+  return sameGuidMeta ?? fallbackMeta;
+}
+
+export function findMetaSidecarForAsset<TRecord extends SidecarSelectableRecord>(
+  records: readonly TRecord[],
+  assetRecord: SidecarSelectableRecord,
+): TRecord | undefined {
+  return findMetaSidecarForAssetInIndex(buildMetaSidecarIndex(records), assetRecord);
+}
+
+export function resolveMetaSidecarSelection(
+  records: readonly SidecarSelectableRecord[],
+  selectedIds: readonly string[],
+): ResolveMetaSidecarsResult {
+  const recordById = new Map<string, SidecarSelectableRecord>();
+  const metaSidecarIndex = buildMetaSidecarIndex(records);
+
+  for (const record of records) {
+    if (!recordById.has(record.id)) {
+      recordById.set(record.id, record);
     }
   }
 
@@ -66,12 +102,7 @@ export function resolveMetaSidecarSelection(
       continue;
     }
 
-    const metaPathname = metaSidecarPathForAsset(record.pathname);
-    const sameGuidMeta = metaByGuidPathname.get(keyForGuidPathname(record.guid, metaPathname));
-    const fallbackCandidates = metaByPathname.get(metaPathname);
-    const fallbackMeta =
-      fallbackCandidates?.length === 1 ? fallbackCandidates[0] : undefined;
-    const meta = sameGuidMeta ?? fallbackMeta;
+    const meta = findMetaSidecarForAssetInIndex(metaSidecarIndex, record);
 
     if (meta === undefined) {
       missingMetaForAssetIds.push(record.id);
