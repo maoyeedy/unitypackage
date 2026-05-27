@@ -7,6 +7,7 @@ import {
   type SidecarSelectableRecord,
 } from '../../packageModel';
 import { useContent } from '../../contexts/ContentContext';
+import { Breadcrumb } from './Breadcrumb';
 
 interface MetadataProps {
   record: PackageFileRecord;
@@ -27,7 +28,6 @@ export function Metadata({
     [metaSidecar, record, getContent, selectableRecords],
   );
   const rows: [string, string][] = [
-    ['Path', record.virtualPath],
     ['GUID', record.guid],
     ['Size', formatBytes(record.byteLength)],
   ];
@@ -54,6 +54,12 @@ export function Metadata({
         </button>
       </div>
       <dl>
+        <div>
+          <dt>Path</dt>
+          <dd>
+            <Breadcrumb virtualPath={record.virtualPath} onRevealInTree={onRevealInTree} />
+          </dd>
+        </div>
         {rows.map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
