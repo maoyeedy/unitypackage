@@ -66,7 +66,7 @@ function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
   return 'text';
 }
 
-export interface PackageFileRecord extends UnityPackageComponentRecord {
+export interface PackageFileRecord extends Omit<UnityPackageComponentRecord, 'content'> {
   fileName: string;
   isUnityPreview: false;
   previewKind: PreviewKind;
@@ -150,7 +150,7 @@ export function entriesToRecords(
       isUnityPreview: false,
       previewKind: getPreviewKindForPath(record.virtualPath),
       syntaxLanguage: getSyntaxLanguageForPath(record.virtualPath),
-    }));
+    })) as unknown as PackageFileRecord[];
 }
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {
@@ -387,16 +387,17 @@ export interface DeclaredMetaInfo {
 export function getDeclaredMetaInfoForRecord(
   records: readonly PackageFileRecord[],
   record: PackageFileRecord,
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined,
   selectableRecords?: readonly SidecarSelectableRecord[],
 ): DeclaredMetaInfo {
   let metaBytes: Uint8Array | undefined;
 
   if (record.extension === 'meta') {
-    metaBytes = record.content;
+    metaBytes = getContent(record.id);
   } else {
     const sibling = getSiblingMetaRecord(records, record, selectableRecords);
     if (sibling) {
-      metaBytes = sibling.content;
+      metaBytes = getContent(sibling.id);
     }
   }
 
