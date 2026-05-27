@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Eye,
   FileArchive,
   Filter,
   Info,
@@ -1362,26 +1363,34 @@ function AppContent() {
               <span>Extension</span>
             </button>
           </div>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={showPreviews}
-              onChange={event => {
-                handleShowPreviewsChange(event.target.checked);
-              }}
-            />
-            Show preview records
-          </label>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={includeMetaSidecars}
-              onChange={event => {
-                handleIncludeMetaSidecarsChange(event.target.checked);
-              }}
-            />
-            Include .meta with assets
-          </label>
+          <details className="sidebar-disclosure">
+            <summary className="sidebar-disclosure-summary">
+              <Eye aria-hidden="true" size={13} />
+              <span>Display options</span>
+            </summary>
+            <div className="sidebar-disclosure-body">
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={showPreviews}
+                  onChange={event => {
+                    handleShowPreviewsChange(event.target.checked);
+                  }}
+                />
+                Show preview records
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={includeMetaSidecars}
+                  onChange={event => {
+                    handleIncludeMetaSidecarsChange(event.target.checked);
+                  }}
+                />
+                Include .meta with assets
+              </label>
+            </div>
+          </details>
           <details className="sidebar-disclosure">
             <summary className="sidebar-disclosure-summary">
               <Settings aria-hidden="true" size={13} />

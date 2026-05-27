@@ -70,6 +70,10 @@ test.describe('explorer interactions', () => {
   });
 
   test.describe('Show preview records setting', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.getByText('Display options').click();
+    });
+
     test('preview rows are hidden by default in tree view', async ({ page }) => {
       const previewCheckbox = page.getByRole('checkbox', { name: 'Show preview records' });
       await expect(previewCheckbox).not.toBeChecked();
@@ -123,6 +127,10 @@ test.describe('explorer interactions', () => {
   });
 
   test.describe('Include .meta with assets setting', () => {
+    test.beforeEach(async ({ page }) => {
+      await page.getByText('Display options').click();
+    });
+
     test('meta rows are hidden in tree view when setting is off (default)', async ({ page }) => {
       // The setting defaults to unchecked -- meta rows should not appear in the tree
       const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });

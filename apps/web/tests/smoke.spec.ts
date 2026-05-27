@@ -50,6 +50,7 @@ test('meta rows are not visible in tree when Include .meta with assets is off', 
   await page.goto('/');
   await page.getByLabel('Open package').setInputFiles(fixturePath);
   await expect(page.getByText(/Parsed \d+ records/)).toBeVisible({ timeout: 15_000 });
+  await page.getByText('Display options').click();
   const metaCheckbox = page.getByRole('checkbox', { name: 'Include .meta with assets' });
   await expect(metaCheckbox).not.toBeChecked();
   const tree = page.getByRole('tree', { name: 'Package file tree' });
