@@ -64,6 +64,7 @@ All contexts (dev, CI, published): Node ≥24.
 - **TanStack Virtual + React Compiler**: components that call `useVirtualizerCompat` need a local `'use no memo'` directive. Hiding `useVirtualizer` behind a custom hook removes lint noise, but component-level compiler opt-out is required or virtual rows can fail to render in E2E.
 - **Web `PackageFileRecord` has no `kind`**: web drops Unity preview records during `entriesToRecords`; use `extension` or `getRecordCategory(record)` for asset/meta discrimination. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
+- **`highlight.js` usage**: Import and register languages explicitly from core (`highlight.js/lib/core`, e.g. `csharp`, `yaml`, `json`). Do not import the main entry point to keep the bundle small.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
 
 ## Pitfalls

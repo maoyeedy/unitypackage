@@ -42,7 +42,7 @@ The web app should avoid teaching users package internals unless that knowledge 
 - Verify, strict verify, schema validation, or health scoring.
 - Diffing packages.
 - Inspect JSON/tree reports intended for automation.
-- Rich source-code viewer features such as syntax highlighting, find-in-preview, line virtualization, or language-specific chunks.
+- Rich editor-grade source-code viewer features such as find-in-preview, line virtualization, code folding, or heavyweight multi-language grammars.
 - Audio/video/PDF embedded preview quality work.
 - Base64 copy, GUID copy helpers, or advanced metadata sidecar inspector UI.
 - PWA installability, service worker precache, file handlers, or offline app shell behavior.
@@ -73,7 +73,7 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 | Dependency | Drop reason |
 | --- | --- |
 | `fflate` in web | Web no longer creates compressed ZIPs through a dependency. Extraction ZIPs use a tiny stored-ZIP worker. Core still uses `fflate` for `.unitypackage` gzip parsing/writing. |
-| `shiki` | Rich syntax highlighting is out of scope for a simple extractor and produced large lazy language chunks. |
+| `shiki` | Replaced by `highlight.js` to avoid large lazy WASM/grammar chunks. |
 | `@shikijs/langs` | Only needed by Shiki language bundles. Removed with rich code preview. |
 | `@shikijs/themes` | Only needed by Shiki theme bundles. Removed with rich code preview. |
 | `workbox-window` | Service worker registration is out of scope after removing PWA behavior. |
@@ -87,6 +87,7 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 | `unitypackage-core` | The web app depends on the shared parser, component-record conversion, classification, and sidecar-selection logic. This keeps browser behavior aligned with CLI/core format rules. |
 | `react` and `react-dom` | The app is a stateful interactive browser UI with selection, filtering, preview panes, and worker-backed parsing. React remains the UI foundation. |
 | `@tanstack/react-virtual` | Large Unity packages can contain many files. Virtualized explorer rows keep browsing responsive without rendering the full tree at once. |
+| `highlight.js` | Provides lightweight, tree-shaken syntax highlighting for `.cs`, `.yaml`, and `.json` previews without heavy WASM or lazy chunks. |
 | `lucide-react` | Provides consistent, tree-shakeable icons for dense utility controls and file categories. |
 | `vite` | Fast app build/dev server and worker bundling for the web package. |
 | `@vitejs/plugin-react`, React Compiler, and Babel bridge | Preserve the current React build path and compiler setup used by the app. |
@@ -107,4 +108,4 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 - `selected_files.zip` contains the selected asset and its `.meta` sidecar.
 - Searching `.preview.png` returns no visible files.
 - `.meta` files are hidden until `Show .meta files` is enabled.
-- No Pack, Diagnostics, PWA install, or syntax highlighting UI is visible.
+- No Pack, Diagnostics, or PWA install UI is visible.
