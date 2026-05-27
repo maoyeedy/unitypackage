@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { parseUnityPackageEntries } from 'unitypackage-core';
+import { isUnityYamlBinary, parseUnityPackageEntries } from 'unitypackage-core';
 import { entriesToRecords } from './packageModel';
 import type { ParsePackageRequest, ParsePackageResponse } from './workerTypes';
 
@@ -12,6 +12,16 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
     const { entries } = parseUnityPackageEntries(bytes, options);
 
     const { records, contents } = entriesToRecords(entries);
+    for (const record of records) {
+      if (record.extension !== 'asset') continue;
+      if (record.previewKind !== 'text') continue;
+
+      const bytes = contents[record.id];
+      if (bytes && isUnityYamlBinary(bytes)) {
+        record.previewKind = 'unsupported';
+      }
+    }
+
     const transferSet = new Set<ArrayBuffer>();
     for (const bytes of Object.values(contents)) {
       if (bytes.buffer instanceof ArrayBuffer) {

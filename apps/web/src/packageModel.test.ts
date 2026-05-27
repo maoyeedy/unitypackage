@@ -52,6 +52,40 @@ describe('package model helpers', () => {
     expect(records.filter(record => getRecordCategory(record) === 'meta')).toHaveLength(2);
   });
 
+  it('classifies Unity YAML preview kinds by extension', () => {
+    const entries: UnityPackageEntry[] = [
+      ['unity', 'unsupported'],
+      ['prefab', 'unsupported'],
+      ['mat', 'text'],
+      ['anim', 'text'],
+      ['controller', 'text'],
+      ['terrainlayer', 'text'],
+      ['mixer', 'text'],
+      ['yaml', 'text'],
+      ['yml', 'text'],
+      ['asset', 'text'],
+    ].map(([extension], index) => ({
+      guid: `${index}`.padStart(32, 'a'),
+      pathname: `Assets/Test.${extension}`,
+      asset: encoder.encode('%YAML 1.1\n'),
+    }));
+
+    const records = entriesToRecords(entries, []).records;
+
+    expect(Object.fromEntries(records.map(record => [record.extension, record.previewKind]))).toEqual({
+      unity: 'unsupported',
+      prefab: 'unsupported',
+      mat: 'text',
+      anim: 'text',
+      controller: 'text',
+      terrainlayer: 'text',
+      mixer: 'text',
+      yaml: 'text',
+      yml: 'text',
+      asset: 'text',
+    });
+  });
+
   it('filters meta records from browsing', () => {
     const records = makeRecords();
 

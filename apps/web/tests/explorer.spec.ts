@@ -134,7 +134,7 @@ test.describe('explorer interactions', () => {
     expect(elapsed).toBeLessThan(2000);
   });
 
-  test('small terrainlayer asset shows collapsed preview and metadata', async ({ page }) => {
+  test('small terrainlayer asset shows text preview and metadata', async ({ page }) => {
     const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
 
     await page.getByPlaceholder('Search files by name or path').fill('Ground_Layer_01.terrainlayer');
@@ -146,7 +146,7 @@ test.describe('explorer interactions', () => {
     await expect(preview.getByText('GUID', { exact: true })).toBeVisible({ timeout: 5_000 });
     const elapsed = performance.now() - start;
 
-    await expect(preview.locator('.preview-frame')).not.toBeVisible();
+    await expect(preview.locator('.preview-frame.text-frame')).toBeVisible();
     await expect(preview.getByText('Details', { exact: true })).toBeVisible();
     expect(elapsed).toBeLessThan(1000);
   });

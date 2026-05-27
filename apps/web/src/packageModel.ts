@@ -23,13 +23,15 @@ export type SortDirection = 'asc' | 'desc';
 const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'apng', 'avif', 'webp', 'svg']);
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'webm']);
 const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm']);
-const yamlExtensions = new Set([
-  'unity', 'prefab', 'asset', 'mat', 'anim', 'controller', 'overridecontroller',
+const yamlSkipExtensions = new Set(['unity', 'prefab']);
+const yamlTextExtensions = new Set([
+  'asset', 'mat', 'anim', 'controller', 'overridecontroller',
   'physicmaterial', 'physicsmaterial2d', 'playable', 'mask', 'brush', 'flare',
   'fontsettings', 'guiskin', 'giparams', 'rendertexture', 'spriteatlas', 'spriteatlasv2',
   'terrainlayer', 'mixer', 'shadervariants', 'preset', 'lighting', 'dwlt', 'vfx',
   'vfxblock', 'vfxoperator', 'yaml', 'yml',
 ]);
+const yamlExtensions = new Set([...yamlSkipExtensions, ...yamlTextExtensions]);
 const codeExtensions = new Set([
   'cs', 'ts', 'tsx', 'js', 'jsx', 'shader', 'hlsl', 'cginc', 'compute', 'glsl',
   'css', 'uss', 'tss', 'json', 'asmdef', 'asmref', 'inputactions', 'shadergraph',
@@ -43,8 +45,8 @@ function getPreviewKindForPath(pathname: string): PreviewKind {
   if (imageExtensions.has(ext)) return 'image';
   if (audioExtensions.has(ext)) return 'audio';
   if (videoExtensions.has(ext)) return 'video';
-  if (ext === 'yaml' || ext === 'yml') return 'text';
-  if (yamlExtensions.has(ext)) return 'unsupported';
+  if (yamlSkipExtensions.has(ext)) return 'unsupported';
+  if (yamlTextExtensions.has(ext)) return 'text';
   if (textExtensions.has(ext)) return 'text';
   return 'unsupported';
 }
