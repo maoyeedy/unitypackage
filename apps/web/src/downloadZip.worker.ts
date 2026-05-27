@@ -19,42 +19,18 @@ const postResponse = (response: DownloadZipResponse, transfer?: Transferable[]) 
 
 self.onmessage = ({ data }: MessageEvent<DownloadZipRequest>) => {
   try {
-    const ids = new Set(data.recordIds);
-    const usedNames = new Map<string, number>();
-    const files = data.records
-      .filter(record => ids.has(record.id))
-      .map(record => ({
-        path: uniqueZipPath(data.maintainStructure ? record.virtualPath : record.fileName, usedNames),
-        bytes: record.content,
-      }));
-
-    if (files.length === 0) {
+    if (data.files.length === 0) {
       postResponse({ type: 'empty' });
       return;
     }
-
-    const zippedData = createStoredZip(files);
+    const inputs = data.files.map((file) => ({ path: file.path, bytes: file.content }));
+    const zippedData = createStoredZip(inputs);
     postResponse({ type: 'success', data: zippedData }, [zippedData.buffer]);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to create ZIP';
     postResponse({ type: 'error', message });
   }
 };
-
-function uniqueZipPath(path: string, usedNames: Map<string, number>): string {
-  const safePath = path.replace(/^\/+/, '') || 'file';
-  const seen = usedNames.get(safePath) ?? 0;
-  usedNames.set(safePath, seen + 1);
-  if (seen === 0) return safePath;
-
-  const slashIndex = safePath.lastIndexOf('/');
-  const directory = slashIndex === -1 ? '' : safePath.slice(0, slashIndex + 1);
-  const name = slashIndex === -1 ? safePath : safePath.slice(slashIndex + 1);
-  const dotIndex = name.lastIndexOf('.');
-  const stem = dotIndex > 0 ? name.slice(0, dotIndex) : name;
-  const ext = dotIndex > 0 ? name.slice(dotIndex) : '';
-  return `${directory}${stem} (${seen + 1})${ext}`;
-}
 
 function createStoredZip(files: { path: string; bytes: Uint8Array }[]): Uint8Array {
   const localParts: Uint8Array[] = [];

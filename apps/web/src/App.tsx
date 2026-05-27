@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 
 import './App.css';
-import type { DownloadZipResponse, ParsePackageResponse } from './workerTypes';
+import type { DownloadZipFileInput, DownloadZipRequest, DownloadZipResponse, ParsePackageResponse } from './workerTypes';
+import { uniqueZipPath } from './zipPath';
 import {
   buildExtensionGroups,
   buildTreeRows,
@@ -117,7 +118,22 @@ function createDownloadZipInWorker(
       reject(new Error('Failed to receive ZIP data'));
     };
 
-    worker.postMessage({ records, maintainStructure, recordIds });
+    const idSet = new Set(recordIds);
+    const usedNames = new Map<string, number>();
+    const files: DownloadZipFileInput[] = [];
+    const transfer: ArrayBuffer[] = [];
+    for (const record of records) {
+      if (!idSet.has(record.id)) continue;
+      const path = uniqueZipPath(
+        maintainStructure ? record.virtualPath : record.fileName,
+        usedNames,
+      );
+      const copy = new Uint8Array(record.content);
+      files.push({ path, content: copy });
+      transfer.push(copy.buffer);
+    }
+
+    worker.postMessage({ files, maintainStructure } satisfies DownloadZipRequest, transfer);
   });
 }
 
@@ -227,10 +243,12 @@ function AppContent() {
     return records.find(record => record.id === activeRecordId) ?? visibleRecords[0] ?? null;
   }, [activeRecordId, visibleRecords, records]);
 
+  const sidecarSelectableRecords = useMemo(() => toSidecarSelectableRecords(records), [records]);
+
   const activeMetaSidecar = useMemo(() => {
     if (!activeRecord) return undefined;
-    return getMetaSidecarForAsset(records, activeRecord);
-  }, [activeRecord, records]);
+    return getMetaSidecarForAsset(records, activeRecord, sidecarSelectableRecords);
+  }, [activeRecord, records, sidecarSelectableRecords]);
 
   const selectedVisibleCount = useMemo(() => {
     let count = 0;
@@ -241,7 +259,6 @@ function AppContent() {
   }, [selectedRecordIds, visibleRecords]);
 
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
-  const sidecarSelectableRecords = useMemo(() => toSidecarSelectableRecords(records), [records]);
   const extensionGroups = useMemo(
     () => groupingMode === 'extension' ? buildExtensionGroups(visibleRecords) : [],
     [groupingMode, visibleRecords],
@@ -665,6 +682,7 @@ function AppContent() {
           <PreviewPanel
             record={activeRecord}
             metaSidecar={activeMetaSidecar}
+            selectableRecords={sidecarSelectableRecords}
             onDownload={(record) => {
               downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
             }}
