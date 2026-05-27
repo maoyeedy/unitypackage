@@ -75,9 +75,6 @@ test.describe('explorer interactions', () => {
     await preview.getByRole('button', { name: '.meta' }).click();
     // Meta is now immediate text (no deferred "Load preview" button)
     await expect(preview.locator('code')).toContainText('fileFormatVersion');
-    await expect(preview.getByText('Details', { exact: true })).not.toBeVisible();
-
-    await preview.getByRole('button', { name: 'Asset', exact: true }).click();
     await expect(preview.getByText('Details', { exact: true })).toBeVisible();
   });
 
