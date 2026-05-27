@@ -4,7 +4,7 @@
 |------|---------|-------|
 | `packages/core` | `unitypackage-core` | browser-safe, CJS+ESM |
 | `packages/cli` | `unitypackage-tools` | Node CLI, Node ≥24 |
-| `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 PWA |
+| `apps/web` | `@unitypackage-tools/web` | Vite 8 + React 19 view/extract web UI |
 | `fixtures` | `@unitypackage-tools/fixtures` | synth builders (`generated/`), assets, archived packages (`static/`) |
 | `scripts` | — | `clean.ts`, `copy-web-assets.ts`, `fixtures-build.ts`, `smoke.ts` |
 
@@ -58,11 +58,11 @@ All contexts (dev, CI, published): Node ≥24.
 - **CLI parse**: use `parseUnityPackageEntries` (GUID-aware), not `parseUnityPackage`. Web uses entry-aware parsing via parse worker and `apps/web/src/packageModel.ts`.
 - **Build order**: `build:cli` chains `build:web` then copies assets. Never run `scripts/copy-web-assets.ts` standalone.
 - **`apps/web` typecheck**: `tsc -b` (not `--noEmit` — skips project ref resolution).
+- **`apps/web` product scope**: see `docs/product/product-web.md`. Web is view/extract only: open, browse, preview basics, select, and ZIP extract. Pack, verify, diagnostics, diff, rich source preview, and PWA behavior stay out of web scope.
 - **`apps/web` English-only**: no translations, language selectors, or `language` URL state.
-- **`apps/web` Pack mode**: shell only. `.unitypackage` export disabled. ZIP remains Extract-mode.
 - **`apps/web` has React Compiler**: enabled via `@rolldown/plugin-babel` + `reactCompilerPreset` in `vite.config.ts`. Auto-memoizes components at build time. Manual `useMemo`/`useCallback`/`React.memo` can be removed incrementally after verifying via React DevTools "Memo ✨" badge. Does not apply to hooks that mutate DOM props directly (use `scrollElementNearEdge` helper pattern).
 - **TanStack Virtual + React Compiler**: components that call `useVirtualizerCompat` need a local `'use no memo'` directive. Hiding `useVirtualizer` behind a custom hook removes lint noise, but component-level compiler opt-out is required or virtual rows can fail to render in E2E.
-- **`PackageFileRecord` has no `kind`**: use `extension` + `isUnityPreview` primitives, or `getRecordCategory(record)` for a single discriminator. Do not reintroduce `kind`. Extension is authoritative.
+- **Web `PackageFileRecord` has no `kind`**: web drops Unity preview records during `entriesToRecords`; use `extension` or `getRecordCategory(record)` for asset/meta discrimination. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
 
@@ -86,18 +86,19 @@ All contexts (dev, CI, published): Node ≥24.
   - Report: `cd apps/web && bunx playwright show-report`
 - **E2E tests are ESM**: use `path.dirname(fileURLToPath(import.meta.url))`, not `__dirname`.
 - **E2E fixture path from `apps/web/tests/`**: `path.join(..., '../../../fixtures/static/archives/Polytope_URP.unitypackage')`.
-- **`getByRole` name matching is substring**: use `exact: true` when label is a substring of another (e.g., `'Pack'` matches "Stage for pack").
+- **`getByRole` name matching is substring**: use `exact: true` when one label is a substring of another.
 - **E2E explorer rows are virtualized**: search/filter before selecting named rows that may be offscreen. Use file-row selectors or exact file checkbox names when you need a file; broad `getByRole('checkbox', { name: /^Select/ }).first()` can hit folder scope toggles and select many records.
 - **Polytope E2E fixture contents**: use real asset names from `fixtures/static/archives/Polytope_URP.unitypackage` such as `Ground_Layer_01.terrainlayer`; do not assume docs-like files such as `README.md` exist.
 - **`vitest.config.ts` at root**: projects for core, cli, web. Per-package `bun run --filter <pkg> test` works standalone.
 - **`apps/web` unit tests**: Vitest. `bun run test:web` or `--filter @unitypackage-tools/web test`.
-- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
+- **Web component tests use jsdom + RTL**: setup in `apps/web/src/test/setup.ts`. Use `@testing-library/react` and `@testing-library/jest-dom`. Place `.test.tsx` files co-located with components. Each `.test.tsx` must start with `// @vitest-environment jsdom` (vitest 4.x bug with nested project+root config).
 - **React Compiler ESLint rule**: `eslint-plugin-react-compiler` is active in the web-app block. Errors indicate the compiler will skip that component/hook. Fix violations to maximize compiler coverage.
 - **Knip** (`bun run knip`): detects unused files, exports, dependencies. Config at `knip.ts`. Run after structural changes to catch dead code.
 
 ## Reference
 
 - `docs/reference/archive-format-spec.md` — `.unitypackage` format
+- `docs/product/product-web.md` - web product scope, dependency boundaries, and acceptance checks
 - `docs/reference/ctx7.md` — pre-resolved Context7 library IDs
 - `docs/reference/playwright.md` — Playwright E2E test reference
 - `docs/plans/ci/ci-release.md` — publishing checklist

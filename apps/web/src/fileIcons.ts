@@ -17,7 +17,7 @@ import {
 
 import type { PackageFileRecord } from './packageModel';
 
-export type FileIconTone =
+type FileIconTone =
   | 'audio'
   | 'binary'
   | 'code'

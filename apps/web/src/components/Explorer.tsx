@@ -83,7 +83,7 @@ export function Explorer({
       <div className="empty-state">
         <FileArchive aria-hidden="true" size={42} />
         <h2>No records loaded</h2>
-        <p>Open a Unity package to inspect its tree, previews, metadata, diagnostics, and extractable files.</p>
+        <p>Open a Unity package to view and extract its files.</p>
       </div>
     );
   }

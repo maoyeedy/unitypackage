@@ -31,24 +31,18 @@ Dependencies from each package's `package.json`, split by runtime vs dev. Worksp
 
 | Scope | Dep | ID |
 |-------|-----|----|
-| runtime | `@shikijs/langs` | `/shikijs/shiki` |
-| runtime | `@shikijs/themes` | `/shikijs/shiki` |
 | runtime | `@tanstack/react-virtual` | `/tanstack/virtual` |
-| runtime | `fflate` | `/101arrowz/fflate` |
 | runtime | `lucide-react` | `/lucide-icons/lucide` |
 | runtime | `react` | `/facebook/react` |
 | runtime | `react-dom` | *(part of `/facebook/react`)* |
-| runtime | `shiki` | `/shikijs/shiki` |
 | runtime | `unitypackage-core` | *(workspace -- internal)* |
-| runtime | `workbox-window` | no separate ctx7 ID; see vite-plugin-pwa docs |
 | dev | `@playwright/test` | `/microsoft/playwright` |
 | dev | `@types/react` | *(part of `/facebook/react`)* |
 | dev | `@types/react-dom` | *(part of `/facebook/react`)* |
-| dev | `@vitejs/plugin-react-swc` | `/vitejs/vite` (SWC variant; no separate ID) |
+| dev | `@vitejs/plugin-react` | `/vitejs/vite` |
 | dev | `eslint-plugin-react-hooks` | *(part of `/facebook/react`)* |
 | dev | `eslint-plugin-react-refresh` | no ctx7 ID found |
 | dev | `vite` | `/vitejs/vite` |
-| dev | `vite-plugin-pwa` | `/vite-pwa/vite-plugin-pwa` |
 | dev | `vitest` | `/vitest-dev/vitest` |
 
 ## Notes

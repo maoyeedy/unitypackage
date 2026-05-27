@@ -35,6 +35,7 @@ export function DropZone({ isLoading, onPackageFile }: { isLoading: boolean; onP
       <small>or choose a file</small>
       <input
         type="file"
+        aria-label="Open Unity package"
         accept=".unitypackage"
         onChange={(event) => {
           const file = event.target.files?.[0];

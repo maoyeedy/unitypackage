@@ -4,12 +4,10 @@
 
 | Package | Owner | Purpose | Assessment |
 |---------|-------|---------|------------|
-| `fflate` | core, web, fixtures | Gzip/deflate/zip | **Keep.** Fastest pure-JS, 30KB, browser-safe, zip support |
-| `shiki` + `@shikijs/langs` + `@shikijs/themes` | web | Code highlighting | **Keep.** v4, VS Code-grade. Heavy on client (~280KB WASM). If bundle matters: Prism (~12KB) |
+| `fflate` | core, fixtures | Gzip/deflate | **Keep.** Core needs gzip for `.unitypackage` parsing/writing |
 | `@tanstack/react-virtual` | web | Virtualized list | **Keep.** Headless/flexible. Alternatives: `virtua` (~3KB, simpler), `react-virtuoso` (~17KB, richer API) |
 | `lucide-react` | web | SVG icons | **Keep.** Tree-shakes ~0.5KB/icon. Best balance of size/coverage |
 | `react` + `react-dom` | web | UI | Latest 19.2.x. No change |
-| `workbox-window` | web | PWA SW | Stable, via `vite-plugin-pwa`. No change |
 
 ## Dev
 
@@ -20,7 +18,6 @@
 | `vitest` 4.x | Latest |
 | `vite` 8.x + `@vitejs/plugin-react` 6.x | Latest (v6 drops Babel, uses Oxc) |
 | `@playwright/test` 1.x | Latest |
-| `vite-plugin-pwa` 1.x | Latest |
 
 ## Installed
 

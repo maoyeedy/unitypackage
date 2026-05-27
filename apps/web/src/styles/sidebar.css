@@ -72,6 +72,28 @@
   position: relative;
 }
 
+.package-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.package-title h1,
+.package-title p {
+  margin: 0;
+}
+
+.package-title h1 {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.package-title p {
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
 /* Disclosure sections */
 .sidebar-disclosure {
   border: 1px solid var(--border);
@@ -186,12 +208,6 @@
   color: var(--accent);
 }
 
-.chip-diag {
-  font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, monospace;
-  font-size: 0.72rem;
-  border-radius: 6px;
-}
-
 .sort-control {
   display: flex;
   align-items: center;
@@ -239,5 +255,4 @@
   margin: 3px 0 0;
   font-weight: 700;
 }
-
 
