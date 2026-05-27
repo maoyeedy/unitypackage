@@ -53,6 +53,10 @@ describe('file classification', () => {
     const encoder = new TextEncoder();
     const encode = (str: string) => encoder.encode(str);
 
+    it('treats undefined bytes as binary because the only caller never passes undefined', () => {
+      expect(isUnityYamlBinary(undefined)).toBe(true);
+    });
+
     it('handles inline cases correctly', () => {
       expect(isUnityYamlBinary(undefined)).toBe(true);
       expect(isUnityYamlBinary(new Uint8Array(0))).toBe(true);
@@ -78,6 +82,11 @@ describe('file classification', () => {
       expect(getPreviewKindForPath('Assets/Foo.asset', shortYamlBytes)).toBe('text');
       expect(getPreviewKindForPath('Assets/Foo.asset', longLineYamlBytes)).toBe('unsupported');
       expect(getPreviewKindForPath('Assets/Foo.asset', allNullBytes)).toBe('unsupported');
+
+      // Plain yaml/yml short-circuits to text regardless of content/sniffing
+      expect(getPreviewKindForPath('Assets/pkg.yaml', encode('name: foo\nversion: 1.0'))).toBe('text');
+      expect(getPreviewKindForPath('Assets/pkg.yml', encode('a: 1\nb: 2'))).toBe('text');
+      expect(getPreviewKindForPath('Assets/pkg.yaml', undefined)).toBe('text');
     });
   });
 

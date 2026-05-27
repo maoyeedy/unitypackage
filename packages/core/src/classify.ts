@@ -56,7 +56,7 @@ const videoMimeTypes = new Map([
   ['webm', 'video/webm'],
 ]);
 
-const yamlExtensions = new Set([
+export const yamlExtensions = new Set([
   'unity',
   'prefab',
   'asset',
@@ -159,6 +159,10 @@ const LF = 0x0A;
 const MAX_LINE_BYTES = 2048;          // >2KB lines -> embedded binary blob
 const SAMPLE_WINDOW_BYTES = 32 * 1024; // O(64KB) per file regardless of size
 
+/**
+ * Detects if a Unity YAML file contains binary contents.
+ * Treats missing bytes (undefined) as binary because the only caller never passes undefined.
+ */
 export function isUnityYamlBinary(bytes: Uint8Array | undefined): boolean {
   if (!bytes || bytes.byteLength < YAML_MAGIC.length) return true;
   for (let i = 0; i < YAML_MAGIC.length; i++) {
@@ -189,6 +193,7 @@ export function getPreviewKindForPath(pathname: string, bytes?: Uint8Array): Pre
   if (imageMimeTypes.has(extension)) return 'image';
   if (audioMimeTypes.has(extension)) return 'audio';
   if (videoMimeTypes.has(extension)) return 'video';
+  if (extension === 'yaml' || extension === 'yml') return 'text';
   if (yamlExtensions.has(extension)) {
     return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
   }
