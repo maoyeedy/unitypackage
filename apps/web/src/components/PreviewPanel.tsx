@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, FileArchive, Locate } from 'lucide-react';
 import hljs from 'highlight.js/lib/core';
+import type { LanguageFn } from 'highlight.js';
 import csharp from 'highlight.js/lib/languages/csharp';
 import yaml from 'highlight.js/lib/languages/yaml';
 import json from 'highlight.js/lib/languages/json';
@@ -14,21 +15,18 @@ import {
   type PackageFileRecord,
 } from '../packageModel';
 
-hljs.registerLanguage('csharp', csharp);
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('glsl', glsl);
-hljs.registerLanguage('hlsl', glsl);
-
-const REGISTERED_LANGUAGES = new Set<SyntaxLanguage>([
-  'csharp',
-  'yaml',
-  'json',
-  'css',
-  'hlsl',
-  'glsl',
-]);
+const LANGUAGES: [SyntaxLanguage, LanguageFn][] = [
+  ['csharp', csharp],
+  ['yaml', yaml],
+  ['json', json],
+  ['css', css],
+  ['glsl', glsl],
+  ['hlsl', glsl],
+];
+for (const [name, fn] of LANGUAGES) {
+  hljs.registerLanguage(name, fn);
+}
+const REGISTERED_LANGUAGES = new Set<SyntaxLanguage>(LANGUAGES.map(([name]) => name));
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -192,14 +190,17 @@ function ImagePreview({ record }: { record: PackageFileRecord }) {
 }
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
+  // Relying on the React Compiler to optimize and memoize computations automatically.
   const preview = textDecoder.decode(record.content);
 
-  const highlightedHtml = useMemo(() => {
-    if (!REGISTERED_LANGUAGES.has(record.syntaxLanguage)) {
-      return null;
+  let highlightedHtml: string | null = null;
+  if (REGISTERED_LANGUAGES.has(record.syntaxLanguage)) {
+    try {
+      highlightedHtml = hljs.highlight(preview, { language: record.syntaxLanguage }).value;
+    } catch (err) {
+      console.error('Failed to highlight preview:', err);
     }
-    return hljs.highlight(preview, { language: record.syntaxLanguage }).value;
-  }, [preview, record.syntaxLanguage]);
+  }
 
   return (
     <div className="preview-frame text-frame">

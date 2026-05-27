@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { PreviewPanel } from './PreviewPanel';
 import type { PackageFileRecord } from '../packageModel';
+import hljs from 'highlight.js/lib/core';
 
 const encoder = new TextEncoder();
 
@@ -55,6 +56,38 @@ describe('PreviewPanel Syntax Highlighting', () => {
     const spans = codeElement?.querySelectorAll('span');
     expect(spans?.length).toBeGreaterThan(0);
     expect(codeElement?.innerHTML).toContain('<span');
+  });
+
+  it('falls back to plain text when hljs.highlight throws an error', () => {
+    const record = createMockRecord({
+      syntaxLanguage: 'csharp',
+      content: encoder.encode('using System;\npublic class Test {}'),
+    });
+
+    const highlightSpy = vi.spyOn(hljs, 'highlight').mockImplementation(() => {
+      throw new Error('Highlighting failed');
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const { container } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    const codeElement = container.querySelector('code');
+    expect(codeElement).toBeInTheDocument();
+
+    const spans = codeElement?.querySelectorAll('span');
+    expect(spans?.length).toBe(0);
+    expect(codeElement?.innerHTML).not.toContain('<span');
+    expect(codeElement?.textContent).toBe('using System;\npublic class Test {}');
+
+    highlightSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   it('renders text language as plain text without highlights', () => {
