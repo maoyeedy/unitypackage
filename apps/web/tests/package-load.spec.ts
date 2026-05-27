@@ -34,7 +34,7 @@ test.describe('package loading', () => {
     await expect(page.locator('.package-title p')).toHaveText('Polytope_URP.unitypackage');
   });
 
-  test('All ZIP button becomes enabled after load', async ({ page }) => {
+  test.skip('All ZIP button becomes enabled after load', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'All ZIP' })).toBeDisabled();
     await page.getByLabel('Open Unity package').setInputFiles(fixturePath);

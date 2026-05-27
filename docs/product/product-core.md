@@ -2,7 +2,7 @@
 
 ## TLDR
 
-`unitypackage-core` is the browser-safe foundation library for parsing, creating, and manipulating `.unitypackage` archives. It is the single source of truth for the format's data model, GUID handling, pathname validation, meta sidecar management, and file classification -- all without Node.js built-in modules. The CLI and web app depend on it, but neither owns it.
+`unitypackage-core` is the browser-safe foundation library for parsing, creating, and manipulating `.unitypackage` archives. It is the single source of truth for the format's data model, GUID handling, pathname validation, meta sidecar management, and file classification -- all without Node.js built-in modules.
 
 ## Product Goal
 
@@ -32,9 +32,9 @@ Provide a portable, reliable, minimal library that:
 
 ## Out Of Scope
 
-- App-level view models (component records, sidecar resolution, analysis summaries, glob matching) -- removed from core; live as local copies in CLI or web as needed.
-- Preview classification (PreviewKind, SyntaxLanguage) -- UI concerns belong in the web app.
-- Glob or wildcard path matching -- ecosystem-solved; CLI has a local copy.
+- App-level view models (component records, sidecar resolution, analysis summaries, glob matching).
+- Preview classification (PreviewKind, SyntaxLanguage).
+- Glob or wildcard path matching.
 - Unity YAML schema or content validation (verify is format-scoped).
 - File system I/O, network requests, or any Node/Deno/Bun-specific APIs.
 - Cryptographic hashing or checksums beyond GUID needs.
@@ -65,14 +65,14 @@ All exports flow through `packages/core/src/index.ts`. Approximate count: ~37 na
 
 ## Removed From Core
 
-The following modules were part of earlier iterations but have been removed from core. They live as local copies in the CLI and/or web app:
+The following modules were part of earlier iterations but have been removed from core:
 
 - `glob.ts` -- `matchGlob` (ecosystem-solved)
-- `sidecar.ts` -- meta sidebar resolution heuristics (web-owned)
-- `component.ts` -- entry-to-component view model (app-level)
-- `analyze.ts` -- structural analysis findings (CLI-owned)
-- `summary.ts` -- package summary convenience (CLI-owned)
-- `classify.ts` preview types (PreviewKind, SyntaxLanguage) -- web-owned preview types
+- `sidecar.ts` -- meta sidebar resolution heuristics
+- `component.ts` -- entry-to-component view model
+- `analyze.ts` -- structural analysis findings
+- `summary.ts` -- package summary convenience
+- `classify.ts` preview types (PreviewKind, SyntaxLanguage)
 - `pathname.ts` dead utils (`isMetaSidecarPath`, `assetPathForMetaSidecar`)
 - `meta.ts` convenience wrappers (`createMinimalMeta`, `createMinimalFolderMeta`)
 
@@ -85,7 +85,7 @@ The following modules were part of earlier iterations but have been removed from
 - All parse and create logic must be synchronous or callback-driven (no promises needed in core) to keep the API simple and predictable.
 - Decompression bomb limits must be configurable but have sensible defaults. No unbounded memory allocation from archive input.
 - The library does not import or reference any UI types (PreviewKind, SyntaxLanguage, etc.).
-- `isUnityYamlBinary` must remain in core -- both CLI and web need it.
+- `isUnityYamlBinary` must remain in core.
 
 ## Acceptance Checks
 

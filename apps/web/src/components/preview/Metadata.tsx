@@ -45,12 +45,12 @@ export function Metadata({
         <h3>Details</h3>
         <button
           type="button"
-          className="icon-button"
+          className="btn btn--icon btn--sm"
           aria-label="Reveal in tree"
           title="Reveal in tree"
           onClick={() => { onRevealInTree(record.id); }}
         >
-          <Locate aria-hidden="true" size={15} />
+          <Locate aria-hidden="true" size={13} />
         </button>
       </div>
       <dl>

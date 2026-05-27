@@ -1,5 +1,7 @@
-/* App.css -- barrel that imports per-surface stylesheets */
+/* Stylesheet barrel -- order matters: tokens -> components -> per-surface */
+@import './styles/components.css';
 @import './styles/shell.css';
-@import './styles/sidebar.css';
+@import './styles/app-bar.css';
 @import './styles/explorer.css';
-@import './styles/preview.css';
+@import './styles/inspector.css';
+@import './styles/statusbar.css';

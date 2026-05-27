@@ -16,10 +16,12 @@ export function PreviewHeader({
   setPreviewMode,
   onDownload,
 }: PreviewHeaderProps) {
+  const extLabel = previewRecord.extension ? `.${previewRecord.extension}` : '';
   return (
     <header className="preview-header">
       <div>
-        <p>{formatBytes(previewRecord.byteLength)}</p>
+        <h2 title={previewRecord.fileName}>{previewRecord.fileName}</h2>
+        <p>{extLabel ? `${extLabel} · ` : ''}{formatBytes(previewRecord.byteLength)}</p>
       </div>
       {metaSidecar ? (
         <div className="preview-mode-switch" role="group" aria-label="Preview source">
@@ -41,12 +43,12 @@ export function PreviewHeader({
       ) : null}
       <button
         type="button"
+        className="btn btn--icon"
         aria-label={`Download ${previewRecord.fileName}`}
         title="Download file"
         onClick={() => { onDownload(previewRecord); }}
       >
-        <Download aria-hidden="true" size={18} />
-        <span>Download</span>
+        <Download aria-hidden="true" size={14} />
       </button>
     </header>
   );

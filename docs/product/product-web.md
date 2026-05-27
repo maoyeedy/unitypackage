@@ -2,7 +2,7 @@
 
 ## TLDR
 
-The web app is a simple, local-first `.unitypackage` viewer and extractor. It is for opening a package in the browser, understanding what files are inside, selecting useful files, previewing basic content, and downloading extracted ZIPs. Advanced package creation, verification, diagnostics, diffing, and forensic details belong in the CLI.
+The web app is a simple, local-first `.unitypackage` viewer and extractor. It is for opening a package in the browser, understanding what files are inside, selecting useful files, previewing basic content, and downloading extracted ZIPs.
 
 ## Product Goal
 
@@ -49,18 +49,6 @@ The web app should avoid teaching users package internals unless that knowledge 
 - PWA installability, service worker precache, file handlers, or offline app shell behavior.
 - Localization, language selection, user accounts, cloud import/export, or telemetry.
 
-## CLI Boundary
-
-The CLI is the robust and technical surface. Keep these capabilities CLI-only:
-
-- `pack`: create `.unitypackage` files from source files.
-- `verify`: expose parser and analysis diagnostics, including warnings that may not matter to a normal user.
-- `inspect`: detailed JSON/tree output for automation and debugging.
-- `diff`: package-to-package comparison.
-- Format troubleshooting, importer mismatch checks, duplicate GUID/path analysis, and strict validation modes.
-
-This split keeps the web UI low-learning-cost while preserving power tools for users who explicitly choose the CLI.
-
 ## ZIP Semantics
 
 - All ZIP means all asset files plus matching `.meta` sidecars.
@@ -85,7 +73,7 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 
 | Dependency | Why it stays |
 | --- | --- |
-| `unitypackage-core` | The web app depends on the shared parser, component-record conversion, classification, and sidecar-selection logic. This keeps browser behavior aligned with CLI/core format rules. |
+| `unitypackage-core` | The web app depends on the shared parser, component-record conversion, classification, and sidecar-selection logic. This keeps browser behavior aligned with core format rules. |
 | `react` and `react-dom` | The app is a stateful interactive browser UI with selection, filtering, preview panes, and worker-backed parsing. React remains the UI foundation. |
 | `@tanstack/react-virtual` | Large Unity packages can contain many files. Virtualized explorer rows keep browsing responsive without rendering the full tree at once. |
 | `highlight.js` | Provides lightweight, tree-shaken syntax highlighting for `.cs`, `.yaml`, and `.json` previews without heavy WASM or lazy chunks. |

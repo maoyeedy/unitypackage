@@ -1,0 +1,50 @@
+/* Statusbar: progress, file counts, error indicator */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  min-height: var(--h-statusbar);
+}
+
+.statusbar span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.statusbar-op {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+
+.status-error {
+  color: var(--text-error);
+}
+
+/* Inline stats segments (Stats.tsx renders into this) */
+.statusbar-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  color: var(--text-tertiary);
+}
+
+.statusbar-stats span {
+  white-space: nowrap;
+}
+
+.statusbar-stats strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-right: var(--space-1);
+}

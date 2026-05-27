@@ -10,6 +10,7 @@ const config: KnipConfig = {
     'apps/web': {
       entry: ['src/**/*.test.{ts,tsx}'],
       project: ['src/**/*.{ts,tsx}'],
+      ignoreDependencies: ['@fontsource-variable/inter'],
     },
   },
 };

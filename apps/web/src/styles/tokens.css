@@ -1,0 +1,96 @@
+/* Design tokens -- aligned with docs/reference/unity-dark-theme.md */
+
+:root {
+  /* Surface depth (darkest -> lightest) */
+  --bg-deepest: #0D0D0D;
+  --bg-app-bar: #191919;
+  --bg-panel: #282828;
+  --bg-input: #2A2A2A;
+  --bg-tab: #353535;
+  --bg-surface: #383838;
+  --bg-elevated: #3C3C3C;
+  --bg-titlebar: #3E3E3E;
+  --bg-alt-row: #3F3F3F;
+  --bg-control: #515151;
+  --bg-control-hover: #585858;
+  --bg-hover-control: #676767;
+  --bg-hover-light: #464646;
+  --bg-active: #505050;
+  --bg-focus: #6E6E6E;
+  --bg-pressed: #46607C;
+  --bg-hover-pressed: #4F657F;
+
+  /* Borders */
+  --border-deepest: #0D0D0D;
+  --border-app-bar: #191919;
+  --border-default: #232323;
+  --border-window: #242424;
+  --border-control: #303030;
+  --border-input-hover: #656565;
+
+  /* Text */
+  --text-primary: #D2D2D2;
+  --text-secondary: #C4C4C4;
+  --text-tertiary: #BDBDBD;
+  --text-button: #EEEEEE;
+  --text-on-selection: #FFFFFF;
+  --text-link: #4C7EFF;
+  --text-error: #D32222;
+  --text-warning: #F4BC02;
+  --text-focus: #81B4FF;
+
+  /* Selection / highlight */
+  --selection-bg: #2C5D87;
+  --selection-bg-inactive: #4D4D4D;
+  --selection-bg-hover: rgba(255, 255, 255, 0.06);
+
+  /* Focus rings */
+  --focus-ring: #3A79BB;
+  --focus-ring-bright: #7BAEFA;
+
+  /* Spacing scale */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --indent-level: 15px;
+
+  /* Control heights */
+  --h-control-sm: 16px;
+  --h-control-md: 18px;
+  --h-control-lg: 20px;
+  --h-button: 22px;
+  --h-button-lg: 28px;
+  --h-app-bar: 38px;
+  --h-statusbar: 24px;
+
+  /* Typography */
+  --font-sans: "Inter Variable", "Inter", "Verdana", "Lucida Grande", system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --fs-9: 9px;
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-14: 14px;
+  --fs-19: 19px;
+
+  /* File-kind accents (Unity product-area palette, sec 4.2) */
+  --kind-image: #80D8FF;
+  --kind-audio: #AF91F4;
+  --kind-video: #FF6E40;
+  --kind-document: #4C7EFF;
+  --kind-shader: #E78DDC;
+  --kind-code: #B2FF59;
+  --kind-data: #FFC107;
+  --kind-unity: #57AEFF;
+
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --transition-fast: 120ms ease;
+  --radius-control: 3px;
+  --radius-panel: 4px;
+  --radius-pill: 22px;
+
+  color-scheme: dark;
+}
