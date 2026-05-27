@@ -2,7 +2,7 @@
 
 ## TLDR
 
-`unitypackage-tools` is a zero-framework CLI for the full `.unitypackage` lifecycle: extract, pack (with recursive dependency resolution), inspect, verify, diff, and serve a web UI. It is the robust, automatable, technical surface complementing the web app's browse-and-extract UX. All archive parsing and creation is delegated to `unitypackage-core` (browser-safe library). The CLI itself is a thin shell of command routing, safety guards, output formatting, and filesystem I/O.
+`unitypackage-tools` is a zero-framework CLI for the full `.unitypackage` lifecycle: extract, pack (with recursive dependency resolution), inspect, verify, diff, and serve a web UI. All archive parsing and creation is delegated to `unitypackage-core` (browser-safe library). The CLI itself is a thin shell of command routing, safety guards, output formatting, and filesystem I/O.
 
 ## Product Goal
 
@@ -24,7 +24,7 @@ The CLI avoids teaching Unity project internals unless that knowledge directly h
 - **inspect**: List or tree-format display of package entries. Filter by extension or glob, exclude by glob. JSON output with component-level metadata (byte length, extension, MIME type, preview kind, syntax language, parser diagnostics). SHA-256 of raw package bytes.
 - **verify**: Structural and format health checks. Parser diagnostics, GUID/meta consistency, duplicate GUIDs, duplicate paths, case-colliding paths, unsafe pathnames, backslash pathnames, pathnames outside `Assets/`, oversized pathnames, importer mismatches, missing metas, zero-byte assets, malformed tar entries. Strict mode promotes warnings to errors.
 - **diff**: GUID-based comparison of two packages. SHA-256 hash comparison per component (asset, meta, preview). Reports added, removed, and changed entries with per-component change detail.
-- **web**: Minimal static HTTP server for the built web app. Supports `--port` and `--host`. SPA fallback routing.
+- **web**: Minimal static HTTP server for a built SPA dashboard. Supports `--port` and `--host`. SPA fallback routing.
 - **JSON mode**: All commands support `--json`. Progress and warnings always routed to stderr; stdout is always parseable in JSON mode.
 - **Safety guards**: Global `--max-output-bytes` and `--max-entries` prevent OOM/crash on oversized packages.
 - **Exit codes**: OK=0, WARN=1, ERROR=2, IO=3, BOMB=4. Typed `CliError` class.
@@ -53,7 +53,7 @@ These are genuine gaps: commonly expected CLI features that are absent but do no
 | --- | ----- |
 | **Shell auto-completion** | No completion scripts for bash, zsh, fish. Install step could generate them. |
 | **No color/ANSI output** | All output is plain text. No `--color` / `--no-color`, no syntax highlighting in terminal. |
-| **`web` is a bare server** | No browser auto-open, no request logging, no CORS headers, no HTTPS, no configurable root. Client-side routing relies entirely on the web app's own SPA fallback. |
+| **`web` is a bare server** | No browser auto-open, no request logging, no CORS headers, no HTTPS, no configurable root. Client-side routing relies entirely on SPA fallback. |
 | **No `cat` / pipe-to-stdout** | Cannot extract a single entry's asset content to stdout for piping (`unitypackage-tools cat pkg Assets/Foo.cs \| head`). |
 | **No `--quiet` flag** | Cannot suppress all human output (progress lines on stderr). Workaround: redirect stderr to `/dev/null`. |
 | **No progress bars** | TTY-aware progress bars instead of text lines (`Extract progress: wrote 100/202 file(s)`). |
@@ -61,19 +61,7 @@ These are genuine gaps: commonly expected CLI features that are absent but do no
 | **No `info` command** | A one-line quick summary without full `inspect` output. |
 | **No CI-specific output format** | No GitHub Actions annotations, GitLab CI artifacts, or Jenkins-compatible reporting. |
 | **No `pack` directory recursion with automatic mapping** | Currently requires explicit source→dest pairs or manifest. Directory input maps the folder name as the destination path segment. |
-| **No `extract` ZIP output** | Cannot extract to a `.zip` file directly (unlike the web app's Download Selected ZIP / All ZIP). |
-
-## CLI Boundary
-
-The CLI is the robust, technical, and automatable surface. These capabilities are CLI-only:
-
-- **pack**: create `.unitypackage` files from source files, including recursive dependency resolution (`--resolve-deps`, `--dep-root`, `--max-dep-depth`).
-- **verify**: expose parser and analysis diagnostics, including warnings that may not matter to a normal user.
-- **inspect**: detailed JSON/tree output for automation and debugging.
-- **diff**: package-to-package comparison.
-- **web**: serve the web UI locally.
-
-The web app is the easiest path for casual browsing and extraction. The CLI is the power-tool surface. Neither duplicates the other's primary workflows.
+| **No `extract` ZIP output** | Cannot extract to a `.zip` file directly. |
 
 ## Product Constraints
 
@@ -83,7 +71,7 @@ The web app is the easiest path for casual browsing and extraction. The CLI is t
 - Path security must prevent directory traversal attacks during extraction.
 - All archive parsing and creation logic must live in `unitypackage-core`, never directly in CLI commands.
 - Exit codes must be stable and documented. Scripts depend on them.
-- `web` command must not require a separate build step for the user. The `build:cli` pipeline pre-bundles the web assets.
+- `web` command must not require a separate build step for the user.
 
 ## Acceptance Checks
 
@@ -97,6 +85,6 @@ The web app is the easiest path for casual browsing and extraction. The CLI is t
 - `unitypackage-tools inspect pkg.unitypackage --format tree` renders a directory tree for `Assets/`.
 - `unitypackage-tools verify pkg.unitypackage --strict` exits non-zero for packages with warnings.
 - `unitypackage-tools diff a.unitypackage b.unitypackage --json` outputs parseable JSON with added/removed/changed entries.
-- `unitypackage-tools web --port 4173 --host 127.0.0.1` serves the web app and logs the URL to stdout.
+- `unitypackage-tools web --port 4173 --host 127.0.0.1` serves the built dashboard and logs the URL to stdout.
 - Safety guards (`--max-output-bytes`, `--max-entries`) stop parse-consuming commands before resource exhaustion.
 - Extracting a package with `../` traversal paths does not write files outside the output directory.
