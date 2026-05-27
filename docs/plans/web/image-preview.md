@@ -12,6 +12,14 @@ Decision record:
 
 ## Scope
 
+### Pitfalls (all phases)
+
+- **React Compiler stale closures**: Do not create temporal resources (blob URLs, worker channels, `ImageData`) during **render** (i.e. in `useMemo`, `useState` lazy initializer, or inline computation). The React Compiler's `useMemoCache` can return stale values if the component's render is discarded and re-rendered (e.g. by a parent's render-phase state update). Always create resources in `useEffect` (post-commit) and store them in state. See `ImagePreview` in `PreviewBody.tsx` for the canonical pattern: `useEffect` → create → `setState` → cleanup revokes on teardown.
+
+- **The `'use no memo'` directive must be on the same function component as the temporal resource**: putting it on a parent wrapper (e.g. `PreviewBody`) does not protect child components. Apply it directly to the component that manages the resource if you need to opt out of compiler memoization.
+
+- **Zero-byte content guard**: `!bytes` does not catch `Uint8Array(0)` (which is truthy). Use `!bytes || bytes.byteLength === 0`.
+
 ### In
 
 - Classify `tga`, `tif`, `tiff` as image types across all layers (core MIME, web preview kind, file icons)
@@ -98,14 +106,17 @@ Decision record:
 **Surface**:
 - Create `DecodedImagePreview.tsx`:
   - Receives `record: PackageFileRecord`
-  - Spawns/kills `decode-image` worker instance on mount/unmount
-  - Worker posts `{ id, bytes: getContent(record.id), extension: record.extension }`
-  - On response: creates `ImageData` from `rgba`, puts on `<canvas ref>`
+  - Spawns/kills `decode-image` worker instance in `useEffect` (not during render — see Pitfalls above)
+  - Fetch content bytes via `getContent(record.id)` inside the same effect, not in a `useMemo` or render-phase expression
+  - Worker posts `{ id, bytes, extension: record.extension }`
+  - On response: creates `ImageData` from `rgba`, puts on `<canvas ref>` — all in the same effect handler
+  - Set loading/loaded state via `setState` in the effect (suppress `set-state-in-effect` with inline comment — this is a legitimate sync of external state)
+  - Ensure worker termination and pending-response cleanup in the effect teardown function
   - Handle errors → render `NoPreview` fallback
   - Show loading state during decode
 - Update `PreviewBody.tsx`:
   - Check: if `record.previewKind === 'image' && (extension === 'tga' || 'tif' || 'tiff')` → `<DecodedImagePreview>`
-  - Otherwise → `<ImagePreview>` (existing path)
+  - Otherwise → `<ImagePreview>` (existing path using `key={record.id}` + effect-based blob URLs; do not revert to render-phase `useMemo` pattern)
 
 **Exit criteria**:
 - Clicking a `.tga` file shows decoded image on canvas

@@ -49,19 +49,20 @@ function NoPreview({ record }: { record: PackageFileRecord }) {
 
 function ImagePreview({ record }: { record: PackageFileRecord }) {
   const getContent = useContent();
-  const [blobUrl] = useState(() => {
-    const bytes = getContent(record.id);
-    if (!bytes) return '';
-    return URL.createObjectURL(new Blob([bytes], { type: record.mimeType }));
-  });
+  const [blobUrl, setBlobUrl] = useState('');
 
   useEffect(() => {
+    const bytes = getContent(record.id);
+    if (!bytes || bytes.byteLength === 0) return;
+    const url = URL.createObjectURL(new Blob([bytes], { type: record.mimeType }));
+    // Blob URL must be created post-commit (not during render) to
+    // avoid stale URL issues with React Compiler auto-memoization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBlobUrl(url);
     return () => {
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
+      URL.revokeObjectURL(url);
     };
-  }, [blobUrl]);
+  }, [record.id, getContent, record.mimeType]);
 
   if (!blobUrl) return null;
 
