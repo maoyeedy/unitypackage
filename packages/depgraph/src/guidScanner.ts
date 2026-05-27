@@ -1,4 +1,4 @@
-import { isUnityYamlBinary, isValidGuid } from 'unitypackage-core';
+import { isUnityYamlBinary } from 'unitypackage-core';
 import type { ScanResult } from './types.js';
 
 export interface ScanOptions {
@@ -17,13 +17,13 @@ const NO_REFERENCE = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.apng', '.avif', '.webp', '.svg', '.tga', '.tif', '.tiff', '.exr', '.hdr', '.psd', '.pict', '.iff',
   '.aac', '.flac', '.m4a', '.mp3', '.ogg', '.wav', '.webm', '.aif', '.aiff', '.it', '.mod', '.s3m', '.xm',
   '.m4v', '.mov', '.mp4', '.ogv', '.asf', '.avi', '.flv', '.mpeg', '.mpg', '.wmv',
-  '.cs', '.ts', '.js', '.shader', '.hlsl', '.cginc', '.compute', '.glsl', '.raytrace',
+  '.cs', '.ts', '.js', '.shader', '.hlsl', '.cginc', '.cg', '.compute', '.glsl', '.raytrace',
   '.json', '.asmdef', '.asmref', '.inputactions',
   '.css', '.uss', '.xml', '.uxml', '.html', '.md', '.txt',
   '.fbx', '.obj', '.blend', '.dae', '.3ds', '.c4d', '.ma', '.max', '.mb', '.ply', '.stl',
   '.ttf', '.otf', '.dll', '.pdb', '.so', '.a', '.exe', '.apk',
   '.zip', '.7z', '.rar', '.tar', '.gz', '.bz2', '.unitypackage', '.bundle',
-  '.cubemap', '.pdf', '.index',
+  '.cubemap', '.pdf', '.index', '.bytes', '.meta',
 ]);
 
 export { BUILT_IN_GUIDS, NO_REFERENCE };
@@ -59,10 +59,7 @@ export function scanGuids(
   PPTR_REF_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = PPTR_REF_PATTERN.exec(content)) !== null) {
-    const guid = match[1];
-    if (isValidGuid(guid)) {
-      references.add(guid);
-    }
+    references.add(match[1]);
   }
 
   if (skipBuiltin) {
