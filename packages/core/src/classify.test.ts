@@ -45,6 +45,8 @@ describe('file classification', () => {
     expect(getPreviewKindForPath('Assets/Movie.mp4')).toBe('video');
     expect(getPreviewKindForPath('Assets/Data.asset')).toBe('unsupported');
     expect(getPreviewKindForPath('Assets/Data.bytes', new Uint8Array([0, 1, 2]))).toBe('unsupported');
+    expect(getPreviewKindForPath('Assets/File.meta')).toBe('text');
+    expect(getPreviewKindForPath('Assets/File.meta', new Uint8Array([0, 1, 2]))).toBe('text');
   });
 
   describe('isUnityYamlBinary and preview kinds', () => {

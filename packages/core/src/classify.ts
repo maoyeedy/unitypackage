@@ -189,7 +189,7 @@ export function getPreviewKindForPath(pathname: string, bytes?: Uint8Array): Pre
   if (imageMimeTypes.has(extension)) return 'image';
   if (audioMimeTypes.has(extension)) return 'audio';
   if (videoMimeTypes.has(extension)) return 'video';
-  if (yamlExtensions.has(extension) || extension === 'meta') {
+  if (yamlExtensions.has(extension)) {
     return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
   }
   if (textExtensions.has(extension)) return 'text';
