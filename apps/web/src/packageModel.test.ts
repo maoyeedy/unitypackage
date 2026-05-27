@@ -30,7 +30,6 @@ import {
   getSyntaxLanguage,
   getTreeFileRecordIds,
   matchGlob,
-  matchRecord,
   parseSize,
   resolveMetaSidecarSelection,
   routeAnalysisFindings,
@@ -1457,53 +1456,6 @@ describe('package model helpers', () => {
       it('escapes regex special characters in literal parts', () => {
         expect(matchGlob('Assets/A+B.cs', 'Assets/A+B.cs')).toBe(true);
         expect(matchGlob('Assets/A+B.cs', 'Assets/AxB.cs')).toBe(false);
-      });
-    });
-
-    describe('matchRecord', () => {
-      const record = {
-        fileName: 'Player.cs',
-        virtualPath: 'Assets/Scripts/Player.cs',
-        guid: 'aaaa1111aaaa1111aaaa1111aaaa1111',
-      } as Parameters<typeof matchRecord>[0];
-
-      it('returns true for empty query', () => {
-        expect(matchRecord(record, '', 'filename', false, false)).toBe(true);
-        expect(matchRecord(record, '   ', 'path', false, false)).toBe(true);
-      });
-
-      it('filename mode matches record.fileName substring', () => {
-        expect(matchRecord(record, 'Player', 'filename', false, false)).toBe(true);
-        expect(matchRecord(record, 'Enemy', 'filename', false, false)).toBe(false);
-      });
-
-      it('path mode matches record.virtualPath substring', () => {
-        expect(matchRecord(record, 'Scripts', 'path', false, false)).toBe(true);
-        expect(matchRecord(record, 'Textures', 'path', false, false)).toBe(false);
-      });
-
-      it('guid mode matches record.guid substring', () => {
-        expect(matchRecord(record, 'aaaa1111', 'guid', false, false)).toBe(true);
-        expect(matchRecord(record, 'bbbb', 'guid', false, false)).toBe(false);
-      });
-
-      it('AND-of-terms: all terms must match', () => {
-        expect(matchRecord(record, 'Player cs', 'filename', false, false)).toBe(true);
-        expect(matchRecord(record, 'Player Enemy', 'filename', false, false)).toBe(false);
-      });
-
-      it('case-sensitive mode respects casing', () => {
-        expect(matchRecord(record, 'player', 'filename', true, false)).toBe(false);
-        expect(matchRecord(record, 'Player', 'filename', true, false)).toBe(true);
-      });
-
-      it('case-insensitive mode ignores casing', () => {
-        expect(matchRecord(record, 'PLAYER', 'filename', false, false)).toBe(true);
-      });
-
-      it('glob mode uses matchGlob against the field', () => {
-        expect(matchRecord(record, '**/*.cs', 'path', false, true)).toBe(true);
-        expect(matchRecord(record, '**/*.png', 'path', false, true)).toBe(false);
       });
     });
 

@@ -29,7 +29,6 @@ export { matchGlob, writeMetaGuid as updateMetaBytesGuid };
 export type WorkspaceMode = 'extract' | 'pack';
 export type GroupingMode = 'tree' | 'extension';
 export type RecordCategory = 'asset' | 'meta' | 'preview';
-export type FilterMatchMode = 'filename' | 'path' | 'guid';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
@@ -409,44 +408,6 @@ export function simpleMatchRecord(
       return matchGlob(term, nameField) || matchGlob(term, pathField);
     }
     return nameField.includes(term) || pathField.includes(term);
-  });
-}
-
-/**
- * Returns true when the record matches all space-separated terms in the query
- * against the active match field.
- *
- * Terms are split on whitespace. An empty query always matches.
- * When globMode is true each term is treated as a glob pattern matched against
- * the full field value. Otherwise a simple substring (or prefix-exact) test is
- * used.
- */
-export function matchRecord(
-  record: PackageFileRecord,
-  query: string,
-  mode: FilterMatchMode,
-  caseSensitive: boolean,
-  globMode: boolean,
-): boolean {
-  const rawQuery = query.trim();
-  if (!rawQuery) return true;
-
-  const terms = rawQuery.split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return true;
-
-  let fieldValue: string;
-  switch (mode) {
-    case 'filename': fieldValue = record.fileName; break;
-    case 'path':     fieldValue = record.virtualPath; break;
-    case 'guid':     fieldValue = record.guid; break;
-  }
-
-  const field = caseSensitive ? fieldValue : fieldValue.toLowerCase();
-
-  return terms.every(rawTerm => {
-    const term = caseSensitive ? rawTerm : rawTerm.toLowerCase();
-    if (globMode) return matchGlob(term, field);
-    return field.includes(term);
   });
 }
 
