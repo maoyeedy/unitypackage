@@ -2,7 +2,7 @@
 
 How `apps/web` decides what to do with each file extension. Three buckets only: **immediate**, **deferred**, **hidden**. There is no size cap. All decisions flow from `packages/core/src/classify.ts` (preview kind + syntax language) and `apps/web/src/packageModel.ts` (Unity-generated set).
 
-For icon styling, see `apps/web/src/fileIcons.ts` — single source of truth, not duplicated here.
+For icon styling, see `apps/web/src/fileIcons.ts` -- single source of truth, not duplicated here.
 
 ## Immediate -- image (`<img>` via blob URL)
 
@@ -41,7 +41,7 @@ Unity-generated YAML and `.meta`. Render only after user click. Same UX as GitHu
 
 Plain `yaml` / `yml` stay immediate (not Unity-generated).
 
-A deferred record only reaches this bucket if `isUnityYamlBinary(content)` returned `false` at parse time — i.e., the file passed the content sniff.
+A deferred record only reaches this bucket if `isUnityYamlBinary(content)` returned `false` at parse time -- i.e., the file passed the content sniff.
 
 ## Hidden -- preview area collapses; download still works
 
@@ -65,4 +65,4 @@ Filename patterns from `gitattributes.md` (`*[Tt]errain*.asset`, `*LightingData.
 
 ## Internal-only field
 
-`UnityPackageComponentRecord.mimeType` exists for download `Blob` construction in `App.tsx` and the image-preview `Blob` in `PreviewPanel.tsx`. It is **never displayed** in any UI surface — not in the header, not in the metadata panel, not in tooltips. Treat it as an internal serialization detail.
+`UnityPackageComponentRecord.mimeType` exists for download `Blob` construction in `App.tsx` and the image-preview `Blob` in `PreviewPanel.tsx`. It is **never displayed** in any UI surface -- not in the header, not in the metadata panel, not in tooltips. Treat it as an internal serialization detail.
