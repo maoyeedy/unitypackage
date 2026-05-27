@@ -48,4 +48,5 @@ Dependencies from each package's `package.json`, split by runtime vs dev. Worksp
 ## Notes
 
 - Use `/tanstack/virtual` for web explorer virtualization questions, including `useVirtualizer`, `getVirtualItems()`, `getTotalSize()`, and virtual row `index/start/size` behavior used by `apps/web/src/App.tsx`.
+- Use `/facebook/react` for React source code and implementation questions (the GitHub repo). Use `/reactjs/react.dev` for official React documentation, API references, guides, and tutorials.
 - Use `/facebook/react` for React event and hook behavior in the web app; keep browser pointer selection details grounded in current React DOM docs when changing drag selection.
