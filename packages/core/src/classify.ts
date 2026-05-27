@@ -36,6 +36,9 @@ const imageMimeTypes = new Map([
   ['avif', 'image/avif'],
   ['webp', 'image/webp'],
   ['svg', 'image/svg+xml'],
+  ['tga', 'image/x-tga'],
+  ['tif', 'image/tiff'],
+  ['tiff', 'image/tiff'],
 ]);
 
 const audioMimeTypes = new Map([

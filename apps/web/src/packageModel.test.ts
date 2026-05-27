@@ -86,6 +86,34 @@ describe('package model helpers', () => {
     });
   });
 
+  it('classifies TGA and TIFF files as image preview kinds', () => {
+    const entries: UnityPackageEntry[] = [
+      {
+        guid: '11111111111111111111111111111111',
+        pathname: 'Assets/tex.tga',
+        asset: encoder.encode('tga content'),
+      },
+      {
+        guid: '22222222222222222222222222222222',
+        pathname: 'Assets/tex.tif',
+        asset: encoder.encode('tiff content'),
+      },
+      {
+        guid: '33333333333333333333333333333333',
+        pathname: 'Assets/tex.tiff',
+        asset: encoder.encode('tiff content'),
+      },
+    ];
+
+    const records = entriesToRecords(entries, []).records;
+
+    expect(records.map(record => ({ extension: record.extension, previewKind: record.previewKind }))).toEqual([
+      { extension: 'tga', previewKind: 'image' },
+      { extension: 'tif', previewKind: 'image' },
+      { extension: 'tiff', previewKind: 'image' },
+    ]);
+  });
+
   it('filters meta records from browsing', () => {
     const records = makeRecords();
 

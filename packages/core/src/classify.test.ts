@@ -22,6 +22,9 @@ describe('file classification', () => {
   it('maps documented media and document MIME types', () => {
     expect(getMimeTypeForPath('Assets/Image.bmp')).toBe('image/bmp');
     expect(getMimeTypeForPath('Assets/Image.avif')).toBe('image/avif');
+    expect(getMimeTypeForPath('tex.tga')).toBe('image/x-tga');
+    expect(getMimeTypeForPath('tex.tif')).toBe('image/tiff');
+    expect(getMimeTypeForPath('tex.tiff')).toBe('image/tiff');
     expect(getMimeTypeForPath('Assets/Sound.flac')).toBe('audio/flac');
     expect(getMimeTypeForPath('Assets/Movie.mov')).toBe('video/quicktime');
     expect(getMimeTypeForPath('Assets/Manual.pdf')).toBe('application/pdf');
@@ -32,6 +35,7 @@ describe('file classification', () => {
   it('classifies Unity and developer files', () => {
     expect(getUnityFileCategory('Assets/Scene.unity')).toBe('unity-yaml');
     expect(getUnityFileCategory('Assets/Script.cs')).toBe('code');
+    expect(getUnityFileCategory('Assets/Image.tga')).toBe('image');
     expect(getUnityFileCategory('Assets/File.meta')).toBe('meta');
     expect(getUnityFileCategory('Assets/Data.bin')).toBe('binary');
   });

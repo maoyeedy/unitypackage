@@ -20,7 +20,7 @@ export type RecordCategory = 'asset' | 'meta';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'apng', 'avif', 'webp', 'svg']);
+const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'apng', 'avif', 'webp', 'svg', 'tga', 'tif', 'tiff']);
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'webm']);
 const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'ogv', 'webm']);
 const yamlSkipExtensions = new Set(['unity', 'prefab']);

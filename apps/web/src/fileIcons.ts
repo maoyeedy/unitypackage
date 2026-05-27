@@ -40,7 +40,7 @@ export interface FileIconDescriptor {
 
 type FileIconInput = Pick<PackageFileRecord, 'extension' | 'previewKind' | 'syntaxLanguage'>;
 
-const imageExtensions = new Set(['apng', 'avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
+const imageExtensions = new Set(['apng', 'avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp', 'tga', 'tif', 'tiff']);
 const audioExtensions = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav']);
 const videoExtensions = new Set(['m4v', 'mov', 'mp4', 'ogv']);
 const csharpExtensions = new Set(['cs']);
