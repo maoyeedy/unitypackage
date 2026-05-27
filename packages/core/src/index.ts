@@ -55,6 +55,7 @@ export {
   getSyntaxLanguageForPath,
   getUnityFileCategory,
   isUnityYamlBinary,
+  yamlExtensions,
 } from './classify';
 export type {
   UnityPackageAnalysisFinding,

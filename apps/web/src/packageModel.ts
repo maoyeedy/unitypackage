@@ -8,6 +8,7 @@ import {
   type UnityPackageEntry,
   type UnityPackageComponentRecord,
   type UnityPackageParseDiagnostic,
+  yamlExtensions,
 } from 'unitypackage-core';
 
 export type { SidecarSelectableRecord } from 'unitypackage-core';
@@ -18,13 +19,9 @@ export type RecordCategory = 'asset' | 'meta';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
-const UNITY_GENERATED_EXTENSIONS = new Set<string>([
-  'unity', 'prefab', 'asset', 'mat', 'anim', 'controller', 'overridecontroller',
-  'physicmaterial', 'physicsmaterial2d', 'playable', 'mask', 'brush', 'flare',
-  'fontsettings', 'guiskin', 'giparams', 'rendertexture', 'spriteatlas',
-  'spriteatlasv2', 'terrainlayer', 'mixer', 'shadervariants', 'preset',
-  'lighting', 'dwlt', 'vfx', 'vfxblock', 'vfxoperator', 'meta'
-]);
+const UNITY_GENERATED_EXTENSIONS = new Set<string>(
+  [...yamlExtensions, 'meta'].filter(ext => ext !== 'yaml' && ext !== 'yml')
+);
 
 export function isUnityGeneratedExtension(extension: string): boolean {
   return UNITY_GENERATED_EXTENSIONS.has(extension);
@@ -200,13 +197,6 @@ export function getExtensionFileRecordIds(groups: ExtensionGroup[]): string[] {
   return groups.flatMap(group => group.records.map(record => record.id));
 }
 
-export function getFolderRecordIds(records: PackageFileRecord[], folderPath: string): string[] {
-  const prefix = `${folderPath.replace(/\/+$/, '')}/`;
-  return records
-    .filter(record => record.virtualPath.startsWith(prefix))
-    .sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))
-    .map(record => record.id);
-}
 
 export function getRangeRecordIds(orderedIds: readonly string[], anchorId: string | null, targetId: string): string[] {
   const targetIndex = orderedIds.indexOf(targetId);
@@ -264,12 +254,13 @@ export function getSelectionState(recordIds: readonly string[], selectedIds: Rea
   return 'partial';
 }
 
-const KB = 1024, MB = KB * 1024, GB = MB * 1024;
+const KB = 1024, MB = KB * 1024, GB = MB * 1024, TB = GB * 1024;
 export function formatBytes(bytes: number): string {
   if (bytes < KB) return `${bytes} B`;
   if (bytes < MB) return `${(bytes / KB).toFixed(bytes < 10 * KB ? 1 : 0)} KB`;
   if (bytes < GB) return `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`;
-  return `${(bytes / GB).toFixed(bytes < 10 * GB ? 1 : 0)} GB`;
+  if (bytes < TB) return `${(bytes / GB).toFixed(bytes < 10 * GB ? 1 : 0)} GB`;
+  return `${(bytes / TB).toFixed(bytes < 10 * TB ? 1 : 0)} TB`;
 }
 
 export function simpleMatchRecord(record: PackageFileRecord, query: string): boolean {
