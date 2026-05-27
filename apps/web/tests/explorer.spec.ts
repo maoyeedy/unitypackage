@@ -73,6 +73,7 @@ test.describe('explorer interactions', () => {
     await expect(preview.getByRole('group', { name: 'Preview source' })).toBeVisible();
 
     await preview.getByRole('button', { name: '.meta' }).click();
+    await preview.getByRole('button', { name: 'Load preview' }).click();
     await expect(preview.locator('code')).toContainText('fileFormatVersion');
     await expect(preview.getByText('Details', { exact: true })).not.toBeVisible();
 
