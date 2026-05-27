@@ -264,12 +264,12 @@ export function getSelectionState(recordIds: readonly string[], selectedIds: Rea
   return 'partial';
 }
 
+const KB = 1024, MB = KB * 1024, GB = MB * 1024;
 export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / Math.pow(1024, index);
-  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+  if (bytes < KB) return `${bytes} B`;
+  if (bytes < MB) return `${(bytes / KB).toFixed(bytes < 10 * KB ? 1 : 0)} KB`;
+  if (bytes < GB) return `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`;
+  return `${(bytes / GB).toFixed(bytes < 10 * GB ? 1 : 0)} GB`;
 }
 
 export function simpleMatchRecord(record: PackageFileRecord, query: string): boolean {
