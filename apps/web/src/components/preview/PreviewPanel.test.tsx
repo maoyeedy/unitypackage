@@ -3,8 +3,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { PreviewPanel } from './PreviewPanel';
-import type { PackageFileRecord, SidecarSelectableRecord } from '../packageModel';
+import type { PackageFileRecord, SidecarSelectableRecord } from '../../packageModel';
 import hljs from 'highlight.js/lib/core';
+import { ContentContext } from '../../contexts/ContentContext';
 
 const encoder = new TextEncoder();
 
@@ -48,14 +49,15 @@ function renderPreviewPanel(
     return undefined;
   };
   return render(
-    <PreviewPanel
-      record={record}
-      metaSidecar={metaSidecar}
-      onDownload={onDownload}
-      onRevealInTree={onRevealInTree}
-      selectableRecords={selectableRecords}
-      getContent={getContentOverride ?? defaultGetContent}
-    />
+    <ContentContext.Provider value={getContentOverride ?? defaultGetContent}>
+      <PreviewPanel
+        record={record}
+        metaSidecar={metaSidecar}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+        selectableRecords={selectableRecords}
+      />
+    </ContentContext.Provider>
   );
 }
 
@@ -211,7 +213,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
   });
 
   it('highlights .shader files with hlsl (glsl) grammar', () => {
-    const shaderContent = 'Shader "Custom/Test" { SubShader { Pass { CGPROGRAM\\nvoid main() { gl_Position = vec4(1.0); }\\nENDCG } } }';
+    const shaderContent = 'Shader "Custom/Test" { SubShader { Pass { CGPROGRAM\nvoid main() { gl_Position = vec4(1.0); }\nENDCG } } }';
     const record = createMockRecord({
       syntaxLanguage: 'hlsl',
       pathname: 'Assets/test.shader',
@@ -231,7 +233,6 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(codeElement?.innerHTML).not.toBe(shaderContent);
     expect(codeElement?.textContent).toBe(shaderContent);
   });
-
 
   it('does not show a meta preview switch when no sidecar exists', () => {
     const record = createMockRecord({});
@@ -365,13 +366,14 @@ describe('PreviewPanel Syntax Highlighting', () => {
 
     // Re-render with record B
     rerender(
-      <PreviewPanel
-        record={recordB}
-        metaSidecar={metaB}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-        getContent={(id) => id === metaB.id ? metaB.content : recordB.content}
-      />
+      <ContentContext.Provider value={(id) => id === metaB.id ? metaB.content : recordB.content}>
+        <PreviewPanel
+          record={recordB}
+          metaSidecar={metaB}
+          onDownload={onDownload}
+          onRevealInTree={onRevealInTree}
+        />
+      </ContentContext.Provider>
     );
 
     // Should automatically reset back to asset mode
