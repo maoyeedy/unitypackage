@@ -1,6 +1,5 @@
 import { Download } from 'lucide-react';
 import { formatBytes, type PackageFileRecord } from '../../packageModel';
-import { Breadcrumb } from './Breadcrumb';
 
 interface PreviewHeaderProps {
   previewRecord: PackageFileRecord;
@@ -8,7 +7,6 @@ interface PreviewHeaderProps {
   previewMode: 'asset' | 'meta';
   setPreviewMode: (mode: 'asset' | 'meta') => void;
   onDownload: (record: PackageFileRecord) => void;
-  onRevealInTree: (recordId: string) => void;
 }
 
 export function PreviewHeader({
@@ -17,12 +15,10 @@ export function PreviewHeader({
   previewMode,
   setPreviewMode,
   onDownload,
-  onRevealInTree,
 }: PreviewHeaderProps) {
   return (
     <header className="preview-header">
       <div>
-        <Breadcrumb virtualPath={previewRecord.virtualPath} onRevealInTree={onRevealInTree} />
         <p>{formatBytes(previewRecord.byteLength)}</p>
       </div>
       {metaSidecar ? (

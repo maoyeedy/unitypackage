@@ -74,7 +74,6 @@ function PreviewPanelContent({
         previewMode={previewMode}
         setPreviewMode={setPreviewMode}
         onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
       />
       <PreviewBody record={previewRecord} />
       {previewMode === 'asset' ? (
