@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -5,11 +6,19 @@ import {
   estimateUnityPackageSize,
   generateGuid,
   guidFromPath,
+  isValidGuid,
   readMetaGuid,
   tryCreateUnityPackage,
   type CreateUnityPackageEntry,
   type CreateUnityPackageDiagnostic,
 } from 'unitypackage-core';
+import {
+  buildPathnameIndex,
+  NO_REFERENCE,
+  resolveDependencies,
+  type DepEdge,
+  type ResolveResult,
+} from 'unitypackage-depgraph';
 import { sanitizePackagePath } from '../util/path.js';
 import { safeGetStats } from '../util/fs.js';
 import { createLimiter, mapConcurrent } from '../util/concurrency.js';
@@ -21,6 +30,9 @@ export interface PackOptions {
   manifestPath?: string;
   gzipLevel?: number;
   randomGuids?: boolean;
+  resolveDeps?: boolean;
+  depRoot?: string;
+  maxDepDepth?: number;
   dryRun?: boolean;
   json?: boolean;
 }
@@ -50,6 +62,13 @@ interface PackPlanEntry {
   metaSource: EntryMeta['source'];
 }
 
+export interface ResolvedDepsResult {
+  explicitGuids: string[];
+  transitiveGuids: string[];
+  edges: DepEdge[];
+  stats: ResolveResult['stats'];
+}
+
 export interface PackResult {
   schemaVersion: 0;
   outputFile: string;
@@ -64,6 +83,7 @@ export interface PackResult {
   entries: PackPlanEntry[];
   diagnostics: CreateUnityPackageDiagnostic[];
   missingSources: string[];
+  resolvedDeps?: ResolvedDepsResult;
 }
 
 async function getExistingMeta(assetPath: string, limitRead: <T>(task: () => Promise<T>) => Promise<T>): Promise<EntryMeta | null> {
@@ -165,6 +185,51 @@ async function collectDirectoryEntries(
   return entries.flat();
 }
 
+function autoDetectRoot(explicitPaths: string[]): string | null {
+  for (const p of explicitPaths) {
+    let dir = path.dirname(path.resolve(p));
+    while (dir !== path.dirname(dir)) {
+      if (existsSync(path.join(dir, 'Assets')) && statSync(path.join(dir, 'Assets')).isDirectory()) {
+        return path.join(dir, 'Assets');
+      }
+      dir = path.dirname(dir);
+    }
+  }
+  return null;
+}
+
+function createDepEntry(
+  assetPath: string,
+  depRoot: string,
+): CreateUnityPackageEntry | null {
+  const fullAsset = path.join(depRoot, assetPath);
+  const fullMeta = fullAsset + '.meta';
+
+  if (!existsSync(fullAsset)) {
+    warn(`Dependency asset not found on disk: ${fullAsset}`);
+    return null;
+  }
+  if (!existsSync(fullMeta)) {
+    warn(`Dependency meta not found on disk: ${fullMeta}`);
+    return null;
+  }
+
+  const assetBytes = readFileSync(fullAsset);
+  const metaBytes = readFileSync(fullMeta);
+  const guid = readMetaGuid(metaBytes);
+  if (!guid || !isValidGuid(guid)) {
+    warn(`Dependency meta has no valid GUID: ${fullMeta}`);
+    return null;
+  }
+
+  return {
+    guid: guid.toLowerCase(),
+    pathname: 'Assets/' + assetPath,
+    asset: assetBytes,
+    meta: metaBytes,
+  };
+}
+
 export async function pack(filesToPack: Record<string, string>, outputFile: string, opts: PackOptions = {}): Promise<PackResult> {
   const startTime = performance.now();
   const gzipLevel = validateGzipLevel(opts.gzipLevel);
@@ -221,12 +286,80 @@ export async function pack(filesToPack: Record<string, string>, outputFile: stri
   const collectedEntries = processedEntries.flat();
   const packageEntries = collectedEntries.map(collected => collected.entry);
   const planEntries = collectedEntries.map(collected => collected.plan);
+  let resolvedDeps: ResolvedDepsResult | undefined;
+
+  if (opts.resolveDeps && packageEntries.length > 0) {
+    const sourcePaths = collectedEntries.map(e => e.plan.sourcePath);
+    let depRoot = opts.depRoot ? path.resolve(opts.depRoot) : autoDetectRoot(sourcePaths);
+    if (!depRoot) {
+      depRoot = path.resolve(process.cwd(), 'Assets');
+      warn(`Could not auto-detect Unity project root; falling back to ${depRoot}`);
+    }
+
+    progress(`Building pathname index from ${depRoot}...`);
+    const { index } = buildPathnameIndex(depRoot);
+    const explicitPaths: string[] = [];
+
+    for (const collected of collectedEntries) {
+      const e = collected.entry;
+      if (!e.asset) continue;
+      if (collected.plan.metaSource !== 'existing') continue;
+      const ext = path.extname(e.pathname).toLowerCase();
+      if (NO_REFERENCE.has(ext)) continue;
+      if (!e.pathname.startsWith('Assets/')) {
+        warn(`Cannot resolve deps for entry with non-standard pathname: ${e.pathname}`);
+        continue;
+      }
+      explicitPaths.push(e.pathname.slice(7));
+    }
+
+    if (explicitPaths.length > 0) {
+      progress(`Resolving dependencies for ${explicitPaths.length} files...`);
+      const result = resolveDependencies({
+        explicitPaths,
+        depRoot,
+        index,
+        maxDepth: opts.maxDepDepth,
+      });
+
+      for (const guid of result.transitiveGuids) {
+        const assetPath = index.get(guid);
+        if (!assetPath) continue;
+
+        const packagePath = 'Assets/' + assetPath;
+        if (packageEntries.some(e => e.pathname === packagePath)) continue;
+
+        const depEntry = createDepEntry(assetPath, depRoot);
+        if (!depEntry) continue;
+
+        const fullAssetPath = path.resolve(depRoot, assetPath);
+        packageEntries.push(depEntry);
+        planEntries.push({
+          sourcePath: fullAssetPath,
+          pathname: depEntry.pathname,
+          guid: depEntry.guid,
+          hasAsset: depEntry.asset !== undefined,
+          assetBytes: depEntry.asset?.byteLength ?? 0,
+          metaBytes: depEntry.meta.byteLength,
+          metaSource: 'existing',
+        });
+      }
+
+      resolvedDeps = {
+        explicitGuids: [...result.explicitGuids],
+        transitiveGuids: [...result.transitiveGuids],
+        edges: result.edges,
+        stats: result.stats,
+      };
+    }
+  }
+
   if (packageEntries.length > progressThreshold) {
     progress(`Pack progress: writing ${packageEntries.length} entries`);
   }
   const estimate = estimateUnityPackageSize(packageEntries);
   const result = tryCreateUnityPackage(packageEntries, { gzipLevel });
-  const packResult = createPackResult(outputFile, opts.dryRun === true, estimate, planEntries, result.diagnostics, missingSources);
+  const packResult = createPackResult(outputFile, opts.dryRun === true, estimate, planEntries, result.diagnostics, missingSources, resolvedDeps);
   if (result.bytes === null) {
     for (const diagnostic of result.diagnostics) {
       console.error(formatCreateDiagnostic(diagnostic));
@@ -258,6 +391,7 @@ function createPackResult(
   entries: PackPlanEntry[],
   diagnostics: CreateUnityPackageDiagnostic[],
   missingSources: string[],
+  resolvedDeps?: ResolvedDepsResult,
 ): PackResult {
   return {
     schemaVersion: 0,
@@ -273,6 +407,7 @@ function createPackResult(
     entries,
     diagnostics,
     missingSources,
+    resolvedDeps,
   };
 }
 
