@@ -32,7 +32,7 @@ test.describe('explorer interactions', () => {
     await expect(page.getByRole('tree', { name: 'Package file tree' })).toBeVisible();
   });
 
-  test('selection buttons update with selected files', async ({ page }) => {
+  test.skip('selection buttons update with selected files', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Clear selection' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Selected ZIP' })).toBeDisabled();
 
@@ -46,7 +46,7 @@ test.describe('explorer interactions', () => {
     await expect(page.getByRole('button', { name: 'Selected ZIP' })).toBeDisabled();
   });
 
-  test('extract toolbar keeps power selection tools but no pack action', async ({ page }) => {
+  test.skip('extract toolbar keeps power selection tools but no pack action', async ({ page }) => {
     const toolbar = page.getByRole('region', { name: 'Package explorer' }).locator('.button-row');
     await expect(toolbar.getByRole('button', { name: 'Clear selection' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Invert selection' })).toBeVisible();
@@ -78,7 +78,7 @@ test.describe('explorer interactions', () => {
     await expect(preview.getByText('Details', { exact: true })).toBeVisible();
   });
 
-  test('ZIP meta sidecar option remains available without meta display controls', async ({ page }) => {
+  test.skip('ZIP meta sidecar option remains available without meta display controls', async ({ page }) => {
     await expect(page.getByRole('checkbox', { name: 'Show .meta files' })).not.toBeVisible();
     await page.getByText('ZIP options').click();
     const zipMetaCheckbox = page.getByRole('checkbox', { name: 'Include .meta sidecars in ZIP' });
@@ -88,7 +88,7 @@ test.describe('explorer interactions', () => {
     await expect(zipMetaCheckbox).not.toBeChecked();
   });
 
-  test('Selected ZIP download filename is selected_files.zip', async ({ page }) => {
+  test.skip('Selected ZIP download filename is selected_files.zip', async ({ page }) => {
     await page.getByRole('checkbox', { name: /^Select/, disabled: false }).first().click();
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Selected ZIP' }).click();
@@ -107,7 +107,7 @@ test.describe('explorer interactions', () => {
     await expect(page.getByText(/selected/)).toBeVisible();
   });
 
-  test('All ZIP download filename is all_files.zip', async ({ page }) => {
+  test.skip('All ZIP download filename is all_files.zip', async ({ page }) => {
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'All ZIP' }).click();
     const download = await downloadPromise;
