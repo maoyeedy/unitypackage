@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, FileArchive, Locate } from 'lucide-react';
+import hljs from 'highlight.js/lib/core';
+import csharp from 'highlight.js/lib/languages/csharp';
+import yaml from 'highlight.js/lib/languages/yaml';
+import json from 'highlight.js/lib/languages/json';
 import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
   type PackageFileRecord,
 } from '../packageModel';
+
+hljs.registerLanguage('csharp', csharp);
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('json', json);
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 const TEXT_PREVIEW_LIMIT = 200_000;
@@ -123,11 +131,26 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     return textDecoder.decode(slice);
   }, [record.content]);
 
+  const highlightedHtml = useMemo(() => {
+    if (record.syntaxLanguage === 'text') return null;
+    const hasLang = !!hljs.getLanguage(record.syntaxLanguage);
+    if (!hasLang) return null;
+    try {
+      return hljs.highlight(preview, { language: record.syntaxLanguage }).value;
+    } catch {
+      return null;
+    }
+  }, [preview, record.syntaxLanguage]);
+
   const isTruncated = record.content.byteLength > TEXT_PREVIEW_LIMIT;
 
   return (
     <div className="preview-frame text-frame">
-      <pre><code>{preview}</code></pre>
+      {highlightedHtml ? (
+        <pre><code dangerouslySetInnerHTML={{ __html: highlightedHtml }} /></pre>
+      ) : (
+        <pre><code>{preview}</code></pre>
+      )}
       {isTruncated ? (
         <div className="preview-truncated">
           Showing first {formatBytes(TEXT_PREVIEW_LIMIT)} of {formatBytes(record.content.byteLength)}.

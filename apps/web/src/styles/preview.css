@@ -55,6 +55,60 @@
   overflow-wrap: anywhere;
 }
 
+/* Syntax Highlighting (VS Code Dark Theme Inspired) */
+.text-frame .hljs-comment,
+.text-frame .hljs-quote {
+  color: #6a9955;
+  font-style: italic;
+}
+
+.text-frame .hljs-keyword,
+.text-frame .hljs-selector-tag {
+  color: #569cd6;
+  font-weight: 600;
+}
+
+.text-frame .hljs-string,
+.text-frame .hljs-regexp,
+.text-frame .hljs-addition {
+  color: #ce9178;
+}
+
+.text-frame .hljs-number,
+.text-frame .hljs-literal,
+.text-frame .hljs-variable,
+.text-frame .hljs-template-variable {
+  color: #b5cea8;
+}
+
+.text-frame .hljs-title,
+.text-frame .hljs-name,
+.text-frame .hljs-section {
+  color: #dcdcaa;
+}
+
+.text-frame .hljs-type,
+.text-frame .hljs-built_in,
+.text-frame .hljs-bullet,
+.text-frame .hljs-symbol,
+.text-frame .hljs-selector-id,
+.text-frame .hljs-selector-class {
+  color: #4ec9b2;
+}
+
+.text-frame .hljs-attr,
+.text-frame .hljs-property {
+  color: #9cdcfe;
+}
+
+.text-frame .hljs-meta {
+  color: #808080;
+}
+
+.text-frame .hljs-punctuation {
+  color: var(--text);
+}
+
 .preview-truncated {
   position: sticky;
   bottom: 0;
