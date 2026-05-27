@@ -3,12 +3,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { PreviewPanel } from './PreviewPanel';
-import type { PackageFileRecord } from '../packageModel';
+import type { PackageFileRecord, SidecarSelectableRecord } from '../packageModel';
 import hljs from 'highlight.js/lib/core';
 
 const encoder = new TextEncoder();
 
-function createMockRecord(overrides: Partial<PackageFileRecord>): PackageFileRecord {
+type MockRecord = PackageFileRecord & { content: Uint8Array<ArrayBuffer> };
+
+function createMockRecord(overrides: Partial<MockRecord>): MockRecord {
   return {
     id: 'test-id',
     guid: 'test-guid-aaaaaaaaaaaaaaaaaaaaaaaa',
@@ -32,6 +34,31 @@ function createMockRecord(overrides: Partial<PackageFileRecord>): PackageFileRec
   };
 }
 
+function renderPreviewPanel(
+  record: MockRecord | null,
+  onDownload: (record: PackageFileRecord) => void,
+  onRevealInTree: (recordId: string) => void,
+  metaSidecar?: MockRecord,
+  selectableRecords?: readonly SidecarSelectableRecord[],
+  getContentOverride?: (id: string) => Uint8Array<ArrayBuffer> | undefined,
+) {
+  const defaultGetContent = (id: string) => {
+    if (metaSidecar?.id === id) return metaSidecar.content;
+    if (record?.id === id) return record.content;
+    return undefined;
+  };
+  return render(
+    <PreviewPanel
+      record={record}
+      metaSidecar={metaSidecar}
+      onDownload={onDownload}
+      onRevealInTree={onRevealInTree}
+      selectableRecords={selectableRecords}
+      getContent={getContentOverride ?? defaultGetContent}
+    />
+  );
+}
+
 describe('PreviewPanel Syntax Highlighting', () => {
   const onDownload = vi.fn();
   const onRevealInTree = vi.fn();
@@ -42,13 +69,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode('using System;\npublic class Test {}'),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -70,13 +91,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -96,13 +111,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode('using System;\npublic class Test {}'),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -124,13 +133,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(yamlContent),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -152,13 +155,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(jsonContent),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -180,13 +177,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(cssContent),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -208,13 +199,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(hlslContent),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -236,13 +221,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(shaderlabContent),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     const codeElement = container.querySelector('code');
     expect(codeElement).toBeInTheDocument();
@@ -257,13 +236,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
   it('does not show a meta preview switch when no sidecar exists', () => {
     const record = createMockRecord({});
 
-    const { queryByRole } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { queryByRole } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     expect(queryByRole('group', { name: 'Preview source' })).not.toBeInTheDocument();
   });
@@ -285,14 +258,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       hasMeta: true,
     });
 
-    const { container, getByRole, queryByText } = render(
-      <PreviewPanel
-        record={asset}
-        metaSidecar={meta}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container, getByRole, queryByText } = renderPreviewPanel(asset, onDownload, onRevealInTree, meta);
 
     expect(getByRole('group', { name: 'Preview source' })).toBeInTheDocument();
     fireEvent.click(getByRole('button', { name: '.meta' }));
@@ -309,13 +275,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode('prefab content'),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={asset}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(asset, onDownload, onRevealInTree);
 
     // Should not render any preview-frame container (no deferred button)
     expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
@@ -327,13 +287,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       content: encoder.encode(''),
     });
 
-    const { container } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     // It should not render any preview-frame container
     expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
@@ -346,13 +300,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       extension: 'cs',
     });
 
-    const { queryByText, getByText, getAllByText } = render(
-      <PreviewPanel
-        record={record}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { queryByText, getByText, getAllByText } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
     // Byte size is formatted as "1.0 KB" and should appear in the header and the details list
     const sizeElements = getAllByText(/1\.0 KB/);
@@ -404,14 +352,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
       extension: 'meta',
     });
 
-    const { getByRole, queryByText, rerender } = render(
-      <PreviewPanel
-        record={recordA}
-        metaSidecar={metaA}
-        onDownload={onDownload}
-        onRevealInTree={onRevealInTree}
-      />
-    );
+    const { getByRole, queryByText, rerender } = renderPreviewPanel(recordA, onDownload, onRevealInTree, metaA);
 
     // Should initially be in asset mode, displaying Details
     expect(getByRole('button', { name: 'Asset' })).toHaveClass('active');
@@ -429,6 +370,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
         metaSidecar={metaB}
         onDownload={onDownload}
         onRevealInTree={onRevealInTree}
+        getContent={(id) => id === metaB.id ? metaB.content : recordB.content}
       />
     );
 

@@ -47,6 +47,7 @@ import { PreviewPanel } from './components/PreviewPanel';
 
 interface ParseResult {
   records: PackageFileRecord[];
+  contents: Record<string, Uint8Array<ArrayBuffer>>;
 }
 
 interface AppErrorBoundaryState {
@@ -62,7 +63,7 @@ function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
     worker.onmessage = ({ data }: MessageEvent<ParsePackageResponse>) => {
       worker.terminate();
       if (data.type === 'success') {
-        resolve({ records: data.records });
+        resolve({ records: data.records, contents: data.contents as Record<string, Uint8Array<ArrayBuffer>> });
         return;
       }
 
@@ -87,6 +88,7 @@ function createDownloadZipInWorker(
   records: PackageFileRecord[],
   maintainStructure: boolean,
   recordIds: string[],
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined,
 ): Promise<Uint8Array | null> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./downloadZip.worker.ts', import.meta.url), {
@@ -128,7 +130,9 @@ function createDownloadZipInWorker(
         maintainStructure ? record.virtualPath : record.fileName,
         usedNames,
       );
-      const copy = new Uint8Array(record.content);
+      const bytes = getContent(record.id);
+      if (!bytes) continue;
+      const copy = new Uint8Array(bytes);
       files.push({ path, content: copy });
       transfer.push(copy.buffer);
     }
@@ -176,6 +180,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryS
 function AppContent() {
   const [groupingMode, setGroupingMode] = useState<GroupingMode>('tree');
   const [records, setRecords] = useState<PackageFileRecord[]>([]);
+  const contentStoreRef = useRef<Map<string, Uint8Array<ArrayBuffer>>>(new Map());
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set());
   const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
@@ -199,6 +204,10 @@ function AppContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [scrollToRow, setScrollToRow] = useState<{ id: string; key: number } | null>(null);
   const treeViewportRef = useRef<HTMLDivElement | null>(null);
+
+  const getContent = useCallback((recordId: string): Uint8Array<ArrayBuffer> | undefined => {
+    return contentStoreRef.current.get(recordId);
+  }, []);
 
   const completeOp = useCallback((label: string) => {
     setCurrentOp(null);
@@ -290,6 +299,7 @@ function AppContent() {
 
     try {
       const result = await parsePackageInWorker(await file.arrayBuffer());
+      contentStoreRef.current = new Map(Object.entries(result.contents));
       setRecords(result.records);
       setActiveRecordId(result.records.find(record => record.extension !== 'meta')?.id ?? null);
       completeOp(`Parsed ${result.records.length.toString()} files from ${file.name}`);
@@ -306,7 +316,7 @@ function AppContent() {
     setError(null);
     setCurrentOp('Creating ZIP');
     try {
-      const data = await createDownloadZipInWorker(records, maintainStructure, recordIds);
+      const data = await createDownloadZipInWorker(records, maintainStructure, recordIds, getContent);
       if (!data) {
         setCurrentOp(null);
         setError('No files to download.');
@@ -535,7 +545,7 @@ function AppContent() {
                 <span>Package summary</span>
               </summary>
               <div className="sidebar-disclosure-body">
-                <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} />
+                 <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} />
               </div>
             </details>
           )}
@@ -684,9 +694,13 @@ function AppContent() {
             metaSidecar={activeMetaSidecar}
             selectableRecords={sidecarSelectableRecords}
             onDownload={(record) => {
-              downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
+              const bytes = getContent(record.id);
+              if (bytes) {
+                downloadBlob(new Blob([bytes], { type: record.mimeType }), record.fileName);
+              }
             }}
             onRevealInTree={revealPathInTree}
+            getContent={getContent}
           />
         </aside>
       </section>

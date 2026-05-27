@@ -36,12 +36,14 @@ export function PreviewPanel({
   onDownload,
   onRevealInTree,
   selectableRecords,
+  getContent,
 }: {
   record: PackageFileRecord | null;
   metaSidecar?: PackageFileRecord;
   onDownload: (record: PackageFileRecord) => void;
   onRevealInTree: (recordId: string) => void;
   selectableRecords?: readonly SidecarSelectableRecord[];
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
 }) {
   if (!record) {
     return (
@@ -60,6 +62,7 @@ export function PreviewPanel({
       onDownload={onDownload}
       onRevealInTree={onRevealInTree}
       selectableRecords={selectableRecords}
+      getContent={getContent}
     />
   );
 }
@@ -70,12 +73,14 @@ function PreviewPanelContent({
   onDownload,
   onRevealInTree,
   selectableRecords,
+  getContent,
 }: {
   record: PackageFileRecord;
   metaSidecar?: PackageFileRecord;
   onDownload: (record: PackageFileRecord) => void;
   onRevealInTree: (recordId: string) => void;
   selectableRecords?: readonly SidecarSelectableRecord[];
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
 }) {
   const [previewMode, setPreviewMode] = useState<'asset' | 'meta'>('asset');
   const [prevId, setPrevId] = useState(record.id);
@@ -122,13 +127,14 @@ function PreviewPanelContent({
           <span>Download</span>
         </button>
       </header>
-      <PreviewBody record={previewRecord} />
+      <PreviewBody record={previewRecord} getContent={getContent} />
       {previewMode === 'asset' ? (
         <Metadata
           record={record}
           metaSidecar={metaSidecar}
           onRevealInTree={onRevealInTree}
           selectableRecords={selectableRecords}
+          getContent={getContent}
         />
       ) : null}
     </>
@@ -165,22 +171,40 @@ function Breadcrumb({
   );
 }
 
-function PreviewBody({ record }: { record: PackageFileRecord }) {
-  if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} />;
-  if (record.previewKind === 'text') return <TextPreview record={record} />;
+function PreviewBody({
+  record,
+  getContent,
+}: {
+  record: PackageFileRecord;
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
+}) {
+  if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} getContent={getContent} />;
+  if (record.previewKind === 'text') return <TextPreview record={record} getContent={getContent} />;
   return null;
 }
 
-function ImagePreview({ record }: { record: PackageFileRecord }) {
+function ImagePreview({
+  record,
+  getContent,
+}: {
+  record: PackageFileRecord;
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
+}) {
   const [blobUrl] = useState(() => {
-    return URL.createObjectURL(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }));
+    const bytes = getContent(record.id);
+    if (!bytes) return '';
+    return URL.createObjectURL(new Blob([bytes], { type: record.mimeType }));
   });
 
   useEffect(() => {
     return () => {
-      URL.revokeObjectURL(blobUrl);
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
     };
   }, [blobUrl]);
+
+  if (!blobUrl) return null;
 
   return (
     <div className="preview-frame image-frame">
@@ -189,9 +213,17 @@ function ImagePreview({ record }: { record: PackageFileRecord }) {
   );
 }
 
-function TextPreview({ record }: { record: PackageFileRecord }) {
+function TextPreview({
+  record,
+  getContent,
+}: {
+  record: PackageFileRecord;
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
+}) {
   // Relying on the React Compiler to optimize and memoize computations automatically.
-  const preview = textDecoder.decode(record.content);
+  const bytes = getContent(record.id);
+  if (!bytes) return null;
+  const preview = textDecoder.decode(bytes);
 
   let highlightedHtml: string | null = null;
   if (REGISTERED_LANGUAGES.has(record.syntaxLanguage)) {
@@ -218,15 +250,17 @@ function Metadata({
   metaSidecar,
   onRevealInTree,
   selectableRecords,
+  getContent,
 }: {
   record: PackageFileRecord;
   metaSidecar?: PackageFileRecord;
   onRevealInTree: (recordId: string) => void;
   selectableRecords?: readonly SidecarSelectableRecord[];
+  getContent: (id: string) => Uint8Array<ArrayBuffer> | undefined;
 }) {
   const declaredMetaInfo = useMemo(
-    () => getDeclaredMetaInfoForRecord(metaSidecar ? [record, metaSidecar] : [record], record, selectableRecords),
-    [metaSidecar, record, selectableRecords],
+    () => getDeclaredMetaInfoForRecord(metaSidecar ? [record, metaSidecar] : [record], record, getContent, selectableRecords),
+    [metaSidecar, record, getContent, selectableRecords],
   );
   const rows: [string, string][] = [
     ['Path', record.virtualPath],
