@@ -136,6 +136,91 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(codeElement?.textContent).toBe(jsonContent);
   });
 
+  it('smoke test for css highlighting does not crash and alters output', () => {
+    const cssContent = '.button { color: red; }';
+    const record = createMockRecord({
+      syntaxLanguage: 'css',
+      pathname: 'Assets/style.css',
+      virtualPath: 'Assets/style.css',
+      fileName: 'style.css',
+      extension: 'css',
+      content: encoder.encode(cssContent),
+    });
+
+    const { container } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    const codeElement = container.querySelector('code');
+    expect(codeElement).toBeInTheDocument();
+
+    const spans = codeElement?.querySelectorAll('span');
+    expect(spans?.length).toBeGreaterThan(0);
+    expect(codeElement?.innerHTML).not.toBe(cssContent);
+    expect(codeElement?.textContent).toBe(cssContent);
+  });
+
+  it('smoke test for hlsl highlighting does not crash and alters output', () => {
+    const hlslContent = 'void main() { gl_Position = vec4(1.0); }';
+    const record = createMockRecord({
+      syntaxLanguage: 'hlsl',
+      pathname: 'Assets/shader.compute',
+      virtualPath: 'Assets/shader.compute',
+      fileName: 'shader.compute',
+      extension: 'compute',
+      content: encoder.encode(hlslContent),
+    });
+
+    const { container } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    const codeElement = container.querySelector('code');
+    expect(codeElement).toBeInTheDocument();
+
+    const spans = codeElement?.querySelectorAll('span');
+    expect(spans?.length).toBeGreaterThan(0);
+    expect(codeElement?.innerHTML).not.toBe(hlslContent);
+    expect(codeElement?.textContent).toBe(hlslContent);
+  });
+
+  it('renders unregistered shaderlab language as plain text without highlights', () => {
+    const shaderlabContent = 'Shader "Custom/Test" { SubShader { Pass {} } }';
+    const record = createMockRecord({
+      syntaxLanguage: 'shaderlab',
+      pathname: 'Assets/test.shader',
+      virtualPath: 'Assets/test.shader',
+      fileName: 'test.shader',
+      extension: 'shader',
+      content: encoder.encode(shaderlabContent),
+    });
+
+    const { container } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    const codeElement = container.querySelector('code');
+    expect(codeElement).toBeInTheDocument();
+
+    const spans = codeElement?.querySelectorAll('span');
+    expect(spans?.length).toBe(0);
+    expect(codeElement?.innerHTML).not.toContain('<span');
+    expect(codeElement?.textContent).toBe(shaderlabContent);
+  });
+
+
   it('does not show a meta preview switch when no sidecar exists', () => {
     const record = createMockRecord({});
 

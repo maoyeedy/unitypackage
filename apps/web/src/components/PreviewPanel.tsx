@@ -4,6 +4,9 @@ import hljs from 'highlight.js/lib/core';
 import csharp from 'highlight.js/lib/languages/csharp';
 import yaml from 'highlight.js/lib/languages/yaml';
 import json from 'highlight.js/lib/languages/json';
+import css from 'highlight.js/lib/languages/css';
+import glsl from 'highlight.js/lib/languages/glsl';
+import type { SyntaxLanguage } from 'unitypackage-core';
 import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
@@ -14,6 +17,18 @@ import {
 hljs.registerLanguage('csharp', csharp);
 hljs.registerLanguage('yaml', yaml);
 hljs.registerLanguage('json', json);
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('glsl', glsl);
+hljs.registerLanguage('hlsl', glsl);
+
+const REGISTERED_LANGUAGES = new Set<SyntaxLanguage>([
+  'csharp',
+  'yaml',
+  'json',
+  'css',
+  'hlsl',
+  'glsl',
+]);
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -182,14 +197,10 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
   }, [record.content]);
 
   const highlightedHtml = useMemo(() => {
-    if (record.syntaxLanguage === 'text') return null;
-    const hasLang = !!hljs.getLanguage(record.syntaxLanguage);
-    if (!hasLang) return null;
-    try {
-      return hljs.highlight(preview, { language: record.syntaxLanguage }).value;
-    } catch {
+    if (!REGISTERED_LANGUAGES.has(record.syntaxLanguage)) {
       return null;
     }
+    return hljs.highlight(preview, { language: record.syntaxLanguage }).value;
   }, [preview, record.syntaxLanguage]);
 
   return (
