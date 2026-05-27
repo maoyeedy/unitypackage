@@ -266,7 +266,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
 
     // Meta is now immediate text preview (no deferred "Load preview" button)
     expect(container.querySelector('code')?.textContent).toContain('MonoImporter');
-    expect(queryByText('Details')).not.toBeInTheDocument();
+    expect(queryByText('Details')).toBeInTheDocument();
   });
 
   it('shows a no-preview frame for Unity-generated YAML extensions', () => {
@@ -380,7 +380,7 @@ describe('PreviewPanel Syntax Highlighting', () => {
     // Toggle to meta mode
     fireEvent.click(getByRole('button', { name: '.meta' }));
     expect(getByRole('button', { name: '.meta' })).toHaveClass('active');
-    expect(queryByText('Details')).not.toBeInTheDocument();
+    expect(queryByText('Details')).toBeInTheDocument();
 
     // Re-render with record B
     rerender(

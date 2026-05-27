@@ -64,26 +64,22 @@ function PreviewPanelContent({
     }
   }
 
-  const previewRecord = previewMode === 'meta' && metaSidecar ? metaSidecar : record;
-
   return (
     <>
       <PreviewHeader
-        previewRecord={previewRecord}
+        previewRecord={record}
         metaSidecar={metaSidecar}
         previewMode={previewMode}
         setPreviewMode={setPreviewMode}
         onDownload={onDownload}
       />
-      <PreviewBody record={previewRecord} />
-      {previewMode === 'asset' ? (
-        <Metadata
-          record={record}
-          metaSidecar={metaSidecar}
-          onRevealInTree={onRevealInTree}
-          selectableRecords={selectableRecords}
-        />
-      ) : null}
+      <PreviewBody record={previewMode === 'meta' && metaSidecar ? metaSidecar : record} />
+      <Metadata
+        record={record}
+        metaSidecar={metaSidecar}
+        onRevealInTree={onRevealInTree}
+        selectableRecords={selectableRecords}
+      />
     </>
   );
 }

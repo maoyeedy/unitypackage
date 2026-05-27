@@ -29,6 +29,7 @@ The web app should avoid teaching users package internals unless that knowledge 
 - Download Selected ZIP and All ZIP.
 - Include matching `.meta` sidecars in ZIP output by default for selected assets and all-assets extraction.
 - Keep `.meta` rows hidden from browsing. Let users inspect a selected file's `.meta` sidecar from the preview pane when one exists.
+  - The **Asset/.meta** switch only toggles preview content. Filesize, download, and the Details section always reflect the asset, never the sidecar.
 - Hide Unity-generated `preview.png` package records from the web UI and ZIP extraction.
 - Show simple statusbar progress, completion, and fatal errors.
 - Keep UI dense, quiet, and utility-focused for repeated package inspection.
@@ -107,5 +108,5 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 - A user can open `Polytope_URP.unitypackage`, browse the tree, search for `Ground_Layer_01.terrainlayer`, select it, and download `selected_files.zip`.
 - `selected_files.zip` contains the selected asset and its `.meta` sidecar.
 - Searching `.preview.png` returns no visible files.
-- `.meta` files are hidden from browsing, and a selected asset with a sidecar exposes a `.meta` preview switch.
+- `.meta` files are hidden from browsing, and a selected asset with a sidecar exposes a `.meta` preview switch that toggles preview content only (filesize, download, and Details stay asset-side).
 - No Pack, Diagnostics, or PWA install UI is visible.
