@@ -7,6 +7,7 @@ import json from 'highlight.js/lib/languages/json';
 import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
+  isUnityGeneratedExtension,
   type PackageFileRecord,
 } from '../packageModel';
 
@@ -15,7 +16,6 @@ hljs.registerLanguage('yaml', yaml);
 hljs.registerLanguage('json', json);
 
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
-const TEXT_PREVIEW_LIMIT = 200_000;
 
 export function PreviewPanel({
   record,
@@ -137,19 +137,23 @@ function Breadcrumb({
 }
 
 function PreviewBody({ record }: { record: PackageFileRecord }) {
-  if (record.previewKind === 'image') {
-    return <ImagePreview key={record.id} record={record} />;
-  }
-
+  if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} />;
   if (record.previewKind === 'text') {
+    if (isUnityGeneratedExtension(record.extension)) {
+      return <DeferredTextPreview key={record.id} record={record} />;
+    }
     return <TextPreview record={record} />;
   }
+  return null;
+}
 
+function DeferredTextPreview({ record }: { record: PackageFileRecord }) {
+  const [loaded, setLoaded] = useState(false);
+  if (loaded) return <TextPreview record={record} />;
   return (
-    <div className="preview-frame unsupported-frame">
-      <FileArchive aria-hidden="true" size={34} />
-      <h3>Preview unavailable</h3>
-      <p>This file can still be downloaded or included in ZIP extraction.</p>
+    <div className="preview-frame deferred-frame">
+      <p>Unity-generated asset ({formatBytes(record.byteLength)})</p>
+      <button type="button" onClick={() => setLoaded(true)}>Load preview</button>
     </div>
   );
 }
@@ -174,8 +178,7 @@ function ImagePreview({ record }: { record: PackageFileRecord }) {
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
   const preview = useMemo(() => {
-    const slice = record.content.slice(0, TEXT_PREVIEW_LIMIT);
-    return textDecoder.decode(slice);
+    return textDecoder.decode(record.content);
   }, [record.content]);
 
   const highlightedHtml = useMemo(() => {
@@ -189,8 +192,6 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
     }
   }, [preview, record.syntaxLanguage]);
 
-  const isTruncated = record.content.byteLength > TEXT_PREVIEW_LIMIT;
-
   return (
     <div className="preview-frame text-frame">
       {highlightedHtml ? (
@@ -198,11 +199,6 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
       ) : (
         <pre><code>{preview}</code></pre>
       )}
-      {isTruncated ? (
-        <div className="preview-truncated">
-          Showing first {formatBytes(TEXT_PREVIEW_LIMIT)} of {formatBytes(record.content.byteLength)}.
-        </div>
-      ) : null}
     </div>
   );
 }

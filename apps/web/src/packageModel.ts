@@ -18,6 +18,18 @@ export type RecordCategory = 'asset' | 'meta';
 export type SortKey = 'name' | 'size' | 'extension' | 'guid';
 export type SortDirection = 'asc' | 'desc';
 
+const UNITY_GENERATED_EXTENSIONS = new Set<string>([
+  'unity', 'prefab', 'asset', 'mat', 'anim', 'controller', 'overridecontroller',
+  'physicmaterial', 'physicsmaterial2d', 'playable', 'mask', 'brush', 'flare',
+  'fontsettings', 'guiskin', 'giparams', 'rendertexture', 'spriteatlas',
+  'spriteatlasv2', 'terrainlayer', 'mixer', 'shadervariants', 'preset',
+  'lighting', 'dwlt', 'vfx', 'vfxblock', 'vfxoperator', 'meta'
+]);
+
+export function isUnityGeneratedExtension(extension: string): boolean {
+  return UNITY_GENERATED_EXTENSIONS.has(extension);
+}
+
 export interface PackageFileRecord extends UnityPackageComponentRecord {
   fileName: string;
   isUnityPreview: false;

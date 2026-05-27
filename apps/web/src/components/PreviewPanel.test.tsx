@@ -178,7 +178,74 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(getByRole('group', { name: 'Preview source' })).toBeInTheDocument();
     fireEvent.click(getByRole('button', { name: '.meta' }));
 
+    // Click the "Load preview" button since .meta is deferred.
+    fireEvent.click(getByRole('button', { name: 'Load preview' }));
+
     expect(container.querySelector('code')?.textContent).toContain('MonoImporter');
     expect(queryByText('Details')).not.toBeInTheDocument();
+  });
+
+  it('renders deferred preview for Unity-generated assets and resets on selection change', () => {
+    const asset1 = createMockRecord({
+      id: 'asset-1',
+      extension: 'prefab',
+      previewKind: 'text',
+      content: encoder.encode('prefab content 1'),
+    });
+    const asset2 = createMockRecord({
+      id: 'asset-2',
+      extension: 'prefab',
+      previewKind: 'text',
+      content: encoder.encode('prefab content 2'),
+    });
+
+    const { getByRole, container, rerender } = render(
+      <PreviewPanel
+        record={asset1}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // Should show the load button, not the code preview content
+    expect(getByRole('button', { name: 'Load preview' })).toBeInTheDocument();
+    expect(container.querySelector('code')).not.toBeInTheDocument();
+
+    // Click load
+    fireEvent.click(getByRole('button', { name: 'Load preview' }));
+
+    // Code preview should be visible now
+    expect(container.querySelector('code')?.textContent).toBe('prefab content 1');
+
+    // Rerender with asset2
+    rerender(
+      <PreviewPanel
+        record={asset2}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // Selection changed: state should reset back to deferred (showing load button, no code content)
+    expect(getByRole('button', { name: 'Load preview' })).toBeInTheDocument();
+    expect(container.querySelector('code')).not.toBeInTheDocument();
+  });
+
+  it('collapses preview body entirely (returns null) for unsupported preview kind', () => {
+    const record = createMockRecord({
+      previewKind: 'unsupported',
+      content: encoder.encode(''),
+    });
+
+    const { container } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // It should not render any preview-frame container
+    expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
   });
 });
