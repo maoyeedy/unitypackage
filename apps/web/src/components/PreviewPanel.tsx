@@ -192,9 +192,7 @@ function ImagePreview({ record }: { record: PackageFileRecord }) {
 }
 
 function TextPreview({ record }: { record: PackageFileRecord }) {
-  const preview = useMemo(() => {
-    return textDecoder.decode(record.content);
-  }, [record.content]);
+  const preview = textDecoder.decode(record.content);
 
   const highlightedHtml = useMemo(() => {
     if (!REGISTERED_LANGUAGES.has(record.syntaxLanguage)) {
