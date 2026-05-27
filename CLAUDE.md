@@ -64,7 +64,9 @@ All contexts (dev, CI, published): Node ≥24.
 - **TanStack Virtual + React Compiler**: components that call `useVirtualizerCompat` need a local `'use no memo'` directive. Hiding `useVirtualizer` behind a custom hook removes lint noise, but component-level compiler opt-out is required or virtual rows can fail to render in E2E.
 - **Web `PackageFileRecord` has no `kind`**: web drops Unity preview records during `entriesToRecords`; use `extension` or `getRecordCategory(record)` for asset/meta discrimination. Do not reintroduce `kind`. Extension is authoritative.
 - **Tar entry names**: 100-byte limit, format `<guid>/pathname`. GUID is 32 chars.
-- **`highlight.js` usage**: Import and register languages explicitly from core (`highlight.js/lib/core`, e.g. `csharp`, `yaml`, `json`). Do not import the main entry point to keep the bundle small.
+- **`highlight.js` usage**: Import and register languages explicitly from core (`highlight.js/lib/core`). Registered set: `csharp`, `yaml`, `json`, `css`, `glsl` (also aliased to `hlsl` since highlight.js has no first-party HLSL grammar). Do not import the main entry point — keeps the bundle small. Anything not in the registered set renders as plain `<pre><code>` via a `Set.has` short-circuit.
+- **Web preview tri-state**: `PreviewBody` routes into immediate / deferred / hidden. Immediate covers image + plain code, no size cap. Deferred shows a "Load preview" button for Unity-generated YAML (set in `apps/web/src/packageModel.ts` as `UNITY_GENERATED_EXTENSIONS`) plus `.meta`, gated GitHub-linguist-generated style. Hidden returns `null` from `PreviewBody` so the frame collapses; this covers `previewKind === 'unsupported'`, audio/video/pdf (not rendered), and YAML-ext files that fail the content sniff. Source of truth: `docs/reference/extension-map.md`.
+- **`isUnityYamlBinary` (core)**: content-based detector for Unity YAML payloads, exported from `unitypackage-core`. Combines `%YAML` magic-byte check with a head+tail line-length scan (32 KB windows, 2048-byte max line). Catches both Force-Binary `.asset` (no header) and Force-Text assets that embed binary blobs as long hex/base64 lines (TMP SDF fonts, shader variants, lightmaps). Filename patterns from `gitattributes.md` are not used.
 - **Do not hand-edit** `packages/cli/assets/web/` — populated from `apps/web/dist` by `build:cli`.
 
 ## Pitfalls
@@ -78,6 +80,8 @@ All contexts (dev, CI, published): Node ≥24.
 - **Generated fixtures**: `binary`, `duplicate-guid`, `legacy-metadata`, `minimal`, `nested`, `traversal`, `truncated`. Static fixtures cover common Unity file types. Archive: `fixtures/static/archives/Polytope_URP.unitypackage`.
 - **React effect state**: `react-hooks/set-state-in-effect` is enabled via the React Hooks recommended config. Do not use effects for derived-state or prop-change resets; derive during render or remount keyed children. Keep effects for external sync, subscriptions, timers, async callbacks, and cleanup.
 - **`bun run test` runs all 3 vitest projects in parallel** via `vitest run` at root (~2.8s). Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
+- **Force-Text YAML may embed binary**: Unity's Force-Text serialization writes a `%YAML` header but inlines large binary payloads (texture pixels, font glyph atlases, lightmap data, shader variants, terrain heightmaps) as one very long hex/base64 line. A naive `%YAML` magic check is not enough; use `isUnityYamlBinary` from core. Counter-example fixture: `LiberationSans SDF.asset` (text YAML header, 2-million-char glyph atlas line — must be hidden).
+- **`fixtures/temp` is git-ignored**: per `~/.config/git/ignore` (`temp/`). Local-only fixtures for classify validation; tests that read it must use `describe.skipIf(!existsSync(tempDir))` (mirroring `meta.test.ts` `URL` + `readFileSync` pattern) so CI stays green when the dir is absent.
 
 ## Testing
 

@@ -1,106 +1,68 @@
-# File tree icon mapping
+# File preview behavior
 
-## Image
+How `apps/web` decides what to do with each file extension. Three buckets only: **immediate**, **deferred**, **hidden**. There is no size cap. All decisions flow from `packages/core/src/classify.ts` (preview kind + syntax language) and `apps/web/src/packageModel.ts` (Unity-generated set).
 
-| Extension              | MIME type           |
-|------------------------|---------------------|
-| png                    | image/png           |
-| jpg, jpeg              | image/jpeg          |
-| gif                    | image/gif           |
-| bmp                    | image/bmp           |
-| apng                   | image/apng          |
-| avif                   | image/avif          |
-| webp                   | image/webp          |
-| svg                    | image/svg+xml       |
+For icon styling, see `apps/web/src/fileIcons.ts` — single source of truth, not duplicated here.
 
-## Audio
+## Immediate -- image (`<img>` via blob URL)
 
-| Extension                          | MIME type           |
-|------------------------------------|---------------------|
-| aac                                | audio/aac           |
-| flac                               | audio/flac          |
-| m4a                                | audio/mp4           |
-| mp3                                | audio/mpeg          |
-| ogg                                | audio/ogg           |
-| wav                                | audio/wav           |
-| webm                               | audio/webm          |
+| Extension | MIME (internal) |
+|-----------|-----------------|
+| png       | image/png       |
+| jpg, jpeg | image/jpeg      |
+| gif       | image/gif       |
+| bmp       | image/bmp       |
+| apng      | image/apng      |
+| avif      | image/avif      |
+| webp      | image/webp      |
+| svg       | image/svg+xml   |
 
-## Video
+## Immediate -- code (`<pre><code>`, full content, no size cap)
 
-| Extension              | MIME type           |
-|------------------------|---------------------|
-| m4v                    | video/mp4           |
-| mov                    | video/quicktime     |
-| mp4                    | video/mp4           |
-| ogv                    | video/ogg           |
-| webm                   | video/webm          |
+Syntax-highlighted by `highlight.js`:
 
-## PDF
+| Extension(s) | Grammar |
+|---|---|
+| `cs` | csharp |
+| `yaml`, `yml` | yaml |
+| `json`, `asmdef`, `asmref`, `inputactions`, `shadergraph`, `shadersubgraph` | json |
+| `css`, `uss`, `tss` | css |
+| `hlsl`, `cginc`, `compute` | glsl (HLSL has no first-party grammar; GLSL is close enough) |
 
-| Extension | MIME type        |
-|-----------|------------------|
-| pdf       | application/pdf  |
+Plain `<pre><code>` (no highlight pass — registered-language `Set.has` short-circuit):
 
-## Code / developer files
+`shader` (ShaderLab), `glsl`, `md`, `txt`, `html`, `xml`, `uxml`, `ts`, `tsx`, `js`, `jsx`.
 
-| Extension                                | Notes                  |
-|------------------------------------------|------------------------|
-| cs                                       | C#                     |
-| ts, tsx                                  | TypeScript             |
-| js, jsx                                  | JavaScript             |
-| shader                                   | ShaderLab              |
-| hlsl, cginc, compute                     | HLSL                   |
-| glsl                                     | GLSL                   |
-| css, uss, tss                            | CSS                    |
-| json, asmdef, asmref, inputactions, shadergraph, shadersubgraph | JSON  |
-| xml, uxml                                | XML / UXML             |
-| html                                     | HTML                   |
+## Deferred -- "Load preview" button
 
-## Unity YAML assets
+Unity-generated YAML and `.meta`. Render only after user click. Same UX as GitHub's linguist-generated diff gate. Set lives in `apps/web/src/packageModel.ts` as `UNITY_GENERATED_EXTENSIONS`:
 
-| Extension         | Notes                        |
-|-------------------|------------------------------|
-| unity             | Scene                        |
-| prefab            | Prefab                       |
-| asset             | ScriptableObject / generic   |
-| mat               | Material                     |
-| anim              | Animation clip               |
-| controller        | Animator controller          |
-| overridecontroller| Animator override controller |
-| physicmaterial    | Physic material              |
-| physicsmaterial2d | Physics material 2D          |
-| playable          | Playable asset               |
-| mask              | Mask                         |
-| brush             | Brush                        |
-| flare             | Flare                        |
-| fontsettings      | Font settings                |
-| guiskin           | GUI skin                     |
-| giparams          | GI parameters                |
-| rendertexture     | Render texture               |
-| spriteatlas       | Sprite atlas                 |
-| spriteatlasv2     | Sprite atlas v2              |
-| terrainlayer      | Terrain layer                |
-| mixer             | Audio mixer                  |
-| shadervariants    | Shader variants              |
-| preset            | Preset                       |
-| lighting          | Lighting settings            |
-| dwlt              | DWL tag (Editor internals)   |
-| vfx, vfxblock, vfxoperator | VFX Graph asset    |
-| yaml, yml         | Raw YAML                     |
+`unity`, `prefab`, `asset`, `mat`, `anim`, `controller`, `overridecontroller`, `physicmaterial`, `physicsmaterial2d`, `playable`, `mask`, `brush`, `flare`, `fontsettings`, `guiskin`, `giparams`, `rendertexture`, `spriteatlas`, `spriteatlasv2`, `terrainlayer`, `mixer`, `shadervariants`, `preset`, `lighting`, `dwlt`, `vfx`, `vfxblock`, `vfxoperator`, `meta`.
 
-## Meta
+Plain `yaml` / `yml` stay immediate (not Unity-generated).
 
-| Extension | Notes                                    |
-|-----------|------------------------------------------|
-| meta      | Unity meta (same icon as YAML assets)    |
+A deferred record only reaches this bucket if `isUnityYamlBinary(content)` returned `false` at parse time — i.e., the file passed the content sniff.
 
-## Documents
+## Hidden -- preview area collapses; download still works
 
-| Extension | MIME type        |
-|-----------|------------------|
-| md        | text/markdown    |
-| txt       | text/plain       |
+The preview frame returns `null`. Header (breadcrumb + size + download) and metadata (Path, GUID, Size, optional Meta GUID + Importer) remain.
 
-## Fallback
+Three reasons a file lands here:
 
-Any extension not listed above maps to a generic binary icon.
+1. **YAML-extension file fails `isUnityYamlBinary`.** This is the important case. The check is **content-based, not filename-based**:
+   - Magic test: first five bytes must be `%YAML`. Catches Force-Binary `.asset` (terrain heightmaps, lightmap data, navmesh, occlusion) where the file has no YAML header.
+   - Head + tail line-length scan: in the first 32 KB and last 32 KB, no line may exceed 2048 bytes. Catches **Force-Text serialized assets that embed binary as a long hex/base64 line**: TextMeshPro SDF fonts (glyph atlas), shader variants, baked sprite atlases, etc.
+   - O(64 KB) per file regardless of total size.
+2. **Browser-non-native binary extensions.** From `docs/reference/gitattributes.md`'s LFS list: `ttf`, `otf`, `fbx`, `obj`, `blend`, `3ds`, `dae`, `dll`, `pdb`, `so`, `a`, `exe`, `apk`, `zip`, `7z`, `rar`, `tar`, `gz`, `bz2`, `unitypackage`, `bundle`, `cubemap`, audio LFS extensions, video LFS extensions, fonts. `PreviewBody` only renders image and text; everything else is hidden.
+3. **`previewKind` is `audio`, `video`, or `pdf`.** These kinds are still computed (icons use them) but `PreviewBody` does not render them. Documented limitation, not a current target.
+
+### Counter-examples worth remembering
+
+Filename patterns from `gitattributes.md` (`*[Tt]errain*.asset`, `*LightingData.asset`, `*SDF.asset`, etc.) are **not** how this code decides. Two real samples from `fixtures/temp` that prove it:
+
+- `LiberationSans SDF.asset` (2.2 MB, TextMeshPro font) -- starts with `%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:` (would pass a naive magic check). But the file has lines of 48..88 chars plus **one line of 2,097,169 chars** (the entire glyph atlas hex-encoded). The line-length scan returns true -> **hidden**.
+- `Terrainstamp_Canyon01_Brush.brush` (1 KB) -- name contains "Terrain" (would match a `*[Tt]errain*` filename rule). Content is pure short-line YAML. `isUnityYamlBinary` returns false -> **deferred (previewable)**.
+
+## Internal-only field
+
+`UnityPackageComponentRecord.mimeType` exists for download `Blob` construction in `App.tsx` and the image-preview `Blob` in `PreviewPanel.tsx`. It is **never displayed** in any UI surface — not in the header, not in the metadata panel, not in tooltips. Treat it as an internal serialization detail.
