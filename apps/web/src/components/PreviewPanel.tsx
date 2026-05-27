@@ -12,6 +12,7 @@ import {
   formatBytes,
   getDeclaredMetaInfoForRecord,
   type PackageFileRecord,
+  type SidecarSelectableRecord,
 } from '../packageModel';
 
 const LANGUAGES: [SyntaxLanguage, LanguageFn][] = [
@@ -34,11 +35,13 @@ export function PreviewPanel({
   metaSidecar,
   onDownload,
   onRevealInTree,
+  selectableRecords,
 }: {
   record: PackageFileRecord | null;
   metaSidecar?: PackageFileRecord;
   onDownload: (record: PackageFileRecord) => void;
   onRevealInTree: (recordId: string) => void;
+  selectableRecords?: readonly SidecarSelectableRecord[];
 }) {
   if (!record) {
     return (
@@ -52,11 +55,11 @@ export function PreviewPanel({
 
   return (
     <PreviewPanelContent
-      key={record.id}
       record={record}
       metaSidecar={metaSidecar}
       onDownload={onDownload}
       onRevealInTree={onRevealInTree}
+      selectableRecords={selectableRecords}
     />
   );
 }
@@ -66,13 +69,22 @@ function PreviewPanelContent({
   metaSidecar,
   onDownload,
   onRevealInTree,
+  selectableRecords,
 }: {
   record: PackageFileRecord;
   metaSidecar?: PackageFileRecord;
   onDownload: (record: PackageFileRecord) => void;
   onRevealInTree: (recordId: string) => void;
+  selectableRecords?: readonly SidecarSelectableRecord[];
 }) {
   const [previewMode, setPreviewMode] = useState<'asset' | 'meta'>('asset');
+  const [prevId, setPrevId] = useState(record.id);
+  if (record.id !== prevId) {
+    setPrevId(record.id);
+    if (previewMode !== 'asset') {
+      setPreviewMode('asset');
+    }
+  }
   const previewRecord = previewMode === 'meta' && metaSidecar ? metaSidecar : record;
 
   return (
@@ -112,7 +124,12 @@ function PreviewPanelContent({
       </header>
       <PreviewBody record={previewRecord} />
       {previewMode === 'asset' ? (
-        <Metadata record={record} metaSidecar={metaSidecar} onRevealInTree={onRevealInTree} />
+        <Metadata
+          record={record}
+          metaSidecar={metaSidecar}
+          onRevealInTree={onRevealInTree}
+          selectableRecords={selectableRecords}
+        />
       ) : null}
     </>
   );
@@ -200,14 +217,16 @@ function Metadata({
   record,
   metaSidecar,
   onRevealInTree,
+  selectableRecords,
 }: {
   record: PackageFileRecord;
   metaSidecar?: PackageFileRecord;
   onRevealInTree: (recordId: string) => void;
+  selectableRecords?: readonly SidecarSelectableRecord[];
 }) {
   const declaredMetaInfo = useMemo(
-    () => getDeclaredMetaInfoForRecord(metaSidecar ? [record, metaSidecar] : [record], record),
-    [metaSidecar, record],
+    () => getDeclaredMetaInfoForRecord(metaSidecar ? [record, metaSidecar] : [record], record, selectableRecords),
+    [metaSidecar, record, selectableRecords],
   );
   const rows: [string, string][] = [
     ['Path', record.virtualPath],

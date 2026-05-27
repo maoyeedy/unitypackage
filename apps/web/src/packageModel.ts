@@ -355,23 +355,25 @@ export function sortRecords(
 }
 
 function getSiblingMetaRecord(
-  records: PackageFileRecord[],
+  records: readonly PackageFileRecord[],
   record: PackageFileRecord,
+  selectableRecords?: readonly SidecarSelectableRecord[],
 ): PackageFileRecord | undefined {
-  return getMetaSidecarForAsset(records, record);
+  return getMetaSidecarForAsset(records, record, selectableRecords);
 }
 
 export function getMetaSidecarForAsset(
   records: readonly PackageFileRecord[],
   record: PackageFileRecord,
+  selectableRecords?: readonly SidecarSelectableRecord[],
 ): PackageFileRecord | undefined {
   if (record.extension === 'meta') return undefined;
 
-  const selectableRecords = toSidecarSelectableRecords(records);
-  const selectableAsset = selectableRecords.find(candidate => candidate.id === record.id);
+  const selectable = selectableRecords ?? toSidecarSelectableRecords(records);
+  const selectableAsset = selectable.find(candidate => candidate.id === record.id);
   if (!selectableAsset) return undefined;
 
-  const selectableMeta = findCoreMetaSidecarForAsset(selectableRecords, selectableAsset);
+  const selectableMeta = findCoreMetaSidecarForAsset(selectable, selectableAsset);
   if (!selectableMeta) return undefined;
 
   return records.find(candidate => candidate.id === selectableMeta.id);
@@ -383,15 +385,16 @@ export interface DeclaredMetaInfo {
 }
 
 export function getDeclaredMetaInfoForRecord(
-  records: PackageFileRecord[],
+  records: readonly PackageFileRecord[],
   record: PackageFileRecord,
+  selectableRecords?: readonly SidecarSelectableRecord[],
 ): DeclaredMetaInfo {
   let metaBytes: Uint8Array | undefined;
 
   if (record.extension === 'meta') {
     metaBytes = record.content;
   } else {
-    const sibling = getSiblingMetaRecord(records, record);
+    const sibling = getSiblingMetaRecord(records, record, selectableRecords);
     if (sibling) {
       metaBytes = sibling.content;
     }
