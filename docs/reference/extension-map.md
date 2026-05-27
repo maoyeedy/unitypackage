@@ -33,7 +33,7 @@ Plain `<pre><code>` (no highlight pass -- registered-language `Set.has` short-ci
 
 ## Unsupported -- `NoPreview` component shown; download still works
 
-Preview frame stays visible with a "No preview" message. Header (breadcrumb + size + download) and metadata (Path, GUID, Size, optional Meta GUID + Importer) remain.
+Preview frame stays visible with a "No preview" message. Header (size + download) and metadata (Path [breadcrumb], GUID, Size, optional Meta GUID + Importer) remain.
 
 Three reasons a file lands here:
 
