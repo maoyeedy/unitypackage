@@ -11,9 +11,9 @@ import { EXIT, CliError } from '../util/exit.js';
 import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
-export type FindingLevel = 'warn' | 'error';
+type FindingLevel = 'warn' | 'error';
 
-export interface Finding {
+interface Finding {
   level: FindingLevel;
   code: string;
   message: string;

@@ -40,7 +40,7 @@ interface CollectedPackageEntry {
   plan: PackPlanEntry;
 }
 
-export interface PackPlanEntry {
+interface PackPlanEntry {
   sourcePath: string;
   pathname: string;
   guid: string;

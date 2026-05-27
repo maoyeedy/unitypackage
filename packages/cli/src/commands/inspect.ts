@@ -15,7 +15,7 @@ import { info } from '../util/logger.js';
 import { readPackageBytes } from '../util/package.js';
 import { writeJsonResult } from '../util/output.js';
 
-export interface InspectEntry {
+interface InspectEntry {
   guid: string;
   pathname: string;
   hasAsset: boolean;
@@ -23,7 +23,7 @@ export interface InspectEntry {
   hasMeta: boolean;
 }
 
-export interface InspectComponent {
+interface InspectComponent {
   id: string;
   guid: string;
   pathname: string;

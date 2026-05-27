@@ -53,7 +53,7 @@ interface DirectoryTask {
   virtualPath: string;
 }
 
-export interface ExtractPlanItem {
+interface ExtractPlanItem {
   path: string;
   dest: string;
   component: UnityPackageComponentRecord['component'] | 'directory';
