@@ -8,7 +8,7 @@ import {
   type SidecarSelectableRecord,
   type SyntaxLanguage,
   type UnityPackageEntry,
-  type UnityPackageComponentRecord,
+  type ContentlessRecord,
   type UnityPackageParseDiagnostic,
 } from 'unitypackage-core';
 
@@ -66,7 +66,7 @@ function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
   return 'text';
 }
 
-export interface PackageFileRecord extends Omit<UnityPackageComponentRecord, 'content'> {
+export interface PackageFileRecord extends ContentlessRecord {
   fileName: string;
   isUnityPreview: false;
   previewKind: PreviewKind;
@@ -141,16 +141,22 @@ export type SelectionState = 'none' | 'partial' | 'all';
 export function entriesToRecords(
   entries: UnityPackageEntry[],
   diagnostics: UnityPackageParseDiagnostic[] = [],
-): PackageFileRecord[] {
-  return entriesToComponentRecords(entries, diagnostics)
-    .filter(record => record.component !== 'preview')
-    .map(record => ({
-      ...record,
-      fileName: record.virtualPath.split('/').pop() ?? record.virtualPath,
+): { records: PackageFileRecord[]; contents: Record<string, Uint8Array<ArrayBuffer>> } {
+  const records: PackageFileRecord[] = [];
+  const contents: Record<string, Uint8Array<ArrayBuffer>> = {};
+  for (const componentRecord of entriesToComponentRecords(entries, diagnostics)) {
+    if (componentRecord.component === 'preview') continue;
+    const { content, ...rest } = componentRecord;
+    records.push({
+      ...rest,
+      fileName: rest.virtualPath.split('/').pop() ?? rest.virtualPath,
       isUnityPreview: false,
-      previewKind: getPreviewKindForPath(record.virtualPath),
-      syntaxLanguage: getSyntaxLanguageForPath(record.virtualPath),
-    })) as unknown as PackageFileRecord[];
+      previewKind: getPreviewKindForPath(rest.virtualPath),
+      syntaxLanguage: getSyntaxLanguageForPath(rest.virtualPath),
+    });
+    contents[rest.id] = content as Uint8Array<ArrayBuffer>;
+  }
+  return { records, contents };
 }
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {

@@ -63,6 +63,7 @@ export type {
 } from './analyze';
 export { analyzeUnityPackageEntries } from './analyze';
 export type {
+  ContentlessRecord,
   UnityPackageComponentRecord,
   UnityPackageEntryComponent,
 } from './component';

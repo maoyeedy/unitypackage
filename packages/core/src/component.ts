@@ -24,6 +24,8 @@ export interface UnityPackageComponentRecord {
   duplicatePathCount: number;
 }
 
+export type ContentlessRecord = Omit<UnityPackageComponentRecord, 'content'>;
+
 export function entriesToComponentRecords(
   entries: UnityPackageEntry[],
   diagnostics: UnityPackageParseDiagnostic[] = [],
