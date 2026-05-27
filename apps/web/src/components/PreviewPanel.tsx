@@ -83,7 +83,7 @@ function PreviewPanelContent({
       <header className="preview-header">
         <div>
           <Breadcrumb virtualPath={previewRecord.virtualPath} onRevealInTree={onRevealInTree} />
-          <p>{formatBytes(previewRecord.byteLength)} · {previewRecord.mimeType}</p>
+          <p>{formatBytes(previewRecord.byteLength)}</p>
         </div>
         {metaSidecar ? (
           <div className="preview-mode-switch" role="group" aria-label="Preview source">
@@ -229,8 +229,6 @@ function Metadata({
     ['Path', record.virtualPath],
     ['GUID', record.guid],
     ['Size', formatBytes(record.byteLength)],
-    ['Type', record.extension ? `.${record.extension}` : 'No extension'],
-    ['MIME', record.mimeType],
   ];
 
   if (declaredMetaInfo.guid) {

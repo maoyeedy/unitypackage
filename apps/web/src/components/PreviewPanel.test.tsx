@@ -333,4 +333,32 @@ describe('PreviewPanel Syntax Highlighting', () => {
     // It should not render any preview-frame container
     expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
   });
+
+  it('does not render MIME in the header and does not render Type or MIME in the metadata details', () => {
+    const record = createMockRecord({
+      byteLength: 1024,
+      mimeType: 'text/plain',
+      extension: 'cs',
+    });
+
+    const { queryByText, getByText, getAllByText } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // Byte size is formatted as "1.0 KB" and should appear in the header and the details list
+    const sizeElements = getAllByText(/1\.0 KB/);
+    expect(sizeElements.length).toBe(2);
+
+    // Header should not contain MIME type "text/plain"
+    expect(queryByText(/text\/plain/)).not.toBeInTheDocument();
+
+    // Metadata table details should show details but not Type or MIME
+    expect(getByText('Details')).toBeInTheDocument();
+    expect(queryByText('Type')).not.toBeInTheDocument();
+    expect(queryByText('MIME')).not.toBeInTheDocument();
+  });
 });
