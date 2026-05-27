@@ -209,6 +209,11 @@ textarea:focus-visible,
   font-size: 1rem;
 }
 
+.preview-header > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
 .button-row button,
 .file-row,
 .folder-row {

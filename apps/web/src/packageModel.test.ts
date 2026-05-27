@@ -10,9 +10,12 @@ import {
   filterRecords,
   formatBytes,
   getKeyboardRangeSelection,
+  getMetaSidecarForAsset,
   getRecordCategory,
   getSelectionState,
+  resolveAllZipRecordIds,
   resolveMetaSidecarSelection,
+  resolveSelectedZipRecordIds,
   simpleMatchRecord,
   sortRecords,
   toSidecarSelectableRecords,
@@ -49,11 +52,11 @@ describe('package model helpers', () => {
     expect(records.filter(record => getRecordCategory(record) === 'meta')).toHaveLength(2);
   });
 
-  it('filters meta records from browsing unless enabled', () => {
+  it('filters meta records from browsing', () => {
     const records = makeRecords();
 
-    expect(filterRecords(records, { query: '', includeMetaSidecars: false })).toHaveLength(2);
-    expect(filterRecords(records, { query: '', includeMetaSidecars: true })).toHaveLength(4);
+    expect(filterRecords(records, { query: '' })).toHaveLength(2);
+    expect(filterRecords(records, { query: '.meta' })).toHaveLength(0);
   });
 
   it('searches case-insensitive file names and paths', () => {
@@ -71,6 +74,18 @@ describe('package model helpers', () => {
 
     expect(treeRows.some(row => row.type === 'folder' && row.path === 'Assets')).toBe(true);
     expect(groups.map(group => group.extension)).toEqual(['cs', 'meta', 'png']);
+  });
+
+  it('stores descendant record IDs on tree folder rows', () => {
+    const records = makeRecords();
+    const treeRows = buildTreeRows(records);
+    const assetsFolder = treeRows.find(row => row.type === 'folder' && row.path === 'Assets');
+
+    if (assetsFolder?.type !== 'folder') {
+      throw new Error('Assets folder row not found');
+    }
+
+    expect(assetsFolder.recordIds).toEqual(records.map(record => record.id));
   });
 
   it('sorts by size and formats bytes', () => {
@@ -100,5 +115,45 @@ describe('package model helpers', () => {
       asset!.id,
       records.find(record => record.virtualPath === 'Assets/Scripts/Player.cs.meta')!.id,
     ]);
+  });
+
+  it('finds the hidden meta sidecar for an asset', () => {
+    const records = makeRecords();
+    const asset = records.find(record => record.virtualPath === 'Assets/Scripts/Player.cs');
+    expect(asset).toBeDefined();
+
+    const meta = getMetaSidecarForAsset(records, asset!);
+
+    expect(meta?.virtualPath).toBe('Assets/Scripts/Player.cs.meta');
+  });
+
+  it('does not return a sidecar for assets without matching meta', () => {
+    const records = makeRecords().filter(record => record.virtualPath !== 'Assets/Scripts/Player.cs.meta');
+    const asset = records.find(record => record.virtualPath === 'Assets/Scripts/Player.cs');
+    expect(asset).toBeDefined();
+
+    expect(getMetaSidecarForAsset(records, asset!)).toBeUndefined();
+  });
+
+  it('can exclude meta records from selected ZIP IDs', () => {
+    const records = makeRecords();
+    const selectable = toSidecarSelectableRecords(records);
+    const asset = records.find(record => record.virtualPath === 'Assets/Scripts/Player.cs');
+    const meta = records.find(record => record.virtualPath === 'Assets/Scripts/Player.cs.meta');
+    expect(asset).toBeDefined();
+    expect(meta).toBeDefined();
+
+    expect(resolveSelectedZipRecordIds(selectable, [asset!.id], true)).toEqual([asset!.id, meta!.id]);
+    expect(resolveSelectedZipRecordIds(selectable, [asset!.id, meta!.id], false)).toEqual([asset!.id]);
+  });
+
+  it('can exclude meta records from all ZIP IDs', () => {
+    const records = makeRecords();
+    const selectable = toSidecarSelectableRecords(records);
+
+    expect(resolveAllZipRecordIds(selectable, true)).toHaveLength(4);
+    expect(resolveAllZipRecordIds(selectable, false)).toEqual(
+      records.filter(record => getRecordCategory(record) === 'asset').map(record => record.id),
+    );
   });
 });

@@ -1,7 +1,9 @@
 import {
   entriesToComponentRecords,
+  metaSidecarPathForAsset,
   readDeclaredMetaImporter,
   readMetaGuid,
+  resolveMetaSidecarSelection,
   type SidecarSelectableRecord,
   type UnityPackageEntry,
   type UnityPackageComponentRecord,
@@ -34,6 +36,31 @@ export function toSidecarSelectableRecords(records: PackageFileRecord[]): Sideca
   }));
 }
 
+export function resolveSelectedZipRecordIds(
+  records: readonly SidecarSelectableRecord[],
+  selectedRecordIds: readonly string[],
+  includeMetaSidecars: boolean,
+): string[] {
+  if (includeMetaSidecars) {
+    return resolveMetaSidecarSelection(records, selectedRecordIds).ids;
+  }
+
+  const metaIds = new Set(records.filter(record => record.kind === 'meta').map(record => record.id));
+  return selectedRecordIds.filter(id => !metaIds.has(id));
+}
+
+export function resolveAllZipRecordIds(
+  records: readonly SidecarSelectableRecord[],
+  includeMetaSidecars: boolean,
+): string[] {
+  const assetIds = records
+    .filter(record => record.kind === 'asset')
+    .map(record => record.id);
+
+  if (!includeMetaSidecars) return assetIds;
+  return resolveMetaSidecarSelection(records, assetIds).ids;
+}
+
 interface TreeFolderRow {
   type: 'folder';
   id: string;
@@ -41,6 +68,7 @@ interface TreeFolderRow {
   path: string;
   depth: number;
   fileCount: number;
+  recordIds: string[];
 }
 
 interface TreeFileRow {
@@ -75,11 +103,16 @@ export function entriesToRecords(
 
 export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: ReadonlySet<string> = new Set()): TreeRow[] {
   const folderCounts = new Map<string, number>();
+  const folderRecordIds = new Map<string, string[]>();
   for (const record of records) {
     const parts = record.virtualPath.split('/').filter(Boolean);
+    let folderPath = '';
     for (let index = 0; index < parts.length - 1; index += 1) {
-      const path = parts.slice(0, index + 1).join('/');
-      folderCounts.set(path, (folderCounts.get(path) ?? 0) + 1);
+      folderPath = folderPath ? `${folderPath}/${parts[index]}` : parts[index] ?? '';
+      folderCounts.set(folderPath, (folderCounts.get(folderPath) ?? 0) + 1);
+      const ids = folderRecordIds.get(folderPath);
+      if (ids) ids.push(record.id);
+      else folderRecordIds.set(folderPath, [record.id]);
     }
   }
 
@@ -90,15 +123,16 @@ export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: Re
   for (const record of sortedRecords) {
     const parts = record.virtualPath.split('/').filter(Boolean);
     let hidden = false;
+    let folderPath = '';
+    let parentPath = '';
 
     for (let index = 0; index < parts.length - 1; index += 1) {
-      const folderPath = parts.slice(0, index + 1).join('/');
-      const parentPath = parts.slice(0, index).join('/');
       if (parentPath && collapsedFolders.has(parentPath)) {
         hidden = true;
         break;
       }
 
+      folderPath = folderPath ? `${folderPath}/${parts[index]}` : parts[index] ?? '';
       if (!emittedFolders.has(folderPath)) {
         rows.push({
           type: 'folder',
@@ -107,12 +141,14 @@ export function buildTreeRows(records: PackageFileRecord[], collapsedFolders: Re
           path: folderPath,
           depth: index,
           fileCount: folderCounts.get(folderPath) ?? 0,
+          recordIds: folderRecordIds.get(folderPath) ?? [],
         });
         emittedFolders.add(folderPath);
       }
+      parentPath = folderPath;
     }
 
-    const parent = parts.slice(0, -1).join('/');
+    const parent = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
     if (!hidden && !collapsedFolders.has(parent)) {
       rows.push({
         type: 'file',
@@ -239,17 +275,16 @@ export function simpleMatchRecord(record: PackageFileRecord, query: string): boo
 
 export interface RecordFilterOptions {
   query: string;
-  includeMetaSidecars: boolean;
 }
 
 export function filterRecords(
   records: PackageFileRecord[],
   options: RecordFilterOptions,
 ): PackageFileRecord[] {
-  const { query, includeMetaSidecars } = options;
+  const { query } = options;
 
   return records.filter(record => {
-    if (!includeMetaSidecars && record.extension === 'meta') return false;
+    if (record.extension === 'meta') return false;
     return simpleMatchRecord(record, query);
   });
 }
@@ -277,9 +312,28 @@ function getSiblingMetaRecord(
   records: PackageFileRecord[],
   record: PackageFileRecord,
 ): PackageFileRecord | undefined {
-  return records.find(
-    candidate => candidate.guid === record.guid && candidate.extension === 'meta',
+  return getMetaSidecarForAsset(records, record);
+}
+
+export function getMetaSidecarForAsset(
+  records: readonly PackageFileRecord[],
+  record: PackageFileRecord,
+): PackageFileRecord | undefined {
+  if (record.extension === 'meta') return undefined;
+
+  const metaPathname = metaSidecarPathForAsset(record.pathname);
+  const sameGuidMeta = records.find(
+    candidate =>
+      candidate.extension === 'meta' &&
+      candidate.guid === record.guid &&
+      candidate.virtualPath === metaPathname,
   );
+  if (sameGuidMeta) return sameGuidMeta;
+
+  const fallbackCandidates = records.filter(
+    candidate => candidate.extension === 'meta' && candidate.virtualPath === metaPathname,
+  );
+  return fallbackCandidates.length === 1 ? fallbackCandidates[0] : undefined;
 }
 
 export interface DeclaredMetaInfo {

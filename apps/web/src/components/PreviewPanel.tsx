@@ -19,10 +19,12 @@ const TEXT_PREVIEW_LIMIT = 200_000;
 
 export function PreviewPanel({
   record,
+  metaSidecar,
   onDownload,
   onRevealInTree,
 }: {
   record: PackageFileRecord | null;
+  metaSidecar?: PackageFileRecord;
   onDownload: (record: PackageFileRecord) => void;
   onRevealInTree: (recordId: string) => void;
 }) {
@@ -37,24 +39,69 @@ export function PreviewPanel({
   }
 
   return (
+    <PreviewPanelContent
+      key={record.id}
+      record={record}
+      metaSidecar={metaSidecar}
+      onDownload={onDownload}
+      onRevealInTree={onRevealInTree}
+    />
+  );
+}
+
+function PreviewPanelContent({
+  record,
+  metaSidecar,
+  onDownload,
+  onRevealInTree,
+}: {
+  record: PackageFileRecord;
+  metaSidecar?: PackageFileRecord;
+  onDownload: (record: PackageFileRecord) => void;
+  onRevealInTree: (recordId: string) => void;
+}) {
+  const [previewMode, setPreviewMode] = useState<'asset' | 'meta'>('asset');
+  const previewRecord = previewMode === 'meta' && metaSidecar ? metaSidecar : record;
+
+  return (
     <>
       <header className="preview-header">
         <div>
-          <Breadcrumb virtualPath={record.virtualPath} onRevealInTree={onRevealInTree} />
-          <p>{formatBytes(record.byteLength)} · {record.mimeType}</p>
+          <Breadcrumb virtualPath={previewRecord.virtualPath} onRevealInTree={onRevealInTree} />
+          <p>{formatBytes(previewRecord.byteLength)} · {previewRecord.mimeType}</p>
         </div>
+        {metaSidecar ? (
+          <div className="preview-mode-switch" role="group" aria-label="Preview source">
+            <button
+              type="button"
+              className={previewMode === 'asset' ? 'active' : ''}
+              onClick={() => { setPreviewMode('asset'); }}
+            >
+              Asset
+            </button>
+            <button
+              type="button"
+              className={previewMode === 'meta' ? 'active' : ''}
+              onClick={() => { setPreviewMode('meta'); }}
+            >
+              .meta
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
-          aria-label={`Download ${record.fileName}`}
+          aria-label={`Download ${previewRecord.fileName}`}
           title="Download file"
-          onClick={() => { onDownload(record); }}
+          onClick={() => { onDownload(previewRecord); }}
         >
           <Download aria-hidden="true" size={18} />
           <span>Download</span>
         </button>
       </header>
-      <PreviewBody record={record} />
-      <Metadata record={record} onRevealInTree={onRevealInTree} />
+      <PreviewBody record={previewRecord} />
+      {previewMode === 'asset' ? (
+        <Metadata record={record} metaSidecar={metaSidecar} onRevealInTree={onRevealInTree} />
+      ) : null}
     </>
   );
 }
@@ -160,8 +207,19 @@ function TextPreview({ record }: { record: PackageFileRecord }) {
   );
 }
 
-function Metadata({ record, onRevealInTree }: { record: PackageFileRecord; onRevealInTree: (recordId: string) => void }) {
-  const declaredMetaInfo = useMemo(() => getDeclaredMetaInfoForRecord([record], record), [record]);
+function Metadata({
+  record,
+  metaSidecar,
+  onRevealInTree,
+}: {
+  record: PackageFileRecord;
+  metaSidecar?: PackageFileRecord;
+  onRevealInTree: (recordId: string) => void;
+}) {
+  const declaredMetaInfo = useMemo(
+    () => getDeclaredMetaInfoForRecord(metaSidecar ? [record, metaSidecar] : [record], record),
+    [metaSidecar, record],
+  );
   const rows: [string, string][] = [
     ['Path', record.virtualPath],
     ['GUID', record.guid],

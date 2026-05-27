@@ -28,7 +28,7 @@ The web app should avoid teaching users package internals unless that knowledge 
 - Download the current file.
 - Download Selected ZIP and All ZIP.
 - Include matching `.meta` sidecars in ZIP output by default for selected assets and all-assets extraction.
-- Keep `.meta` rows hidden by default in browsing, with a `Show .meta files` display option.
+- Keep `.meta` rows hidden from browsing. Let users inspect a selected file's `.meta` sidecar from the preview pane when one exists.
 - Hide Unity-generated `preview.png` package records from the web UI and ZIP extraction.
 - Show simple statusbar progress, completion, and fatal errors.
 - Keep UI dense, quiet, and utility-focused for repeated package inspection.
@@ -65,7 +65,7 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 - All ZIP means all asset files plus matching `.meta` sidecars.
 - Selected ZIP means selected files plus matching `.meta` sidecars for selected assets.
 - Unity preview thumbnails are always excluded.
-- The `Show .meta files` setting affects browsing visibility only. It does not disable sidecar inclusion in ZIP output.
+- `.meta` sidecars are not selectable as normal rows. The ZIP sidecar option controls whether matching sidecars are included in ZIP output.
 - Preserve folder structure by default. The flatten option may remain, but duplicate output names must stay deterministic.
 
 ## Dropped Dependencies
@@ -107,5 +107,5 @@ This split keeps the web UI low-learning-cost while preserving power tools for u
 - A user can open `Polytope_URP.unitypackage`, browse the tree, search for `Ground_Layer_01.terrainlayer`, select it, and download `selected_files.zip`.
 - `selected_files.zip` contains the selected asset and its `.meta` sidecar.
 - Searching `.preview.png` returns no visible files.
-- `.meta` files are hidden until `Show .meta files` is enabled.
+- `.meta` files are hidden from browsing, and a selected asset with a sidecar exposes a `.meta` preview switch.
 - No Pack, Diagnostics, or PWA install UI is visible.

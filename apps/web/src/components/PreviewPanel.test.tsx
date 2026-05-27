@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { PreviewPanel } from './PreviewPanel';
 import type { PackageFileRecord } from '../packageModel';
 
@@ -134,5 +134,51 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(spans?.length).toBeGreaterThan(0);
     expect(codeElement?.innerHTML).not.toBe(jsonContent);
     expect(codeElement?.textContent).toBe(jsonContent);
+  });
+
+  it('does not show a meta preview switch when no sidecar exists', () => {
+    const record = createMockRecord({});
+
+    const { queryByRole } = render(
+      <PreviewPanel
+        record={record}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    expect(queryByRole('group', { name: 'Preview source' })).not.toBeInTheDocument();
+  });
+
+  it('can switch to the hidden meta sidecar preview without showing generic details', () => {
+    const asset = createMockRecord({});
+    const meta = createMockRecord({
+      id: 'meta-id',
+      pathname: 'Assets/Test.cs.meta',
+      virtualPath: 'Assets/Test.cs.meta',
+      fileName: 'Test.cs.meta',
+      component: 'meta',
+      content: encoder.encode('fileFormatVersion: 2\nguid: test-guid-aaaaaaaaaaaaaaaaaaaaaaaa\nMonoImporter:\n'),
+      byteLength: 76,
+      extension: 'meta',
+      mimeType: 'text/plain;charset=utf-8',
+      syntaxLanguage: 'yaml',
+      hasMeta: true,
+    });
+
+    const { container, getByRole, queryByText } = render(
+      <PreviewPanel
+        record={asset}
+        metaSidecar={meta}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    expect(getByRole('group', { name: 'Preview source' })).toBeInTheDocument();
+    fireEvent.click(getByRole('button', { name: '.meta' }));
+
+    expect(container.querySelector('code')?.textContent).toContain('MonoImporter');
+    expect(queryByText('Details')).not.toBeInTheDocument();
   });
 });

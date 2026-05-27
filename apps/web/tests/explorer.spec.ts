@@ -62,17 +62,32 @@ test.describe('explorer interactions', () => {
     await expect(fileCount).toContainText('0 visible files');
   });
 
-  test('meta rows are hidden by default and visible when enabled', async ({ page }) => {
-    await page.getByText('Display options').click();
-    const metaCheckbox = page.getByRole('checkbox', { name: 'Show .meta files' });
-    await expect(metaCheckbox).not.toBeChecked();
-
+  test('meta rows stay hidden from browsing and search', async ({ page }) => {
     await page.getByPlaceholder('Search files by name or path').fill('.meta');
     const fileCount = page.getByRole('region', { name: 'Package explorer' }).getByText(/^\d+ visible files$/);
     await expect(fileCount).toHaveText('0 visible files');
+  });
 
-    await metaCheckbox.check();
-    await expect(fileCount).not.toHaveText('0 visible files');
+  test('hidden meta sidecars can be previewed from the selected file', async ({ page }) => {
+    const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
+    await expect(preview.getByRole('group', { name: 'Preview source' })).toBeVisible();
+
+    await preview.getByRole('button', { name: '.meta' }).click();
+    await expect(preview.locator('code')).toContainText('fileFormatVersion');
+    await expect(preview.getByText('Details', { exact: true })).not.toBeVisible();
+
+    await preview.getByRole('button', { name: 'Asset', exact: true }).click();
+    await expect(preview.getByText('Details', { exact: true })).toBeVisible();
+  });
+
+  test('ZIP meta sidecar option remains available without meta display controls', async ({ page }) => {
+    await expect(page.getByRole('checkbox', { name: 'Show .meta files' })).not.toBeVisible();
+    await page.getByText('ZIP options').click();
+    const zipMetaCheckbox = page.getByRole('checkbox', { name: 'Include .meta sidecars in ZIP' });
+    await expect(zipMetaCheckbox).toBeChecked();
+
+    await zipMetaCheckbox.uncheck();
+    await expect(zipMetaCheckbox).not.toBeChecked();
   });
 
   test('Selected ZIP download filename is selected_files.zip', async ({ page }) => {

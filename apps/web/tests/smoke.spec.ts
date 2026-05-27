@@ -46,15 +46,11 @@ test('preview panel shows file content and metadata after clicking a record', as
   await expect(preview.getByText('GUID', { exact: true })).toBeVisible();
 });
 
-test('meta rows are not visible in tree when Show .meta files is off', async ({ page }) => {
+test('meta rows are not visible in tree', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Open Unity package').setInputFiles(fixturePath);
   await expect(page.getByText(/Parsed \d+ files/)).toBeVisible({ timeout: 15_000 });
-  await page.getByText('Display options').click();
-  const metaCheckbox = page.getByRole('checkbox', { name: 'Show .meta files' });
-  await expect(metaCheckbox).not.toBeChecked();
   const tree = page.getByRole('tree', { name: 'Package file tree' });
-  // With setting off, no treeitem label should end with .meta
   const metaItems = tree.locator('[role="treeitem"]').filter({ hasText: /\.meta/ });
   await expect(metaItems.first()).not.toBeVisible();
 });

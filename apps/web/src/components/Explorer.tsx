@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import {
   formatBytes,
-  getFolderRecordIds,
   getKeyboardRangeSelection,
   getSelectionState,
   type ExtensionGroup,
@@ -91,7 +90,6 @@ export function Explorer({
   return groupingMode === 'tree' ? (
     <VirtualTree
       rows={treeRows}
-      records={records}
       orderedRecordIds={treeFileRecordIds}
       selectedIds={selectedIds}
       activeId={activeId}
@@ -135,7 +133,6 @@ export function Explorer({
 
 function VirtualTree({
   rows,
-  records,
   orderedRecordIds,
   selectedIds,
   activeId,
@@ -157,7 +154,6 @@ function VirtualTree({
   onSetKeyboardRangeBase,
 }: {
   rows: TreeRow[];
-  records: PackageFileRecord[];
   orderedRecordIds: string[];
   selectedIds: ReadonlySet<string>;
   activeId: string | null;
@@ -298,9 +294,8 @@ function VirtualTree({
           if (currentRow.type === 'file') {
             onToggleSelected(currentRow.record.id);
           } else {
-            const folderRecordIds = getFolderRecordIds(records, currentRow.path);
-            const selectionState = getSelectionState(folderRecordIds, selectedIds);
-            onScopeSelect(folderRecordIds, selectionState);
+            const selectionState = getSelectionState(currentRow.recordIds, selectedIds);
+            onScopeSelect(currentRow.recordIds, selectionState);
           }
         }
       }
@@ -391,8 +386,7 @@ function VirtualTree({
 
             if (row.type === 'folder') {
               const collapsed = collapsedFolders.has(row.path);
-              const folderRecordIds = getFolderRecordIds(records, row.path);
-              const selectionState = getSelectionState(folderRecordIds, selectedIds);
+              const selectionState = getSelectionState(row.recordIds, selectedIds);
               return (
                 <FolderRow
                   key={row.id}
@@ -401,7 +395,7 @@ function VirtualTree({
                   path={row.path}
                   depth={row.depth}
                   collapsed={collapsed}
-                  fileCount={folderRecordIds.length}
+                  fileCount={row.recordIds.length}
                   selectionState={selectionState}
                   focused={focusedRowId === row.id}
                   style={style}
@@ -413,7 +407,7 @@ function VirtualTree({
                     onToggleFolder(row.path);
                   }}
                   onSelect={() => {
-                    onScopeSelect(folderRecordIds, selectionState);
+                    onScopeSelect(row.recordIds, selectionState);
                   }}
                 />
               );

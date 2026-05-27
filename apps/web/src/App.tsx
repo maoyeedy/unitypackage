@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Eye,
   FileArchive,
   Filter,
   Info,
@@ -27,8 +26,10 @@ import {
   filterRecords,
   getAllFolderPaths,
   getExtensionFileRecordIds,
+  getMetaSidecarForAsset,
   getTreeFileRecordIds,
-  resolveMetaSidecarSelection,
+  resolveAllZipRecordIds,
+  resolveSelectedZipRecordIds,
   sortRecords,
   toSidecarSelectableRecords,
   type GroupingMode,
@@ -167,7 +168,7 @@ function AppContent() {
   const [keyboardRangeBaseIds, setKeyboardRangeBaseIds] = useState<Set<string> | null>(null);
   const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
   const [maintainStructure, setMaintainStructure] = useState(true);
-  const [showMetaFiles, setShowMetaFiles] = useState(false);
+  const [includeMetaSidecarsInZip, setIncludeMetaSidecarsInZip] = useState(true);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
@@ -210,10 +211,9 @@ function AppContent() {
   const visibleRecords = useMemo(() => {
     const filtered = filterRecords(records, {
       query: debouncedQuery,
-      includeMetaSidecars: showMetaFiles,
     });
     return sortRecords(filtered, sortKey, sortDirection);
-  }, [records, debouncedQuery, showMetaFiles, sortKey, sortDirection]);
+  }, [records, debouncedQuery, sortKey, sortDirection]);
 
   const visibleExtensions = useMemo(() => {
     const exts = new Set<string>();
@@ -227,16 +227,37 @@ function AppContent() {
     return records.find(record => record.id === activeRecordId) ?? visibleRecords[0] ?? null;
   }, [activeRecordId, visibleRecords, records]);
 
+  const activeMetaSidecar = useMemo(() => {
+    if (!activeRecord) return undefined;
+    return getMetaSidecarForAsset(records, activeRecord);
+  }, [activeRecord, records]);
+
   const selectedVisibleCount = useMemo(() => {
-    const visibleIds = new Set(visibleRecords.map(record => record.id));
-    return [...selectedRecordIds].filter(id => visibleIds.has(id)).length;
+    let count = 0;
+    for (const record of visibleRecords) {
+      if (selectedRecordIds.has(record.id)) count += 1;
+    }
+    return count;
   }, [selectedRecordIds, visibleRecords]);
 
   const totalBytes = useMemo(() => records.reduce((sum, record) => sum + record.byteLength, 0), [records]);
-  const extensionGroups = useMemo(() => buildExtensionGroups(visibleRecords), [visibleRecords]);
-  const treeRows = useMemo(() => buildTreeRows(visibleRecords, collapsedFolders), [visibleRecords, collapsedFolders]);
-  const treeFileRecordIds = useMemo(() => getTreeFileRecordIds(treeRows), [treeRows]);
-  const extensionFileRecordIds = useMemo(() => getExtensionFileRecordIds(extensionGroups), [extensionGroups]);
+  const sidecarSelectableRecords = useMemo(() => toSidecarSelectableRecords(records), [records]);
+  const extensionGroups = useMemo(
+    () => groupingMode === 'extension' ? buildExtensionGroups(visibleRecords) : [],
+    [groupingMode, visibleRecords],
+  );
+  const treeRows = useMemo(
+    () => groupingMode === 'tree' ? buildTreeRows(visibleRecords, collapsedFolders) : [],
+    [groupingMode, visibleRecords, collapsedFolders],
+  );
+  const treeFileRecordIds = useMemo(
+    () => groupingMode === 'tree' ? getTreeFileRecordIds(treeRows) : [],
+    [groupingMode, treeRows],
+  );
+  const extensionFileRecordIds = useMemo(
+    () => groupingMode === 'extension' ? getExtensionFileRecordIds(extensionGroups) : [],
+    [groupingMode, extensionGroups],
+  );
 
   const handlePackageFile = async (file: File) => {
     setIsLoading(true);
@@ -253,7 +274,7 @@ function AppContent() {
     try {
       const result = await parsePackageInWorker(await file.arrayBuffer());
       setRecords(result.records);
-      setActiveRecordId(result.records[0]?.id ?? null);
+      setActiveRecordId(result.records.find(record => record.extension !== 'meta')?.id ?? null);
       completeOp(`Parsed ${result.records.length.toString()} files from ${file.name}`);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'Failed to parse package';
@@ -285,18 +306,16 @@ function AppContent() {
   };
 
   const getSelectedZipIds = useCallback(() => {
-    return resolveMetaSidecarSelection(
-      toSidecarSelectableRecords(records),
+    return resolveSelectedZipRecordIds(
+      sidecarSelectableRecords,
       [...selectedRecordIds],
-    ).ids;
-  }, [records, selectedRecordIds]);
+      includeMetaSidecarsInZip,
+    );
+  }, [includeMetaSidecarsInZip, selectedRecordIds, sidecarSelectableRecords]);
 
   const getAllZipIds = useCallback(() => {
-    const assetIds = records
-      .filter(record => getRecordCategoryForZip(record) === 'asset')
-      .map(record => record.id);
-    return resolveMetaSidecarSelection(toSidecarSelectableRecords(records), assetIds).ids;
-  }, [records]);
+    return resolveAllZipRecordIds(sidecarSelectableRecords, includeMetaSidecarsInZip);
+  }, [includeMetaSidecarsInZip, sidecarSelectableRecords]);
 
   const toggleRecordSelection = useCallback((recordId: string) => {
     setSelectionAnchorId(recordId);
@@ -415,23 +434,6 @@ function AppContent() {
     }, 50);
   }, [records]);
 
-  const handleShowMetaFilesChange = useCallback((nextShowMetaFiles: boolean) => {
-    setShowMetaFiles(nextShowMetaFiles);
-    if (nextShowMetaFiles) return;
-
-    const hiddenIds = new Set(records.filter(record => record.extension === 'meta').map(record => record.id));
-    setSelectedRecordIds(previous => {
-      if (![...previous].some(id => hiddenIds.has(id))) return previous;
-      const next = new Set(previous);
-      for (const id of hiddenIds) next.delete(id);
-      return next;
-    });
-    setActiveRecordId(previous => {
-      if (previous === null || !hiddenIds.has(previous)) return previous;
-      return records.find(record => record.extension !== 'meta')?.id ?? null;
-    });
-  }, [records]);
-
   return (
     <main className="app-shell">
       <section
@@ -483,24 +485,6 @@ function AppContent() {
           </div>
           <details className="sidebar-disclosure">
             <summary className="sidebar-disclosure-summary">
-              <Eye aria-hidden="true" size={13} />
-              <span>Display options</span>
-            </summary>
-            <div className="sidebar-disclosure-body">
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={showMetaFiles}
-                  onChange={event => {
-                    handleShowMetaFilesChange(event.target.checked);
-                  }}
-                />
-                Show .meta files
-              </label>
-            </div>
-          </details>
-          <details className="sidebar-disclosure">
-            <summary className="sidebar-disclosure-summary">
               <Settings aria-hidden="true" size={13} />
               <span>ZIP options</span>
             </summary>
@@ -514,6 +498,16 @@ function AppContent() {
                   }}
                 />
                 Preserve folders in ZIP downloads
+              </label>
+              <label className="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={includeMetaSidecarsInZip}
+                  onChange={event => {
+                    setIncludeMetaSidecarsInZip(event.target.checked);
+                  }}
+                />
+                Include .meta sidecars in ZIP
               </label>
             </div>
           </details>
@@ -670,6 +664,7 @@ function AppContent() {
           </button>
           <PreviewPanel
             record={activeRecord}
+            metaSidecar={activeMetaSidecar}
             onDownload={(record) => {
               downloadBlob(new Blob([record.content as Uint8Array<ArrayBuffer>], { type: record.mimeType }), record.fileName);
             }}
@@ -691,10 +686,6 @@ function AppContent() {
       </footer>
     </main>
   );
-}
-
-function getRecordCategoryForZip(record: PackageFileRecord): 'asset' | 'meta' {
-  return record.extension === 'meta' ? 'meta' : 'asset';
 }
 
 export default function App() {
