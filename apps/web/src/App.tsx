@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowDownUp, ArrowUpDown, Boxes, ChevronLeft, ChevronRight, Download, FileArchive, Filter, Info, ListTree, RefreshCw, Search, Settings } from 'lucide-react';
+import { AlertTriangle, ArrowDownUp, ArrowUpDown, Boxes, Download, FileArchive, Filter, ListTree, RefreshCw, Search, Settings } from 'lucide-react';
 import './App.css';
 import { buildExtensionGroups, buildTreeRows, filterRecords, getExtensionFileRecordIds, getMetaSidecarForAsset, getTreeFileRecordIds, sortRecords, toSidecarSelectableRecords, type SortDirection, type SortKey } from './packageModel';
 import { DropZone } from './components/DropZone';
@@ -39,8 +39,6 @@ function AppContent() {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
-  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState(false);
-  const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
   const treeViewportRef = useRef<HTMLDivElement | null>(null);
 
   let clearSelection: () => void = () => { /* noop */ };
@@ -149,44 +147,58 @@ function AppContent() {
 
   return (
     <main className="app-shell">
-      <section className={['workspace', leftPaneCollapsed ? 'workspace--left-collapsed' : '', rightPaneCollapsed ? 'workspace--right-collapsed' : ''].filter(Boolean).join(' ')} aria-label="Unity package workspace">
-        <aside className={`sidebar${leftPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Package controls">
-          <button type="button" className="pane-collapse-toggle pane-collapse-toggle--left" aria-label={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'} title={leftPaneCollapsed ? 'Expand controls pane' : 'Collapse controls pane'} onClick={() => setLeftPaneCollapsed(prev => !prev)}>{leftPaneCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}</button>
-          <DropZone isLoading={isLoading} onPackageFile={(file) => void handlePackageFile(file)} />
-          <div className="package-title">
-            <h1>Unity Package Workspace</h1>
-            <p>{packageName ?? 'Open a .unitypackage to view and extract files.'}</p>
+      <header className="app-bar" aria-label="Package toolbar">
+        <div className="package-title">
+          <h1>Unity Package Workspace</h1>
+          <p>{packageName ?? 'Open a .unitypackage to view and extract files.'}</p>
+        </div>
+        <div className="app-bar-actions">
+          <DropZone mode="compact" isLoading={isLoading} onPackageFile={(file) => void handlePackageFile(file)} />
+          <div className="input input--search">
+            <Search aria-hidden="true" size={14} />
+            <input
+              type="search"
+              aria-label="Search package files"
+              value={query}
+              placeholder="Search files by name or path"
+              onChange={e => setQuery(e.target.value)}
+            />
           </div>
-          <div className="search-box">
-            <Search size={17} />
-            <input type="search" aria-label="Search package files" value={query} placeholder="Search files by name or path" onChange={e => setQuery(e.target.value)} />
-          </div>
-          <div className="segmented-control" aria-label="Explorer grouping">
-            <button type="button" className={groupingMode === 'tree' ? 'active' : ''} onClick={() => setGroupingMode('tree')}><ListTree size={16} /><span>Tree</span></button>
-            <button type="button" className={groupingMode === 'extension' ? 'active' : ''} onClick={() => setGroupingMode('extension')}><Boxes size={16} /><span>Extension</span></button>
-          </div>
-          <details className="sidebar-disclosure">
-            <summary className="sidebar-disclosure-summary"><Settings size={13} /><span>ZIP options</span></summary>
-            <div className="sidebar-disclosure-body">
-              <label className="toggle-row"><input type="checkbox" checked={maintainStructure} onChange={e => setMaintainStructure(e.target.checked)} />Preserve folders in ZIP downloads</label>
-              <label className="toggle-row"><input type="checkbox" checked={includeMetaSidecarsInZip} onChange={e => setIncludeMetaSidecarsInZip(e.target.checked)} />Include .meta sidecars in ZIP</label>
+          <details className="dropdown zip-options">
+            <summary className="btn zip-options-trigger">
+              <Settings aria-hidden="true" size={14} />
+              <span>ZIP options</span>
+            </summary>
+            <div className="dropdown-menu zip-options-menu">
+              <label className="toggle-row">
+                <input type="checkbox" checked={maintainStructure} onChange={e => setMaintainStructure(e.target.checked)} />
+                Preserve folders in ZIP downloads
+              </label>
+              <label className="toggle-row">
+                <input type="checkbox" checked={includeMetaSidecarsInZip} onChange={e => setIncludeMetaSidecarsInZip(e.target.checked)} />
+                Include .meta sidecars in ZIP
+              </label>
             </div>
           </details>
-          {records.length > 0 && (
-            <details className="sidebar-disclosure">
-              <summary className="sidebar-disclosure-summary"><Info size={13} /><span>Package summary</span></summary>
-              <div className="sidebar-disclosure-body"><Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} /></div>
-            </details>
-          )}
-        </aside>
+        </div>
+      </header>
 
-        <section className="main-panel" aria-label="Package explorer">
+      <section className="workspace" aria-label="Unity package workspace">
+        <section className="explorer-panel" aria-label="Package explorer">
           <div className="panel-toolbar">
             <div>
               <h2>Extract</h2>
               <p>{visibleRecords.length.toString()} visible files{selectedRecordIds.size > 0 ? `, ${selectedVisibleCount.toString()} selected` : ''}</p>
             </div>
             <div className="button-row">
+              <div className="tabs" role="group" aria-label="Explorer grouping">
+                <button type="button" className={groupingMode === 'tree' ? 'active' : ''} onClick={() => setGroupingMode('tree')}>
+                  <ListTree aria-hidden="true" size={14} /><span>Tree</span>
+                </button>
+                <button type="button" className={groupingMode === 'extension' ? 'active' : ''} onClick={() => setGroupingMode('extension')}>
+                  <Boxes aria-hidden="true" size={14} /><span>Extension</span>
+                </button>
+              </div>
               <div className="sort-control">
                 <label htmlFor="sort-key" className="sort-label">Sort</label>
                 <select id="sort-key" className="sort-select" value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}>
@@ -195,12 +207,20 @@ function AppContent() {
                   <option value="extension">Extension</option>
                   <option value="guid">GUID</option>
                 </select>
-                <button type="button" id="sort-direction-toggle" className="icon-button" aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'} title={sortDirection === 'asc' ? 'Ascending' : 'Descending'} onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}>{sortDirection === 'asc' ? <ArrowUpDown size={15} /> : <ArrowDownUp size={15} />}</button>
+                <button type="button" id="sort-direction-toggle" className="btn btn--icon" aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'} title={sortDirection === 'asc' ? 'Ascending' : 'Descending'} onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}>
+                  {sortDirection === 'asc' ? <ArrowUpDown size={14} /> : <ArrowDownUp size={14} />}
+                </button>
               </div>
-              <button type="button" disabled={selectedRecordIds.size === 0} onClick={clearSelection}><RefreshCw size={16} /><span>Clear selection</span></button>
-              <button type="button" disabled={visibleRecords.length === 0} onClick={invertSelection}><RefreshCw size={16} /><span>Invert selection</span></button>
+              <button type="button" className="btn" disabled={selectedRecordIds.size === 0} onClick={clearSelection}>
+                <RefreshCw aria-hidden="true" size={14} /><span>Clear selection</span>
+              </button>
+              <button type="button" className="btn" disabled={visibleRecords.length === 0} onClick={invertSelection}>
+                <RefreshCw aria-hidden="true" size={14} /><span>Invert selection</span>
+              </button>
               <div className="select-by-ext-container">
-                <button type="button" disabled={visibleRecords.length === 0} onClick={() => setIsExtPickerOpen(prev => !prev)} aria-label="Select by extension" aria-expanded={isExtPickerOpen} aria-haspopup="listbox"><Filter size={16} /><span>Select by extension</span></button>
+                <button type="button" className="btn" disabled={visibleRecords.length === 0} onClick={() => setIsExtPickerOpen(prev => !prev)} aria-label="Select by extension" aria-expanded={isExtPickerOpen} aria-haspopup="listbox">
+                  <Filter aria-hidden="true" size={14} /><span>Select by extension</span>
+                </button>
                 {isExtPickerOpen && (
                   <div className="ext-picker-dropdown" role="listbox" aria-label="Available extensions">
                     {visibleExtensions.length === 0 ? <div className="ext-picker-item empty">No extensions</div> : visibleExtensions.map(ext => (
@@ -209,15 +229,18 @@ function AppContent() {
                   </div>
                 )}
               </div>
-              <button type="button" disabled={selectedRecordIds.size === 0} onClick={() => void downloadZip(getSelectedZipIds(), 'selected_files.zip')}><Download size={16} /><span>Selected ZIP</span></button>
-              <button type="button" disabled={records.length === 0} onClick={() => void downloadZip(getAllZipIds(), 'all_files.zip')}><FileArchive size={16} /><span>All ZIP</span></button>
+              <button type="button" className="btn btn--primary" disabled={selectedRecordIds.size === 0} onClick={() => void downloadZip(getSelectedZipIds(), 'selected_files.zip')}>
+                <Download aria-hidden="true" size={14} /><span>Selected ZIP</span>
+              </button>
+              <button type="button" className="btn btn--primary" disabled={records.length === 0} onClick={() => void downloadZip(getAllZipIds(), 'all_files.zip')}>
+                <FileArchive aria-hidden="true" size={14} /><span>All ZIP</span>
+              </button>
             </div>
           </div>
           <Explorer groupingMode={groupingMode} records={visibleRecords} treeRows={treeRows} extensionGroups={extensionGroups} treeFileRecordIds={treeFileRecordIds} extensionFileRecordIds={extensionFileRecordIds} selectedIds={selectedRecordIds} activeId={activeRecord?.id ?? null} collapsedFolders={collapsedFolders} treeViewportRef={treeViewportRef} scrollToRow={scrollToRow} onToggleFolder={toggleFolder} onExpandAll={expandAll} onCollapseAll={collapseAll} onActivate={activateRecord} onToggleSelected={toggleRecordSelection} onScopeSelect={selectScope} onReplaceSelection={replaceRecordSelection} focusedRowId={focusedRowId} onFocusRow={setFocusedRowId} selectionAnchorId={selectionAnchorId} onSetAnchor={setSelectionAnchorId} keyboardRangeBaseIds={keyboardRangeBaseIds} onSetKeyboardRangeBase={setKeyboardRangeBaseIds} />
         </section>
 
-        <aside className={`preview-panel${rightPaneCollapsed ? ' pane-collapsed' : ''}`} aria-label="Preview and metadata">
-          <button type="button" className="pane-collapse-toggle pane-collapse-toggle--right" aria-label={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'} title={rightPaneCollapsed ? 'Expand preview pane' : 'Collapse preview pane'} onClick={() => setRightPaneCollapsed(prev => !prev)}>{rightPaneCollapsed ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</button>
+        <aside className="inspector-panel" aria-label="Preview and metadata">
           <ContentContext.Provider value={getContent}>
             <PreviewPanel record={activeRecord} metaSidecar={activeMetaSidecar} selectableRecords={sidecarSelectableRecords} onDownload={r => { const bytes = getContent(r.id); if (bytes) downloadBlob(new Blob([bytes], { type: r.mimeType }), r.fileName); }} onRevealInTree={revealPathInTree} />
           </ContentContext.Provider>
@@ -226,7 +249,10 @@ function AppContent() {
 
       <footer className="statusbar" aria-live="polite">
         <span className="statusbar-op">{currentOp ?? lastCompleted ?? null}</span>
-        {error ? <span className="status-error"><AlertTriangle size={15} />{error}</span> : null}
+        {records.length > 0 && (
+          <Stats records={records} filteredCount={visibleRecords.length} totalBytes={totalBytes} />
+        )}
+        {error ? <span className="status-error"><AlertTriangle size={13} />{error}</span> : null}
       </footer>
     </main>
   );

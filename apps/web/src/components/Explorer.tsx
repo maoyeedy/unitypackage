@@ -698,7 +698,7 @@ function SelectionToggle({
   return (
     <button
       type="button"
-      className={`icon-button selection-toggle selection-${state}`}
+      className={`selection-toggle selection-${state}`}
       role="checkbox"
       aria-checked={ariaChecked}
       aria-label={label}

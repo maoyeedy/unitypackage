@@ -1,0 +1,293 @@
+/* Component primitives -- Unity-aligned per states in docs/reference/unity-dark-theme.md sec 6 */
+
+/* Button -- sec 6.1 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--h-button-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-top-color: var(--bg-control-hover);
+  border-radius: var(--radius-control);
+  background: var(--bg-control);
+  color: var(--text-button);
+  font: 500 var(--fs-12) / 1 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover-control);
+}
+
+.btn:active:not(:disabled),
+.btn[aria-pressed="true"] {
+  background: var(--bg-pressed);
+  border-color: var(--border-deepest);
+  border-top-color: var(--border-deepest);
+}
+
+.btn:active:hover:not(:disabled),
+.btn[aria-pressed="true"]:hover {
+  background: var(--bg-hover-pressed);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--icon {
+  width: var(--h-button-lg);
+  padding: 0;
+}
+
+.btn--sm {
+  height: var(--h-button);
+  padding: 0 var(--space-2);
+  font-size: var(--fs-11);
+}
+
+/* Toolbar button -- sec 6.8 (matches container surface, no raised face) */
+.btn--toolbar {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  border-top-color: var(--border-default);
+}
+
+.btn--toolbar:hover:not(:disabled) {
+  background: var(--bg-hover-light);
+  color: var(--text-tertiary);
+}
+
+.btn--toolbar[aria-pressed="true"],
+.btn--toolbar.active {
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+/* Primary tinted button (e.g. extract actions) */
+.btn--primary {
+  background: var(--bg-pressed);
+  border-color: var(--border-deepest);
+  border-top-color: var(--border-deepest);
+  color: var(--text-on-selection);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--bg-hover-pressed);
+}
+
+/* Input / text field -- sec 6.5 (inset look) */
+.input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-button-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-deepest);
+  border-bottom-color: var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font: var(--fs-12) / 1 var(--font-sans);
+  transition: border-color var(--transition-fast);
+}
+
+.input:hover {
+  border-color: var(--border-input-hover);
+}
+
+.input:focus-within {
+  border-color: var(--focus-ring);
+}
+
+.input input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.input input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Search field pill variant -- sec 6.7 */
+.input--search {
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-4);
+  min-width: 180px;
+}
+
+/* Segmented / tabs (Tree | Extension) -- sec 6.3 */
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  height: var(--h-button-lg);
+  padding: 1px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-tab);
+}
+
+.tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: var(--fs-12) / 1 var(--font-sans);
+  cursor: pointer;
+}
+
+.tabs button:hover:not(.active) {
+  color: var(--text-primary);
+}
+
+.tabs button.active {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+/* Toggle / checkbox row -- sec 6.4 */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: var(--h-control-md);
+  height: var(--h-control-md);
+  margin: 0;
+  accent-color: var(--focus-ring);
+}
+
+/* Dropdown popover -- sec 6.2 */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  min-width: 220px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-window);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-overlay);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Toolbar container -- sec 6.8 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-default);
+  min-height: var(--h-app-bar);
+}
+
+/* Sort select */
+.sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sort-label {
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
+
+.sort-select {
+  height: var(--h-button-lg);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-control);
+  border-top-color: var(--bg-control-hover);
+  border-radius: var(--radius-control);
+  background: var(--bg-control);
+  color: var(--text-button);
+  font: var(--fs-12) / 1 var(--font-sans);
+  cursor: pointer;
+}
+
+.sort-select:hover {
+  background: var(--bg-hover-control);
+}
+
+.sort-select:focus-visible {
+  outline: 1px solid var(--focus-ring-bright);
+  outline-offset: 1px;
+}
+
+/* Selection toggle (checkbox role inside tree rows) */
+.selection-toggle {
+  position: relative;
+  flex: 0 0 var(--h-button-lg);
+  width: var(--h-button-lg);
+  height: var(--h-button-lg);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.selection-toggle:hover {
+  color: var(--text-primary);
+}
+
+.selection-toggle.selection-partial::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+/* Universal disabled treatment */
+.btn:disabled,
+.tabs button:disabled,
+.selection-toggle:disabled,
+.toggle-row input:disabled,
+.sort-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Spinner */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

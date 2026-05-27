@@ -1,0 +1,152 @@
+/* App bar: title, open button (drop zone compact), search field, ZIP options popover */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--bg-app-bar);
+  border-bottom: 1px solid var(--border-default);
+  min-height: var(--h-app-bar);
+}
+
+.package-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.package-title h1 {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.package-title p {
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.app-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+/* Drop zone -- compact mode (inside app bar) */
+.drop-zone {
+  position: relative;
+  cursor: pointer;
+}
+
+.drop-zone input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.drop-zone--compact {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-button-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-control);
+  border-top-color: var(--bg-control-hover);
+  border-radius: var(--radius-control);
+  background: var(--bg-control);
+  color: var(--text-button);
+  font: 500 var(--fs-12) / 1 var(--font-sans);
+  white-space: nowrap;
+}
+
+.drop-zone--compact:hover {
+  background: var(--bg-hover-control);
+}
+
+.drop-zone--compact.drag-active {
+  background: var(--bg-pressed);
+  border-color: var(--focus-ring-bright);
+}
+
+.drop-zone--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 220px;
+  padding: var(--space-6);
+  border: 1px dashed var(--border-input-hover);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.drop-zone--empty.drag-active {
+  border-color: var(--focus-ring-bright);
+  background: var(--bg-surface);
+}
+
+.drop-zone--empty small {
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+}
+
+/* ZIP options popover -- <details><summary> pattern, summary styled as .btn */
+.zip-options {
+  position: relative;
+}
+
+.zip-options-trigger {
+  list-style: none;
+  user-select: none;
+}
+
+.zip-options-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.zip-options-trigger::marker {
+  content: '';
+}
+
+.zip-options[open] > .zip-options-trigger {
+  background: var(--bg-pressed);
+  border-color: var(--border-deepest);
+  border-top-color: var(--border-deepest);
+}
+
+.zip-options-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  min-width: 260px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-window);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-overlay);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.zip-options-menu .toggle-row {
+  padding: var(--space-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}

@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { RefreshCw, UploadCloud } from 'lucide-react';
 
-export function DropZone({ isLoading, onPackageFile }: { isLoading: boolean; onPackageFile: (file: File) => void }) {
+type DropZoneMode = 'empty' | 'compact';
+
+export function DropZone({ mode = 'empty', isLoading, onPackageFile }: { mode?: DropZoneMode; isLoading: boolean; onPackageFile: (file: File) => void }) {
   const [isDragActive, setIsDragActive] = useState(false);
+  const isCompact = mode === 'compact';
+  const iconSize = isCompact ? 14 : 24;
 
   return (
     <label
-      className={`drop-zone${isDragActive ? ' drag-active' : ''}`}
+      className={`drop-zone drop-zone--${mode}${isDragActive ? ' drag-active' : ''}`}
       onDragEnter={(event) => {
         event.preventDefault();
         setIsDragActive(true);
@@ -30,9 +34,15 @@ export function DropZone({ isLoading, onPackageFile }: { isLoading: boolean; onP
         }
       }}
     >
-      {isLoading ? <RefreshCw aria-hidden="true" className="spin" size={24} /> : <UploadCloud aria-hidden="true" size={24} />}
-      <span>{isLoading ? 'Parsing package' : 'Drop a .unitypackage'}</span>
-      <small>or choose a file</small>
+      {isLoading ? <RefreshCw aria-hidden="true" className="spin" size={iconSize} /> : <UploadCloud aria-hidden="true" size={iconSize} />}
+      {isCompact ? (
+        <span>{isLoading ? 'Parsing' : 'Open'}</span>
+      ) : (
+        <>
+          <span>{isLoading ? 'Parsing package' : 'Drop a .unitypackage'}</span>
+          <small>or click to choose a file</small>
+        </>
+      )}
       <input
         type="file"
         aria-label="Open Unity package"

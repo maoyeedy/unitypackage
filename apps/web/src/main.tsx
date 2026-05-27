@@ -9,7 +9,7 @@ if (!rootElement) { throw new Error('Failed to find root element'); }
 
 createRoot(rootElement).render(
   <StrictMode>
-    <LucideProvider size={16}>
+    <LucideProvider size={14} strokeWidth={1.75}>
       <App />
     </LucideProvider>
   </StrictMode>,

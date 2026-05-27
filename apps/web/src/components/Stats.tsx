@@ -1,40 +1,20 @@
 import type { PackageFileRecord } from '../packageModel';
 import { formatBytes } from '../packageModel';
 
-export function Stats({
-  records,
-  filteredCount,
-  totalBytes,
-}: {
+interface StatsProps {
   records: PackageFileRecord[];
   filteredCount: number;
   totalBytes: number;
-}) {
+}
+
+export function Stats({ records, filteredCount, totalBytes }: StatsProps) {
   const assetCount = records.filter(record => record.extension !== 'meta').length;
-  const metaCount = records.filter(record => record.extension === 'meta').length;
 
   return (
-    <dl className="stats-grid">
-      <div>
-        <dt>Visible</dt>
-        <dd>{filteredCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Total</dt>
-        <dd>{records.length.toString()}</dd>
-      </div>
-      <div>
-        <dt>Assets</dt>
-        <dd>{assetCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Meta</dt>
-        <dd>{metaCount.toString()}</dd>
-      </div>
-      <div>
-        <dt>Bytes</dt>
-        <dd>{formatBytes(totalBytes)}</dd>
-      </div>
-    </dl>
+    <div className="statusbar-stats" aria-label="Package summary">
+      <span><strong>{filteredCount.toString()}</strong>/{records.length.toString()} files</span>
+      <span><strong>{assetCount.toString()}</strong> assets</span>
+      <span><strong>{formatBytes(totalBytes)}</strong></span>
+    </div>
   );
 }
