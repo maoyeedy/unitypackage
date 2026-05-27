@@ -3,3 +3,13 @@
 
 # Unitypackage test fixtures (binary)
 *.unitypackage filter=lfs diff=lfs merge=lfs -text
+
+# Binary declarations (git auto-detect is wrong for some)
+*.fbx binary
+*.wav binary
+
+# Exclude fixture data from GitHub language stats
+fixtures/** -linguist-detectable
+
+# Collapse lock file diffs on GitHub
+bun.lock linguist-generated
