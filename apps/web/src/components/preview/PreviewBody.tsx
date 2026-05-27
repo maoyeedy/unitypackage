@@ -7,7 +7,7 @@ import json from 'highlight.js/lib/languages/json';
 import css from 'highlight.js/lib/languages/css';
 import glsl from 'highlight.js/lib/languages/glsl';
 import { FileQuestion } from 'lucide-react';
-import type { SyntaxLanguage } from 'unitypackage-core';
+import type { SyntaxLanguage } from '../../previewTypes';
 import type { PackageFileRecord } from '../../packageModel';
 import { useContent } from '../../contexts/ContentContext';
 

@@ -1,19 +1,15 @@
 import {
-  entriesToComponentRecords,
-  findMetaSidecarForAsset as findCoreMetaSidecarForAsset,
   readDeclaredMetaImporter,
   readMetaGuid,
-  resolveMetaSidecarSelection,
-  type PreviewKind,
-  type SidecarSelectableRecord,
-  type SyntaxLanguage,
   type UnityPackageEntry,
-  type ContentlessRecord,
   type UnityPackageParseDiagnostic,
 } from 'unitypackage-core';
+import { entriesToComponentRecords, type ContentlessRecord } from './componentRecords';
+import { findMetaSidecarForAsset as findCoreMetaSidecarForAsset, resolveMetaSidecarSelection, type SidecarSelectableRecord } from './sidecarResolver';
+import type { PreviewKind, SyntaxLanguage } from './previewTypes';
 
-export type { SidecarSelectableRecord } from 'unitypackage-core';
-export { resolveMetaSidecarSelection } from 'unitypackage-core';
+export type { SidecarSelectableRecord } from './sidecarResolver';
+export { resolveMetaSidecarSelection } from './sidecarResolver';
 
 export type GroupingMode = 'tree' | 'extension';
 export type RecordCategory = 'asset' | 'meta';
