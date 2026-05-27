@@ -9,12 +9,12 @@ The web preview pane has accumulated friction:
 - The metadata strip and the Details panel both surface internal-only `mimeType` strings to users. Details additionally shows a redundant `Type` row that just echoes the extension already visible in the filename.
 - `docs/reference/extension-map.md` is stale and references PDF / audio / video MIME mappings even though `PreviewBody` only renders `image` and `text`.
 
-**Detection is harder than it looks.** Unity's Force-Text serialization (`docs.unity3d.com/Manual/FormatDescription.html`) writes a YAML header but embeds large binary payloads (texture pixels, font glyph atlases, lightmap data, terrain heightmaps, shader variants) as hex/base64 inside a single very long line. Evidence from `fixtures/temp`:
+**Detection is harder than it looks.** Unity's Force-Text serialization (`docs.unity3d.com/Manual/FormatDescription.html`) writes a YAML header but embeds large binary payloads (texture pixels, font glyph atlases, lightmap data, terrain heightmaps, shader variants) as hex/base64 inside a single very long line. Evidence from `fixtures/static`:
 
 - `LiberationSans SDF.asset` (2.2 MB, TextMeshPro SDF font) — starts with `%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:`, but file has lines of 48..88 chars **plus one line of 2,097,169 chars** (the glyph atlas hex-encoded). Text-valid UTF-8 but operationally binary. Must be hidden.
-- `Terrain_0_0_<guid>.asset` (820 KB) — all NUL bytes from byte 0, no YAML header. Must be hidden.
-- `LoreObj_5.1.asset` (660 B) — pure text YAML, all short lines. Must preview.
-- `Terrainstamp_Canyon01_Brush.brush` (1 KB) — name has "Terrain" but content is pure text YAML, short lines. Must preview.
+- `TerrainData_445999c2-5240-4b5c-9394-4cacb62d7eec.asset` (820 KB) — all NUL bytes from byte 0, no YAML header. Must be hidden.
+- `scriptable.asset` (660 B) — pure text YAML, all short lines. Must preview.
+- `stamp.brush` (1 KB) — content is pure text YAML, short lines. Must preview.
 
 Filename patterns (`*SDF.asset`, `*[Tt]errain*`) get this wrong in both directions; a naive `%YAML` magic check accepts SDF as text. The right answer is a content-based check that combines magic-byte with a head+tail line-length scan, paired with a tri-state UI gate (immediate / deferred / hidden) and no size cap anywhere.
 
@@ -23,7 +23,7 @@ Filename patterns (`*SDF.asset`, `*[Tt]errain*`) get this wrong in both directio
 ### In
 
 - `packages/core/src/classify.ts` — add `isUnityYamlBinary(bytes)`; remove `isLikelyUtf8Text`; reroute `getPreviewKindForPath`.
-- `packages/core/src/classify.test.ts` — inline cases + `fixtures/temp` cases under `describe.skipIf`.
+- `packages/core/src/classify.test.ts` — inline cases + `fixtures/static` cases under `describe` (always on).
 - `packages/core/src/index.ts` — barrel re-export.
 - `apps/web/src/components/PreviewPanel.tsx` — tri-state `PreviewBody`, new `DeferredTextPreview`, +css/hlsl highlight registrations, drop `TEXT_PREVIEW_LIMIT`, drop MIME from header + Type/MIME from Metadata.
 - `apps/web/src/components/PreviewPanel.test.tsx` — extend.
@@ -54,7 +54,7 @@ Filename patterns (`*SDF.asset`, `*[Tt]errain*`) get this wrong in both directio
 | # | Title | Files |
 |---|---|---|
 | P1 | Content-based binary detection in core | `packages/core/src/classify.ts`, `packages/core/src/index.ts` |
-| P2 | Classify tests (inline + fixtures/temp) | `packages/core/src/classify.test.ts` |
+| P2 | Classify tests (inline + fixtures/static) | `packages/core/src/classify.test.ts` |
 | P3 | Tri-state preview gate | `apps/web/src/components/PreviewPanel.tsx`, `apps/web/src/packageModel.ts` |
 | P4 | Highlight.js: +css, +hlsl-via-glsl, skip-unsupported | `apps/web/src/components/PreviewPanel.tsx` |
 | P5 | Preview-pane perf cleanups | `apps/web/src/components/PreviewPanel.tsx` |
@@ -68,10 +68,10 @@ Filename patterns (`*SDF.asset`, `*[Tt]errain*`) get this wrong in both directio
 Shipped: added content-based binary detection (`isUnityYamlBinary`) to check for a `%YAML` magic header and scan line lengths to identify operationally binary files.
 Modified: `packages/core/src/classify.ts` to implement the logic and update `getPreviewKindForPath`; `packages/core/src/index.ts` to export it from the barrel.
 
-### P2 -- Classify tests (inline + fixtures/temp)  [DONE 2026-05-27]
+### P2 -- Classify tests (inline + fixtures/static)  [DONE 2026-05-27]
 
 Shipped: added comprehensive unit tests for `isUnityYamlBinary` and preview kind mapping in `packages/core/src/classify.test.ts`.
-Implemented: inline tests for CI and local fixture checks for text/binary SDF assets, terrain assets, and brushes under `fixtures/temp` (using `describe.skipIf`).
+Implemented: inline tests for CI and fixture checks for text/binary SDF assets, terrain assets, and brushes under `fixtures/static` (always active; `skipIf` removed after migration from `fixtures/temp`).
 
 ### P3 -- Tri-state preview gate  [DONE 2026-05-27]
 
@@ -105,17 +105,17 @@ Shipped: Executed hygiene scans across the workspace, verified that all E2E test
 ## Verification
 
 1. **Unit / component**
-   - `bun run test:core` — inline cases + (when present) `fixtures/temp` cases pass.
+   - `bun run test:core` — inline cases + `fixtures/static` cases pass.
    - `bun run test:web` — highlight (css, hlsl, shaderlab-plain), deferred-frame click-through, hidden-frame collapse, no-MIME / no-Type metadata.
 2. **Build / static analysis**
    - `bun run --filter @unitypackage-tools/web typecheck`
    - `bun run --filter @unitypackage-tools/web build`
    - `bun run knip`
-3. **Manual dev verification via `fixtures/temp`** (load the four files via a synthetic `.unitypackage`):
+3. **Manual dev verification via `fixtures/static`** (load the four files via a synthetic `.unitypackage`):
    - `LiberationSans SDF.asset` → preview area **hidden**.
-   - `LoreObj_5.1.asset` → "Load preview" → click → YAML renders.
-   - `Terrain_0_0_<guid>.asset` → preview area hidden.
-   - `Terrainstamp_Canyon01_Brush.brush` → "Load preview" → click → YAML renders.
+   - `scriptable.asset` → "Load preview" → click → YAML renders.
+   - `TerrainData_445999c2-5240-4b5c-9394-4cacb62d7eec.asset` → preview area hidden.
+   - `stamp.brush` → "Load preview" → click → YAML renders.
 4. **E2E against `fixtures/static/archives/Polytope_URP.unitypackage`**
    - `.cs` → highlighted immediately; header shows size only; Details: Path/GUID/Size.
    - `.hlsl` / `.compute` / `.cginc` → highlighted via glsl grammar.

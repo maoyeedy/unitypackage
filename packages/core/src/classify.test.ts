@@ -8,12 +8,12 @@ import {
   getUnityFileCategory,
   isUnityYamlBinary,
 } from './index';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const tempDirUrl = new URL('../../../fixtures/temp', import.meta.url);
-const tempDir = fileURLToPath(tempDirUrl);
+const staticDirUrl = new URL('../../../fixtures/static', import.meta.url);
+const staticDir = fileURLToPath(staticDirUrl);
 
 describe('file classification', () => {
   it('extracts lower-case extensions and handles extensionless paths', () => {
@@ -164,46 +164,46 @@ describe('file classification', () => {
     });
   });
 
-  describe.skipIf(!existsSync(tempDir))('real-fixture cases in fixtures/temp', () => {
+  describe('real-fixture cases in fixtures/static', () => {
     it('identifies LiberationSans SDF.asset as binary', () => {
-      const filePath = join(tempDir, 'LiberationSans SDF.asset');
+      const filePath = join(staticDir, 'LiberationSans SDF.asset');
       const bytes = readFileSync(filePath);
       expect(isUnityYamlBinary(bytes)).toBe(true);
     });
 
-    it('identifies LoreObj_5.1.asset as text', () => {
-      const filePath = join(tempDir, 'LoreObj_5.1.asset');
+    it('identifies scriptable.asset as text', () => {
+      const filePath = join(staticDir, 'scriptable.asset');
       const bytes = readFileSync(filePath);
       expect(isUnityYamlBinary(bytes)).toBe(false);
     });
 
-    it('identifies Terrain_0_0_<guid>.asset as binary', () => {
-      const files = readdirSync(tempDir);
-      const terrainFile = files.find(f => f.startsWith('Terrain_0_0_') && f.endsWith('.asset'));
+    it('identifies TerrainData_<guid>.asset as binary', () => {
+      const files = readdirSync(staticDir);
+      const terrainFile = files.find(f => f.startsWith('TerrainData_') && f.endsWith('.asset'));
       expect(terrainFile).toBeDefined();
-      const filePath = join(tempDir, terrainFile!);
+      const filePath = join(staticDir, terrainFile!);
       const bytes = readFileSync(filePath);
       expect(isUnityYamlBinary(bytes)).toBe(true);
     });
 
-    it('identifies Terrainstamp_Canyon01_Brush.brush as text', () => {
-      const filePath = join(tempDir, 'Terrainstamp_Canyon01_Brush.brush');
+    it('identifies stamp.brush as text', () => {
+      const filePath = join(staticDir, 'stamp.brush');
       const bytes = readFileSync(filePath);
       expect(isUnityYamlBinary(bytes)).toBe(false);
     });
 
     it('hides TerrainData_*.asset via filename fast-path even when sniff would pass', () => {
-      const files = readdirSync(tempDir);
+      const files = readdirSync(staticDir);
       const terrainData = files.find(f => f.startsWith('TerrainData_') && f.endsWith('.asset'));
       expect(terrainData).toBeDefined();
-      const filePath = join(tempDir, terrainData!);
+      const filePath = join(staticDir, terrainData!);
       const bytes = readFileSync(filePath);
       // Regardless of sniff outcome on this file, the filename pattern routes it to 'unsupported'.
       expect(getPreviewKindForPath(`Assets/Terrain/${terrainData!}`, bytes)).toBe('unsupported');
     });
 
     it('hides LiberationSans SDF.asset via filename fast-path', () => {
-      const filePath = join(tempDir, 'LiberationSans SDF.asset');
+      const filePath = join(staticDir, 'LiberationSans SDF.asset');
       const bytes = readFileSync(filePath);
       expect(getPreviewKindForPath('Assets/Fonts/LiberationSans SDF.asset', bytes)).toBe('unsupported');
     });

@@ -60,12 +60,11 @@ Five reasons a file lands here:
 
 ### Counter-examples worth remembering
 
-Filename patterns from `gitattributes.md` are an **additive fast-path** (rule 2 above), not the only signal. The content sniff still runs for `.asset` filenames that do not match the pattern list. Real samples from `fixtures/temp`:
+Filename patterns from `gitattributes.md` are an **additive fast-path** (rule 2 above), not the only signal. The content sniff still runs for `.asset` filenames that do not match the pattern list. Real samples from `fixtures/static`:
 
 - `LiberationSans SDF.asset` (2.2 MB, TextMeshPro font) -- matches `*SDF*.asset` filename rule -> **hidden** via fast-path, no sniff needed. Even without the rule, the line-length scan would catch the 2,097,169-char glyph atlas line.
-- `TerrainData_<guid>.asset` (5.4 MB, Unity terrain) -- matches `*[Tt]errain*.asset` rule -> **hidden** via fast-path. Also exceeds the 1 MB cap.
-- `Terrain_0_0_<guid>.asset` (820 KB, Force-Binary terrain) -- matches `*[Tt]errain*.asset` rule -> **hidden**. Under the 1 MB cap, so the filename fast-path is what catches it; the content sniff also catches it via the missing `%YAML` magic.
-- `Terrainstamp_Canyon01_Brush.brush` (1 KB) -- name contains "Terrain" but extension is `.brush`, not `.asset`. Filename rule does **not** match. Content is pure short-line YAML, so `isUnityYamlBinary` returns false -> **deferred (previewable)**.
+- `TerrainData_445999c2-5240-4b5c-9394-4cacb62d7eec.asset` (820 KB, Force-Binary terrain) -- matches `*[Tt]errain*.asset` rule -> **hidden**. Under the 1 MB cap, so the filename fast-path is what catches it; the content sniff also catches it via the missing `%YAML` magic.
+- `stamp.brush` (1 KB) -- name is short, extension is `.brush`, not `.asset`. Filename rule does **not** match. Content is pure short-line YAML, so `isUnityYamlBinary` returns false -> **deferred (previewable)**.
 
 ## Internal-only field
 

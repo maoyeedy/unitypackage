@@ -84,7 +84,6 @@ All contexts (dev, CI, published): Node ≥24.
 - **`bun run test` runs all 3 vitest projects in parallel** via `vitest run` at root (~2.8s). Do not use `bun run --filter '*' test` (fails on core/cli which lack local vitest configs).
 - **Force-Text YAML may embed binary**: Unity's Force-Text serialization writes a `%YAML` header but inlines large binary payloads (texture pixels, font glyph atlases, lightmap data, shader variants, terrain heightmaps) as one very long hex/base64 line. A naive `%YAML` magic check is not enough; use `isUnityYamlBinary` from core. Counter-example fixture: `LiberationSans SDF.asset` (text YAML header, 2-million-char glyph atlas line — must be hidden).
 - **`TextPreview` is fully synchronous**: `TextDecoder.decode` + `hljs.highlight` run on the main thread with no chunking or Web Worker offload. A multi-MB string freezes the tab for 5--30 seconds. This is why `getPreviewKindForPath` enforces `PREVIEW_SIZE_LIMIT_BYTES` (1 MB) and the filename fast-path -- never assume highlight.js is "fast enough" for arbitrary input.
-- **`fixtures/temp` is git-ignored**: per `~/.config/git/ignore` (`temp/`). Local-only fixtures for classify validation; tests that read it must use `describe.skipIf(!existsSync(tempDir))` (mirroring `meta.test.ts` `URL` + `readFileSync` pattern) so CI stays green when the dir is absent.
 
 ## Testing
 
