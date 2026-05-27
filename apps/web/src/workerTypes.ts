@@ -6,7 +6,11 @@ export interface ParsePackageRequest {
 }
 
 export type ParsePackageResponse =
-  | { type: 'success'; records: PackageFileRecord[] }
+  | {
+      type: 'success';
+      records: PackageFileRecord[];
+      contents: Record<string, Uint8Array>;
+    }
   | { type: 'error'; message: string };
 
 export interface DownloadZipFileInput {
