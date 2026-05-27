@@ -116,4 +116,38 @@ test.describe('explorer interactions', () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe('all_files.zip');
   });
+
+  test('large TerrainData binary asset shows collapsed preview and metadata', async ({ page }) => {
+    const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
+
+    await page.getByPlaceholder('Search files by name or path').fill('TerrainData_6dc76592');
+    const fileRow = page.getByRole('treeitem').filter({ hasText: 'TerrainData_6dc76592' });
+    await expect(fileRow.first()).toBeVisible({ timeout: 3_000 });
+
+    const start = performance.now();
+    await fileRow.first().click();
+    await expect(preview.getByText('GUID', { exact: true })).toBeVisible({ timeout: 10_000 });
+    const elapsed = performance.now() - start;
+
+    await expect(preview.locator('.preview-frame')).not.toBeVisible();
+    await expect(preview.getByText('Details', { exact: true })).toBeVisible();
+    expect(elapsed).toBeLessThan(2000);
+  });
+
+  test('small terrainlayer asset shows collapsed preview and metadata', async ({ page }) => {
+    const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
+
+    await page.getByPlaceholder('Search files by name or path').fill('Ground_Layer_01.terrainlayer');
+    const fileRow = page.getByRole('treeitem').filter({ hasText: 'Ground_Layer_01.terrainlayer' });
+    await expect(fileRow.first()).toBeVisible({ timeout: 3_000 });
+
+    const start = performance.now();
+    await fileRow.first().click();
+    await expect(preview.getByText('GUID', { exact: true })).toBeVisible({ timeout: 5_000 });
+    const elapsed = performance.now() - start;
+
+    await expect(preview.locator('.preview-frame')).not.toBeVisible();
+    await expect(preview.getByText('Details', { exact: true })).toBeVisible();
+    expect(elapsed).toBeLessThan(1000);
+  });
 });
