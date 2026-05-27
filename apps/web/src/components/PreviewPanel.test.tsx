@@ -366,4 +366,74 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(queryByText('Type')).not.toBeInTheDocument();
     expect(queryByText('MIME')).not.toBeInTheDocument();
   });
+
+  it('resets preview mode to asset when record.id changes without remounting', () => {
+    const recordA = createMockRecord({
+      id: 'record-a',
+      pathname: 'Assets/A.cs',
+      virtualPath: 'Assets/A.cs',
+      fileName: 'A.cs',
+      content: encoder.encode('A code'),
+      extension: 'cs',
+      hasMeta: true,
+    });
+    const metaA = createMockRecord({
+      id: 'meta-a',
+      pathname: 'Assets/A.cs.meta',
+      virtualPath: 'Assets/A.cs.meta',
+      fileName: 'A.cs.meta',
+      content: encoder.encode('guid: guid-a'),
+      extension: 'meta',
+    });
+
+    const recordB = createMockRecord({
+      id: 'record-b',
+      pathname: 'Assets/B.cs',
+      virtualPath: 'Assets/B.cs',
+      fileName: 'B.cs',
+      content: encoder.encode('B code'),
+      extension: 'cs',
+      hasMeta: true,
+    });
+    const metaB = createMockRecord({
+      id: 'meta-b',
+      pathname: 'Assets/B.cs.meta',
+      virtualPath: 'Assets/B.cs.meta',
+      fileName: 'B.cs.meta',
+      content: encoder.encode('guid: guid-b'),
+      extension: 'meta',
+    });
+
+    const { getByRole, queryByText, rerender } = render(
+      <PreviewPanel
+        record={recordA}
+        metaSidecar={metaA}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // Should initially be in asset mode, displaying Details
+    expect(getByRole('button', { name: 'Asset' })).toHaveClass('active');
+    expect(queryByText('Details')).toBeInTheDocument();
+
+    // Toggle to meta mode
+    fireEvent.click(getByRole('button', { name: '.meta' }));
+    expect(getByRole('button', { name: '.meta' })).toHaveClass('active');
+    expect(queryByText('Details')).not.toBeInTheDocument();
+
+    // Re-render with record B
+    rerender(
+      <PreviewPanel
+        record={recordB}
+        metaSidecar={metaB}
+        onDownload={onDownload}
+        onRevealInTree={onRevealInTree}
+      />
+    );
+
+    // Should automatically reset back to asset mode
+    expect(getByRole('button', { name: 'Asset' })).toHaveClass('active');
+    expect(queryByText('Details')).toBeInTheDocument();
+  });
 });
