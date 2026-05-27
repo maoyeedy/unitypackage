@@ -73,143 +73,26 @@ Modified: `packages/core/src/classify.ts` to implement the logic and update `get
 Shipped: added comprehensive unit tests for `isUnityYamlBinary` and preview kind mapping in `packages/core/src/classify.test.ts`.
 Implemented: inline tests for CI and local fixture checks for text/binary SDF assets, terrain assets, and brushes under `fixtures/temp` (using `describe.skipIf`).
 
-### P3 -- Tri-state preview gate
+### P3 -- Tri-state preview gate  [DONE 2026-05-27]
 
-**Goal:** route `PreviewBody` into `immediate` / `deferred` / `hidden` buckets; remove the 200 KB slice + truncation banner.
+Shipped: implemented tri-state routing (`immediate` / `deferred` / `hidden`) in `PreviewBody` of `PreviewPanel.tsx` and added `DeferredTextPreview` for Unity-generated files. Added `UNITY_GENERATED_EXTENSIONS` set and helper `isUnityGeneratedExtension` in `packageModel.ts`. Removed the text preview length limit and truncation banner. Added E2E tests for deferred/hidden behavior.
 
-**Files:** `apps/web/src/components/PreviewPanel.tsx`, `apps/web/src/packageModel.ts`.
+### P4 -- Highlight.js: +css, +hlsl-via-glsl, skip-unsupported  [DONE 2026-05-27]
 
-**Approach:**
+Shipped: registered `css` and `glsl`/`hlsl` languages in `PreviewPanel.tsx`. Introduced a `REGISTERED_LANGUAGES` Set to short-circuit highlight.js for unsupported syntaxes and render them as plain text. Added CSS and HLSL highlighting test cases, and a plain ShaderLab test case.
 
-1. Delete `TEXT_PREVIEW_LIMIT`, `slice(0, ...)`, the `isTruncated` flag, and the truncation banner JSX.
-2. Add to `packageModel.ts`:
-   ```ts
-   const UNITY_GENERATED_EXTENSIONS = new Set<string>([ /* set above */ ]);
-   export function isUnityGeneratedExtension(extension: string): boolean {
-     return UNITY_GENERATED_EXTENSIONS.has(extension);
-   }
-   ```
-3. Rewrite `PreviewBody`:
-   ```tsx
-   function PreviewBody({ record }: { record: PackageFileRecord }) {
-     if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} />;
-     if (record.previewKind === 'text') {
-       if (isUnityGeneratedExtension(record.extension)) {
-         return <DeferredTextPreview key={record.id} record={record} />;
-       }
-       return <TextPreview record={record} />;
-     }
-     return null;
-   }
-   ```
-4. Add `DeferredTextPreview`:
-   ```tsx
-   function DeferredTextPreview({ record }: { record: PackageFileRecord }) {
-     const [loaded, setLoaded] = useState(false);
-     if (loaded) return <TextPreview record={record} />;
-     return (
-       <div className="preview-frame deferred-frame">
-         <p>Unity-generated asset ({formatBytes(record.byteLength)})</p>
-         <button type="button" onClick={() => setLoaded(true)}>Load preview</button>
-       </div>
-     );
-   }
-   ```
-   `key={record.id}` resets `loaded` when selection changes.
-5. `TextPreview` decodes `record.content` directly (no slice).
-6. Smoke-test in `bun run dev:web` that `.preview-frame` CSS collapses cleanly when body is `null`.
+### P5 -- Preview-pane perf cleanups  [DONE 2026-05-27]
 
-**Exit criteria:**
+Shipped: removed the `useMemo` decoding logic wrapper around `textDecoder.decode` in `TextPreview` component to directly decode full file content on demand.
 
-- `TEXT_PREVIEW_LIMIT` removed from the file.
-- Selecting a `.prefab` / `.unity` / `.asset` (text YAML) shows the "Load preview" button; clicking renders the YAML.
-- Selecting a binary `.asset` (SDF, NavMesh, etc.) collapses the preview frame entirely — only header + metadata visible.
-- `bun run test:web` green.
+### P6 -- Faster `formatBytes`  [DONE 2026-05-27]
 
-### P4 -- Highlight.js: +css, +hlsl-via-glsl, skip-unsupported
+Shipped: optimized `formatBytes` helper function in `packageModel.ts` using a four-branch division algorithm instead of generic logarithmic calls, preserving the exact same rounding output behavior.
 
-**Goal:** extend highlighting to css and HLSL (via GLSL grammar); short-circuit highlighting for any unregistered language with one `Set.has` check.
+### P7 -- Remove MIME from UI, remove Type from Details  [DONE 2026-05-27]
 
-**Files:** `apps/web/src/components/PreviewPanel.tsx`.
+Shipped: removed the internal MIME string display from the preview panel header subtitle. Deleted both the `Type` and `MIME` metadata rows from the file details pane. Added assertions in `PreviewPanel.test.tsx` to prevent regression.
 
-**Approach:**
-
-1. Register two more languages next to `csharp` / `yaml` / `json`:
-   - `import css from 'highlight.js/lib/languages/css'` (built-in, confirmed via Context7 + local `node_modules`).
-   - `import glsl from 'highlight.js/lib/languages/glsl'` (built-in). Register under both `'glsl'` and `'hlsl'` — HLSL has no first-party grammar; GLSL is close enough.
-2. Module-level `Set<SyntaxLanguage>` of registered languages (`csharp`, `yaml`, `json`, `css`, `hlsl`, `glsl`). Short-circuit `highlightedHtml` with a single `Set.has` check; drop the `hljs.getLanguage() + try/catch` dance.
-3. Other syntax langs (`shaderlab`, `markdown`, `html`, `xml`, `typescript`, `javascript`, `text`) render as plain `<pre><code>` with no highlight pass.
-
-**Exit criteria:**
-
-- `.css` / `.uss` / `.tss` previews show `<span>` markup.
-- `.hlsl` / `.cginc` / `.compute` previews show `<span>` markup.
-- `.shader` (ShaderLab) preview renders without `<span>` markup.
-- New `PreviewPanel.test.tsx` cases: one css, one hlsl, one shaderlab-plain.
-- `bun run --filter @unitypackage-tools/web build` still tree-shakes correctly (bundle size sanity).
-
-### P5 -- Preview-pane perf cleanups
-
-**Goal:** keep the low-cost wins; drop the now-dead `useMemo` over the slice.
-
-**Files:** `apps/web/src/components/PreviewPanel.tsx`.
-
-**Approach:**
-
-- Keep module-scope `TextDecoder` (already present).
-- Keep image `Blob` constructed once via `useState` initializer.
-- Drop the `useMemo` that wrapped the `record.content.slice(...)` — decode `record.content` directly.
-- Do **not** add a Web Worker for `hljs.highlight`. The deferred bucket means user explicitly opts in; sync work on click is acceptable. Context7 confirms Workers are the only documented perf knob — defer to a later pass only if profiling shows >50 ms blocks.
-
-**Exit criteria:**
-
-- No `useMemo` over a slice exists in `TextPreview`.
-- No worker setup added.
-
-### P6 -- Faster `formatBytes`
-
-**Goal:** replace `Math.log` / `Math.pow` with a four-branch divide; keep the same UX rule (1 decimal under 10, integer otherwise).
-
-**Files:** `apps/web/src/packageModel.ts`.
-
-**Approach:**
-
-```ts
-const KB = 1024, MB = KB * 1024, GB = MB * 1024;
-export function formatBytes(bytes: number): string {
-  if (bytes < KB) return `${bytes} B`;
-  if (bytes < MB) return `${(bytes / KB).toFixed(bytes < 10 * KB ? 1 : 0)} KB`;
-  if (bytes < GB) return `${(bytes / MB).toFixed(bytes < 10 * MB ? 1 : 0)} MB`;
-  return `${(bytes / GB).toFixed(bytes < 10 * GB ? 1 : 0)} GB`;
-}
-```
-
-Drops the unreachable TB rung. Output unchanged: `0 B` / `512 B` / `1.5 KB` / `250 KB` / `3.4 MB` / `1.1 GB`.
-
-**Exit criteria:**
-
-- No `Math.log` / `Math.pow` references in `packageModel.ts`.
-- Existing `formatBytes` test cases (and any consumers in Stats / PreviewPanel / file rows) still produce the same output.
-
-### P7 -- Remove MIME from UI, remove Type from Details
-
-**Goal:** stop surfacing internal MIME strings to users; drop the redundant `Type` row that just echoes the extension.
-
-**Files:** `apps/web/src/components/PreviewPanel.tsx`, `apps/web/src/components/PreviewPanel.test.tsx`.
-
-**Approach:**
-
-1. Header subtitle: drop `· {previewRecord.mimeType}`. Show only `{formatBytes(byteLength)}`.
-2. `Metadata` rows: drop `Type` and `MIME`. Remaining: `Path`, `GUID`, `Size`, optional `Meta GUID` / `Importer`.
-3. Keep `record.mimeType` on the record type — `App.tsx` download Blob + `ImagePreview` Blob still need it. Internal only.
-4. Update `PreviewPanel.test.tsx`: drop assertions on header MIME / `Type` / `MIME` labels; add an assertion they are absent.
-5. Grep `apps/web` for `/mimeType/i` and `"MIME"` to confirm no other UI surface leaks it.
-
-**Exit criteria:**
-
-- Header shows size only; no MIME string anywhere in UI.
-- `Metadata` lacks `Type` and `MIME` rows.
-- `record.mimeType` still wired into `App.tsx` download path.
 
 ### P8 -- Rewrite `docs/reference/extension-map.md`
 
