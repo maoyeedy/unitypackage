@@ -1,8 +1,8 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowDownUp, ArrowUpDown, Boxes, Download, FileArchive, Filter, ListTree, RefreshCw, Search, Settings } from 'lucide-react';
+import { AlertTriangle, Boxes, Download, ListTree, Search, Settings, X } from 'lucide-react';
 import './App.css';
-import { buildExtensionGroups, buildTreeRows, filterRecords, getExtensionFileRecordIds, getMetaSidecarForAsset, getTreeFileRecordIds, sortRecords, toSidecarSelectableRecords, type SortDirection, type SortKey } from './packageModel';
+import { buildExtensionGroups, buildTreeRows, filterRecords, getExtensionFileRecordIds, getMetaSidecarForAsset, getTreeFileRecordIds, sortRecords, toSidecarSelectableRecords } from './packageModel';
 import { DropZone } from './components/DropZone';
 import { Stats } from './components/Stats';
 import { Explorer } from './components/Explorer';
@@ -36,9 +36,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryS
 function AppContent() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [isExtPickerOpen, setIsExtPickerOpen] = useState(false);
   const treeViewportRef = useRef<HTMLDivElement | null>(null);
 
   let clearSelection: () => void = () => { /* noop */ };
@@ -70,8 +67,8 @@ function AppContent() {
   }, [query]);
 
   const visibleRecords = useMemo(() => {
-    return sortRecords(filterRecords(records, { query: debouncedQuery }), sortKey, sortDirection);
-  }, [records, debouncedQuery, sortKey, sortDirection]);
+    return sortRecords(filterRecords(records, { query: debouncedQuery }), 'name', 'asc');
+  }, [records, debouncedQuery]);
 
   const selection = useExplorerSelection({ records, visibleRecords, treeViewportRef });
 
@@ -91,8 +88,6 @@ function AppContent() {
     setFocusedRowId,
     setSelectionAnchorId,
     setKeyboardRangeBaseIds,
-    invertSelection,
-    selectByExtension,
     activateRecord,
     toggleFolder,
     expandAll,
@@ -111,7 +106,6 @@ function AppContent() {
     includeMetaSidecarsInZip,
     setIncludeMetaSidecarsInZip,
     getSelectedZipIds,
-    getAllZipIds,
     downloadZip,
   } = useZipDownload({
     records,
@@ -122,10 +116,6 @@ function AppContent() {
     setError,
     setCurrentOp,
   });
-
-  const visibleExtensions = useMemo(() => {
-    return [...new Set(visibleRecords.map(r => r.extension || 'no extension'))].sort();
-  }, [visibleRecords]);
 
   const activeRecord = useMemo(() => {
     return records.find(r => r.id === activeRecordId) ?? visibleRecords[0] ?? null;
@@ -164,22 +154,6 @@ function AppContent() {
               onChange={e => setQuery(e.target.value)}
             />
           </div>
-          <details className="dropdown zip-options">
-            <summary className="btn zip-options-trigger">
-              <Settings aria-hidden="true" size={14} />
-              <span>ZIP options</span>
-            </summary>
-            <div className="dropdown-menu zip-options-menu">
-              <label className="toggle-row">
-                <input type="checkbox" checked={maintainStructure} onChange={e => setMaintainStructure(e.target.checked)} />
-                Preserve folders in ZIP downloads
-              </label>
-              <label className="toggle-row">
-                <input type="checkbox" checked={includeMetaSidecarsInZip} onChange={e => setIncludeMetaSidecarsInZip(e.target.checked)} />
-                Include .meta sidecars in ZIP
-              </label>
-            </div>
-          </details>
         </div>
       </header>
 
@@ -199,42 +173,36 @@ function AppContent() {
                   <Boxes aria-hidden="true" size={14} /><span>Extension</span>
                 </button>
               </div>
-              <div className="sort-control">
-                <label htmlFor="sort-key" className="sort-label">Sort</label>
-                <select id="sort-key" className="sort-select" value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}>
-                  <option value="name">Name</option>
-                  <option value="size">Size</option>
-                  <option value="extension">Extension</option>
-                  <option value="guid">GUID</option>
-                </select>
-                <button type="button" id="sort-direction-toggle" className="btn btn--icon" aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'} title={sortDirection === 'asc' ? 'Ascending' : 'Descending'} onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}>
-                  {sortDirection === 'asc' ? <ArrowUpDown size={14} /> : <ArrowDownUp size={14} />}
-                </button>
-              </div>
-              <button type="button" className="btn" disabled={selectedRecordIds.size === 0} onClick={clearSelection}>
-                <RefreshCw aria-hidden="true" size={14} /><span>Clear selection</span>
+              <button
+                type="button"
+                className="btn btn--icon"
+                aria-label="Clear selection"
+                title="Clear selection"
+                disabled={selectedRecordIds.size === 0}
+                onClick={clearSelection}
+              >
+                <X aria-hidden="true" size={14} />
               </button>
-              <button type="button" className="btn" disabled={visibleRecords.length === 0} onClick={invertSelection}>
-                <RefreshCw aria-hidden="true" size={14} /><span>Invert selection</span>
-              </button>
-              <div className="select-by-ext-container">
-                <button type="button" className="btn" disabled={visibleRecords.length === 0} onClick={() => setIsExtPickerOpen(prev => !prev)} aria-label="Select by extension" aria-expanded={isExtPickerOpen} aria-haspopup="listbox">
-                  <Filter aria-hidden="true" size={14} /><span>Select by extension</span>
-                </button>
-                {isExtPickerOpen && (
-                  <div className="ext-picker-dropdown" role="listbox" aria-label="Available extensions">
-                    {visibleExtensions.length === 0 ? <div className="ext-picker-item empty">No extensions</div> : visibleExtensions.map(ext => (
-                      <button key={ext} type="button" className="ext-picker-item" role="option" onClick={() => { selectByExtension(ext); setIsExtPickerOpen(false); }}>{ext === 'no extension' ? ext : `.${ext}`}</button>
-                    ))}
+              <div className="zip-group" role="group" aria-label="Download ZIP">
+                <details className="dropdown zip-options">
+                  <summary className="btn btn--icon zip-options-trigger" aria-label="ZIP options" title="ZIP options">
+                    <Settings aria-hidden="true" size={14} />
+                  </summary>
+                  <div className="dropdown-menu zip-options-menu">
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={maintainStructure} onChange={e => setMaintainStructure(e.target.checked)} />
+                      Preserve folders in ZIP downloads
+                    </label>
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={includeMetaSidecarsInZip} onChange={e => setIncludeMetaSidecarsInZip(e.target.checked)} />
+                      Include .meta sidecars in ZIP
+                    </label>
                   </div>
-                )}
+                </details>
+                <button type="button" className="btn btn--primary" disabled={selectedRecordIds.size === 0} onClick={() => void downloadZip(getSelectedZipIds(), 'selected_files.zip')}>
+                  <Download aria-hidden="true" size={14} /><span>Zip Selected</span>
+                </button>
               </div>
-              <button type="button" className="btn btn--primary" disabled={selectedRecordIds.size === 0} onClick={() => void downloadZip(getSelectedZipIds(), 'selected_files.zip')}>
-                <Download aria-hidden="true" size={14} /><span>Selected ZIP</span>
-              </button>
-              <button type="button" className="btn btn--primary" disabled={records.length === 0} onClick={() => void downloadZip(getAllZipIds(), 'all_files.zip')}>
-                <FileArchive aria-hidden="true" size={14} /><span>All ZIP</span>
-              </button>
             </div>
           </div>
           <Explorer groupingMode={groupingMode} records={visibleRecords} treeRows={treeRows} extensionGroups={extensionGroups} treeFileRecordIds={treeFileRecordIds} extensionFileRecordIds={extensionFileRecordIds} selectedIds={selectedRecordIds} activeId={activeRecord?.id ?? null} collapsedFolders={collapsedFolders} treeViewportRef={treeViewportRef} scrollToRow={scrollToRow} onToggleFolder={toggleFolder} onExpandAll={expandAll} onCollapseAll={collapseAll} onActivate={activateRecord} onToggleSelected={toggleRecordSelection} onScopeSelect={selectScope} onReplaceSelection={replaceRecordSelection} focusedRowId={focusedRowId} onFocusRow={setFocusedRowId} selectionAnchorId={selectionAnchorId} onSetAnchor={setSelectionAnchorId} keyboardRangeBaseIds={keyboardRangeBaseIds} onSetKeyboardRangeBase={setKeyboardRangeBaseIds} />

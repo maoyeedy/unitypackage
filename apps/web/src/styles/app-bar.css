@@ -105,11 +105,8 @@
   font-size: var(--fs-11);
 }
 
-/* ZIP options popover -- <details><summary> pattern, summary styled as .btn */
-.zip-options {
-  position: relative;
-}
-
+/* ZIP options popover -- <details><summary> pattern, summary styled as .btn.
+   Positioning anchors are owned by the surrounding .zip-group (see explorer.css). */
 .zip-options-trigger {
   list-style: none;
   user-select: none;

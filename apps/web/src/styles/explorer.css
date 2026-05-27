@@ -229,6 +229,30 @@
   font-size: var(--fs-11);
 }
 
+/* Grouped ZIP utilities: [options gear] [Zip Selected] read as one util */
+.zip-group {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.zip-group > .zip-options {
+  display: inline-flex;
+}
+
+.zip-group > .zip-options > .zip-options-trigger {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-color: var(--border-deepest);
+}
+
+.zip-group > .btn--primary {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-color: rgba(0, 0, 0, 0.35);
+}
+
 /* Select by extension dropdown */
 .select-by-ext-container {
   position: relative;
