@@ -6,6 +6,7 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import json from 'highlight.js/lib/languages/json';
 import css from 'highlight.js/lib/languages/css';
 import glsl from 'highlight.js/lib/languages/glsl';
+import { FileQuestion } from 'lucide-react';
 import type { SyntaxLanguage } from 'unitypackage-core';
 import type { PackageFileRecord } from '../../packageModel';
 import { useContent } from '../../contexts/ContentContext';
@@ -32,7 +33,18 @@ interface PreviewBodyProps {
 export function PreviewBody({ record }: PreviewBodyProps) {
   if (record.previewKind === 'image') return <ImagePreview key={record.id} record={record} />;
   if (record.previewKind === 'text') return <TextPreview record={record} />;
-  return null;
+  return <NoPreview record={record} />;
+}
+
+function NoPreview({ record }: { record: PackageFileRecord }) {
+  const extLabel = record.extension ? `.${record.extension}` : 'no extension';
+  return (
+    <div className="preview-frame no-preview-frame" role="status" aria-label="No preview available">
+      <FileQuestion aria-hidden="true" size={28} />
+      <p>No preview</p>
+      <small>{extLabel}</small>
+    </div>
+  );
 }
 
 function ImagePreview({ record }: { record: PackageFileRecord }) {

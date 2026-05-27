@@ -269,29 +269,47 @@ describe('PreviewPanel Syntax Highlighting', () => {
     expect(queryByText('Details')).not.toBeInTheDocument();
   });
 
-  it('collapses preview body for Unity-generated YAML extensions (now unsupported)', () => {
+  it('shows a no-preview frame for Unity-generated YAML extensions', () => {
     const asset = createMockRecord({
       extension: 'prefab',
       previewKind: 'unsupported',
       content: encoder.encode('prefab content'),
     });
 
-    const { container } = renderPreviewPanel(asset, onDownload, onRevealInTree);
+    const { container, getByText } = renderPreviewPanel(asset, onDownload, onRevealInTree);
 
-    // Should not render any preview-frame container (no deferred button)
-    expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
+    expect(container.querySelector('.no-preview-frame')).toBeInTheDocument();
+    expect(getByText('No preview')).toBeInTheDocument();
+    expect(getByText('.prefab')).toBeInTheDocument();
   });
 
-  it('collapses preview body entirely (returns null) for unsupported preview kind', () => {
+  it('shows a no-preview frame for unsupported preview kind', () => {
     const record = createMockRecord({
       previewKind: 'unsupported',
       content: encoder.encode(''),
     });
 
-    const { container } = renderPreviewPanel(record, onDownload, onRevealInTree);
+    const { container, getByText } = renderPreviewPanel(record, onDownload, onRevealInTree);
 
-    // It should not render any preview-frame container
-    expect(container.querySelector('.preview-frame')).not.toBeInTheDocument();
+    expect(container.querySelector('.no-preview-frame')).toBeInTheDocument();
+    expect(getByText('No preview')).toBeInTheDocument();
+  });
+
+  it('shows a no-preview frame for binary asset downgrades', () => {
+    const record = createMockRecord({
+      pathname: 'Assets/LiberationSans SDF.asset',
+      virtualPath: 'Assets/LiberationSans SDF.asset',
+      fileName: 'LiberationSans SDF.asset',
+      extension: 'asset',
+      previewKind: 'unsupported',
+      content: encoder.encode(''),
+    });
+
+    const { container, getByText } = renderPreviewPanel(record, onDownload, onRevealInTree);
+
+    expect(container.querySelector('.no-preview-frame')).toBeInTheDocument();
+    expect(getByText('No preview')).toBeInTheDocument();
+    expect(getByText('.asset')).toBeInTheDocument();
   });
 
   it('does not render MIME in the header and does not render Type or MIME in the metadata details', () => {

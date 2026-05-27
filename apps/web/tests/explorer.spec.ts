@@ -117,7 +117,7 @@ test.describe('explorer interactions', () => {
     expect(download.suggestedFilename()).toBe('all_files.zip');
   });
 
-  test('large TerrainData binary asset shows collapsed preview and metadata', async ({ page }) => {
+  test('large TerrainData binary asset shows no-preview frame and metadata', async ({ page }) => {
     const preview = page.getByRole('complementary', { name: 'Preview and metadata' });
 
     await page.getByPlaceholder('Search files by name or path').fill('TerrainData_6dc76592');
@@ -129,7 +129,8 @@ test.describe('explorer interactions', () => {
     await expect(preview.getByText('GUID', { exact: true })).toBeVisible({ timeout: 10_000 });
     const elapsed = performance.now() - start;
 
-    await expect(preview.locator('.preview-frame')).not.toBeVisible();
+    await expect(preview.locator('.preview-frame.no-preview-frame')).toBeVisible();
+    await expect(preview.getByText('No preview', { exact: true })).toBeVisible();
     await expect(preview.getByText('Details', { exact: true })).toBeVisible();
     expect(elapsed).toBeLessThan(2000);
   });
