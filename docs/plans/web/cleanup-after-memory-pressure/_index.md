@@ -15,12 +15,12 @@ This plan sweeps the resulting mess. **No behavior change.** Every phase preserv
 - `apps/web/src/App.tsx` -- extract `usePackageLoader`, `useExplorerSelection`, `useZipDownload` hooks; trim from ~730 lines to roughly 250.
 - `apps/web/src/zipPath.ts` (or a new `zipPayload.ts`) -- absorb the inline file/transfer assembly from `createDownloadZipInWorker`.
 - `apps/web/src/components/preview/` -- split `PreviewPanel.tsx` into `PreviewPanel.tsx`, `PreviewHeader.tsx`, `PreviewBody.tsx`, `Metadata.tsx`; introduce a `ContentContext` so `getContent` is read via hook instead of prop-drilled.
-- `apps/web/src/components/PreviewPanel.test.tsx` -- update imports and remove `getContent` props from test renders.
+- `apps/web/src/components/preview/PreviewPanel.test.tsx` -- update imports and remove `getContent` props from test renders.
 - Dead-code sweep: `getSiblingMetaRecord` wrapper in `packageModel.ts`, unused CSS rules (`.preview-truncated`, `.unsupported-frame`), any orphaned types surfaced by `knip`.
 
 ### Out
 
-- Behavior changes to preview classification, MIME handling, or the preview "No Preview" rework. That is a separate plan ([`preview-feature-tailoring`](../preview-feature-tailoring/_index.md)).
+- Behavior changes to preview classification, MIME handling, or the preview "No Preview" rework. That is a separate plan ([`preview-feature-tailoring`](../preview-feature-tailoring.md)).
 - Replacing the `useState`-based prev-id reset in `PreviewPanelContent` -- it is correct and supported by React's render-phase setState pattern; do not regress to keyed remount.
 - CLI changes beyond what `knip` flags as transitively dead.
 - Performance work. The memory pressure is fixed; do not chase further micro-wins here.
