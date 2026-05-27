@@ -154,13 +154,45 @@ export function getMimeTypeForPath(pathname: string): string {
   return 'application/octet-stream';
 }
 
+const YAML_MAGIC = Uint8Array.of(0x25, 0x59, 0x41, 0x4D, 0x4C); // %YAML
+const LF = 0x0A;
+const MAX_LINE_BYTES = 2048;          // >2KB lines -> embedded binary blob
+const SAMPLE_WINDOW_BYTES = 32 * 1024; // O(64KB) per file regardless of size
+
+export function isUnityYamlBinary(bytes: Uint8Array | undefined): boolean {
+  if (!bytes || bytes.byteLength < YAML_MAGIC.length) return true;
+  for (let i = 0; i < YAML_MAGIC.length; i++) {
+    if (bytes[i] !== YAML_MAGIC[i]) return true;
+  }
+  const total = bytes.byteLength;
+  if (hasLongLine(bytes, 0, Math.min(total, SAMPLE_WINDOW_BYTES))) return true;
+  if (total > SAMPLE_WINDOW_BYTES) {
+    if (hasLongLine(bytes, total - SAMPLE_WINDOW_BYTES, total)) return true;
+  }
+  return false;
+}
+
+function hasLongLine(bytes: Uint8Array, start: number, end: number): boolean {
+  let lineStart = start;
+  for (let i = start; i < end; i++) {
+    if (bytes[i] === LF) {
+      if (i - lineStart > MAX_LINE_BYTES) return true;
+      lineStart = i + 1;
+    }
+  }
+  return end - lineStart > MAX_LINE_BYTES;
+}
+
 export function getPreviewKindForPath(pathname: string, bytes?: Uint8Array): PreviewKind {
   const extension = getPathExtension(pathname);
   if (extension === 'pdf') return 'pdf';
   if (imageMimeTypes.has(extension)) return 'image';
   if (audioMimeTypes.has(extension)) return 'audio';
   if (videoMimeTypes.has(extension)) return 'video';
-  if (textExtensions.has(extension) || isLikelyUtf8Text(bytes)) return 'text';
+  if (yamlExtensions.has(extension) || extension === 'meta') {
+    return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
+  }
+  if (textExtensions.has(extension)) return 'text';
   return 'unsupported';
 }
 
@@ -179,15 +211,4 @@ export function getSyntaxLanguageForPath(pathname: string): SyntaxLanguage {
   if (markdownExtensions.has(extension)) return 'markdown';
   if (htmlExtensions.has(extension)) return 'html';
   return 'text';
-}
-
-function isLikelyUtf8Text(bytes?: Uint8Array): boolean {
-  if (!bytes || bytes.byteLength === 0) return false;
-  const sample = bytes.slice(0, Math.min(bytes.byteLength, 512));
-  let suspicious = 0;
-  for (const byte of sample) {
-    if (byte === 0) return false;
-    if (byte < 7 || (byte > 13 && byte < 32)) suspicious += 1;
-  }
-  return suspicious / sample.byteLength < 0.08;
 }
