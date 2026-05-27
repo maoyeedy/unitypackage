@@ -26,7 +26,10 @@ export type {
   SidecarSelectableKind,
   SidecarSelectableRecord,
 } from './sidecar';
-export { resolveMetaSidecarSelection } from './sidecar';
+export {
+  findMetaSidecarForAsset,
+  resolveMetaSidecarSelection,
+} from './sidecar';
 export type {
   DeclaredMetaImporter,
   MetaImporterType,

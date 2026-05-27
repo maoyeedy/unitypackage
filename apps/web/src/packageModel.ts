@@ -1,6 +1,6 @@
 import {
   entriesToComponentRecords,
-  metaSidecarPathForAsset,
+  findMetaSidecarForAsset as findCoreMetaSidecarForAsset,
   readDeclaredMetaImporter,
   readMetaGuid,
   resolveMetaSidecarSelection,
@@ -27,7 +27,7 @@ export function getRecordCategory(record: PackageFileRecord): RecordCategory {
   return record.extension === 'meta' ? 'meta' : 'asset';
 }
 
-export function toSidecarSelectableRecords(records: PackageFileRecord[]): SidecarSelectableRecord[] {
+export function toSidecarSelectableRecords(records: readonly PackageFileRecord[]): SidecarSelectableRecord[] {
   return records.map(record => ({
     id: record.id,
     guid: record.guid,
@@ -321,19 +321,14 @@ export function getMetaSidecarForAsset(
 ): PackageFileRecord | undefined {
   if (record.extension === 'meta') return undefined;
 
-  const metaPathname = metaSidecarPathForAsset(record.pathname);
-  const sameGuidMeta = records.find(
-    candidate =>
-      candidate.extension === 'meta' &&
-      candidate.guid === record.guid &&
-      candidate.virtualPath === metaPathname,
-  );
-  if (sameGuidMeta) return sameGuidMeta;
+  const selectableRecords = toSidecarSelectableRecords(records);
+  const selectableAsset = selectableRecords.find(candidate => candidate.id === record.id);
+  if (!selectableAsset) return undefined;
 
-  const fallbackCandidates = records.filter(
-    candidate => candidate.extension === 'meta' && candidate.virtualPath === metaPathname,
-  );
-  return fallbackCandidates.length === 1 ? fallbackCandidates[0] : undefined;
+  const selectableMeta = findCoreMetaSidecarForAsset(selectableRecords, selectableAsset);
+  if (!selectableMeta) return undefined;
+
+  return records.find(candidate => candidate.id === selectableMeta.id);
 }
 
 export interface DeclaredMetaInfo {
