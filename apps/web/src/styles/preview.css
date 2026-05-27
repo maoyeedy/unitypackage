@@ -26,6 +26,12 @@
   border-radius: 8px;
   background: var(--panel-2);
   overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.preview-frame::-webkit-scrollbar {
+  display: none;
 }
 
 .preview-mode-switch {
@@ -133,7 +139,29 @@
 .text-frame .hljs-punctuation {
   color: var(--text);
 }
-/* TODO: If preview-feature-tailoring plans to introduce a "No Preview" frame, implement it there. Do not pre-stage CSS here. */
+
+.no-preview-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  text-align: center;
+  padding: 20px;
+}
+
+.no-preview-frame p {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.no-preview-frame small {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, monospace;
+  font-size: 0.78rem;
+}
 
 .breadcrumb {
   display: flex;
