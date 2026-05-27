@@ -49,6 +49,7 @@ export type {
   UnityFileCategory,
 } from './classify';
 export {
+  PREVIEW_SIZE_LIMIT_BYTES,
   getMimeTypeForPath,
   getPathExtension,
   getPreviewKindForPath,

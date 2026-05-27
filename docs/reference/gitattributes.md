@@ -155,9 +155,20 @@ Assets/Plugins/**       linguist-vendored
 # Spine export file for Unity
 *.skel.bytes            lfs
 
-# Exceptions for .asset files such as lightning pre-baking
-*[Tt]errain*.asset      binary
-*LightingData.asset     binary
-*NavMesh*.asset         binary
-*OcclusionCulling*.asset binary
-*SDF.asset binary
+# Generated/baked Unity .asset files that are binary-like, large, or bad to merge
+*[Tt]errain*.asset              lfs
+*TerrainData*.asset             lfs
+
+*LightingData*.asset            lfs
+*LightmapSnapshot*.asset        lfs
+
+*NavMesh*.asset                 lfs
+*NavMeshData*.asset             lfs
+
+*OcclusionCulling*.asset        lfs
+*OcclusionCullingData*.asset    lfs
+
+*SDF*.asset                     lfs
+
+*ProbeVolumeStreamable*.asset   lfs
+*ProbeVolumeData*.asset         lfs

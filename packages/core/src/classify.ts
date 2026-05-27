@@ -159,6 +159,11 @@ const LF = 0x0A;
 const MAX_LINE_BYTES = 2048;          // >2KB lines -> embedded binary blob
 const SAMPLE_WINDOW_BYTES = 32 * 1024; // O(64KB) per file regardless of size
 
+// Hard cap on text preview size. Force-Text Unity assets can embed multi-MB hex
+// blobs in the middle of a YAML file, past the head/tail sniff window. Synchronous
+// TextDecoder + highlight.js on multi-MB strings freezes the tab for seconds.
+export const PREVIEW_SIZE_LIMIT_BYTES = 1 * 1024 * 1024;
+
 /**
  * Detects if a Unity YAML file contains binary contents.
  * Treats missing bytes (undefined) as binary because the only caller never passes undefined.
@@ -172,6 +177,33 @@ export function isUnityYamlBinary(bytes: Uint8Array | undefined): boolean {
   if (hasLongLine(bytes, 0, Math.min(total, SAMPLE_WINDOW_BYTES))) return true;
   if (total > SAMPLE_WINDOW_BYTES) {
     if (hasLongLine(bytes, total - SAMPLE_WINDOW_BYTES, total)) return true;
+  }
+  return false;
+}
+
+// Filename patterns from docs/reference/gitattributes.md that Unity convention
+// marks as binary .asset payloads (heightmaps, lightmaps, navmesh, occlusion data,
+// TextMeshPro SDF glyph atlases, probe volumes). Used as a fast-path before the
+// content sniff so sub-cap binary assets get hidden too. Additive only -- a miss
+// falls through to isUnityYamlBinary.
+const BINARY_ASSET_FILENAME_PATTERNS: RegExp[] = [
+  /[Tt]errain.*\.asset$/,
+  /TerrainData.*\.asset$/,
+  /LightingData.*\.asset$/,
+  /LightmapSnapshot.*\.asset$/,
+  /NavMesh.*\.asset$/,
+  /NavMeshData.*\.asset$/,
+  /OcclusionCulling.*\.asset$/,
+  /OcclusionCullingData.*\.asset$/,
+  /SDF.*\.asset$/,
+  /ProbeVolumeStreamable.*\.asset$/,
+  /ProbeVolumeData.*\.asset$/,
+];
+
+function hasBinaryAssetFilename(pathname: string): boolean {
+  const fileName = pathname.split('/').pop() ?? pathname;
+  for (const pattern of BINARY_ASSET_FILENAME_PATTERNS) {
+    if (pattern.test(fileName)) return true;
   }
   return false;
 }
@@ -193,8 +225,10 @@ export function getPreviewKindForPath(pathname: string, bytes?: Uint8Array): Pre
   if (imageMimeTypes.has(extension)) return 'image';
   if (audioMimeTypes.has(extension)) return 'audio';
   if (videoMimeTypes.has(extension)) return 'video';
+  if (bytes && bytes.byteLength > PREVIEW_SIZE_LIMIT_BYTES) return 'unsupported';
   if (extension === 'yaml' || extension === 'yml') return 'text';
   if (yamlExtensions.has(extension)) {
+    if (hasBinaryAssetFilename(pathname)) return 'unsupported';
     return isUnityYamlBinary(bytes) ? 'unsupported' : 'text';
   }
   if (textExtensions.has(extension)) return 'text';
