@@ -1,12 +1,8 @@
 /// <reference lib="webworker" />
 
 import { parseUnityPackageEntries } from 'unitypackage-core';
-import { entriesToRecords, type PackageFileRecord } from './packageModel';
+import { entriesToRecords } from './packageModel';
 import type { ParsePackageRequest, ParsePackageResponse } from './workerTypes';
-
-interface WorkerHeavyRecord extends PackageFileRecord {
-  content: Uint8Array;
-}
 
 self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
   try {
@@ -15,22 +11,16 @@ self.onmessage = ({ data }: MessageEvent<ParsePackageRequest>) => {
 
     const { entries } = parseUnityPackageEntries(bytes, options);
 
-    const records = entriesToRecords(entries) as unknown as WorkerHeavyRecord[];
-    const lightRecords: PackageFileRecord[] = [];
-    const contents: Record<string, Uint8Array> = {};
-    const transfer: ArrayBuffer[] = [];
-    for (const record of records) {
-      const { content, ...rest } = record;
-      lightRecords.push(rest);
-      contents[record.id] = content;
-      const buffer = content.buffer;
-      if (buffer instanceof ArrayBuffer && !transfer.includes(buffer)) {
-        transfer.push(buffer);
+    const { records, contents } = entriesToRecords(entries);
+    const transferSet = new Set<ArrayBuffer>();
+    for (const bytes of Object.values(contents)) {
+      if (bytes.buffer instanceof ArrayBuffer) {
+        transferSet.add(bytes.buffer);
       }
     }
     self.postMessage(
-      { type: 'success', records: lightRecords, contents } satisfies ParsePackageResponse,
-      transfer,
+      { type: 'success', records, contents } satisfies ParsePackageResponse,
+      [...transferSet],
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to parse package';

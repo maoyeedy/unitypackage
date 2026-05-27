@@ -39,7 +39,7 @@ function makeRecords() {
       meta: encoder.encode('guid: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
     },
   ];
-  return entriesToRecords(entries, []);
+  return entriesToRecords(entries, []).records;
 }
 
 describe('package model helpers', () => {

@@ -63,7 +63,7 @@ function parsePackageInWorker(buffer: ArrayBuffer): Promise<ParseResult> {
     worker.onmessage = ({ data }: MessageEvent<ParsePackageResponse>) => {
       worker.terminate();
       if (data.type === 'success') {
-        resolve({ records: data.records, contents: data.contents as Record<string, Uint8Array<ArrayBuffer>> });
+        resolve({ records: data.records, contents: data.contents });
         return;
       }
 

@@ -9,7 +9,7 @@ export type ParsePackageResponse =
   | {
       type: 'success';
       records: PackageFileRecord[];
-      contents: Record<string, Uint8Array>;
+      contents: Record<string, Uint8Array<ArrayBuffer>>;
     }
   | { type: 'error'; message: string };
 
